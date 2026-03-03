@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Schedule - AniVerse{% endblock %}
+
+{% block content %}
+<section class="schedule">
+    <h2>Airing Schedule for {{ date }}</h2>
+    
+    {% if data and data.data and data.data.scheduledAnimes %}
+    <div class="schedule-grid">
+        {% for anime in data.data.scheduledAnimes %}
+        <div class="schedule-card">
+            <span class="time">{{ anime.time }}</span>
+            <div class="anime-info">
+                <h3><a href="/anime/{{ anime.id }}">{{ anime.name }}</a></h3>
+                <span class="episode">Ep {{ anime.episode }}</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p>No anime scheduled for this date or error loading schedule.</p>
+    {% endif %}
+
+    <!-- Date Navigation (Simple) -->
+    <div class="date-nav">
+        <a href="/schedule?date={{ date }}" class="current-date">{{ date }}</a>
+    </div>
+</section>
+{% endblock %}

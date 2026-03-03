@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}{{ anime.info.name }} - AniVerse{% endblock %}
+
+{% block content %}
+<div class="anime-detail-container">
+    <div class="anime-header">
+        <div class="poster">
+            <img src="{{ anime.info.poster }}" alt="{{ anime.info.name }}">
+        </div>
+        <div class="info">
+            <h1>{{ anime.info.name }}</h1>
+            <div class="stats">
+                <span class="rating">{{ anime.info.stats.rating }}</span>
+                <span class="quality">{{ anime.info.stats.quality }}</span>
+                <span class="sub-ep">{{ anime.info.stats.episodes.sub }} Sub</span>
+                {% if anime.info.stats.episodes.dub %}
+                <span class="dub-ep">{{ anime.info.stats.episodes.dub }} Dub</span>
+                {% endif %}
+                <span class="type">{{ anime.info.stats.type }}</span>
+            </div>
+            <p class="description">{{ anime.info.description }}</p>
+            <div class="genres">
+                {% for genre in anime.moreInfo.genres %}
+                <a href="/genre/{{ genre }}">{{ genre }}</a>
+                {% endfor %}
+            </div>
+            <div class="actions">
+                <a href="#episodes" class="btn-watch">Watch Now</a>
+            </div>
+        </div>
+    </div>
+
+    <div id="episodes" class="episodes-section">
+        <h2>Episodes</h2>
+        <div class="episodes-grid">
+            {% for episode in episodes %}
+            <a href="/watch/{{ episode.episodeId }}" class="episode-card {% if episode.isFiller %}filler{% endif %}">
+                <div class="ep-number">{{ episode.number }}</div>
+                <div class="ep-title">{{ episode.title }}</div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

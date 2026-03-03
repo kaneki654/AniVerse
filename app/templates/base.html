@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AniVerse{% endblock %}</title>
+    {% block head %}{% endblock %}
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <a href="/">AniVerse</a>
+        </div>
+        <nav>
+            <a href="/">Home</a>
+            <a href="/azlist/all">A-Z List</a>
+            <a href="/schedule">Schedule</a>
+        </nav>
+        <div class="search-bar">
+            <input type="text" id="search-input" placeholder="Search anime...">
+            <div id="search-suggestions" class="suggestions-dropdown"></div>
+        </div>
+    </header>
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+        <p>&copy; 2024 AniVerse. All rights reserved.</p>
+    </footer>
+
+    <script src="/static/script.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

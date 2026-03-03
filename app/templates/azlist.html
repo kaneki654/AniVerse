@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}A-Z List: {{ sort_option|upper }} - AniVerse{% endblock %}
+
+{% block content %}
+<section class="az-list">
+    <h2>A-Z List</h2>
+    <div class="az-nav">
+        <a href="/azlist/all">All</a>
+        <a href="/azlist/0-9">0-9</a>
+        {% for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" %}
+        <a href="/azlist/{{ letter }}" class="{% if sort_option == letter %}active{% endif %}">{{ letter }}</a>
+        {% endfor %}
+    </div>
+
+    {% if data.data and data.data.animes %}
+    <div class="grid">
+        {% for anime in data.data.animes %}
+        <div class="anime-card">
+            <a href="/anime/{{ anime.id }}">
+                <img src="{{ anime.poster }}" alt="{{ anime.name }}">
+                <div class="card-info">
+                    <h4>{{ anime.name }}</h4>
+                    <span class="type">{{ anime.type }}</span>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination">
+        {% if data.data.currentPage > 1 %}
+        <a href="/azlist/{{ sort_option }}?page={{ data.data.currentPage - 1 }}" class="page-btn">Previous</a>
+        {% endif %}
+        
+        {% if data.data.hasNextPage %}
+        <a href="/azlist/{{ sort_option }}?page={{ data.data.currentPage + 1 }}" class="page-btn">Next</a>
+        {% endif %}
+    </div>
+    {% else %}
+    <p>No results found.</p>
+    {% endif %}
+</section>
+{% endblock %}

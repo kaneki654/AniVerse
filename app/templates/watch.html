@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block title %}Watch - AniVerse{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/player.css">
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script src="/static/player.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="watch-container">
+    <div class="video-player-wrapper" id="player-wrapper">
+        <div class="player-container" id="player-container">
+            <video id="video" playsinline crossorigin="anonymous"></video>
+            
+            <div class="loading-spinner"></div>
+
+            <!-- Skip Buttons -->
+            <button id="skip-intro" class="skip-btn">Skip Intro</button>
+            <button id="skip-outro" class="skip-btn">Skip Outro</button>
+
+            <!-- Controls Overlay -->
+            <div class="controls-overlay">
+                <!-- Progress Bar -->
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-handle"></div>
+                    </div>
+                </div>
+
+                <!-- Buttons Row -->
+                <div class="controls-row">
+                    <div class="controls-left">
+                        <button id="play-btn">
+                            <span id="play-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                            </span>
+                        </button>
+                        <button id="next-ep-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                        </button>
+                        <div class="volume-container">
+                           <button id="mute-btn">
+                               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+                           </button>
+                           <input type="range" id="volume-slider" min="0" max="1" step="0.1" value="1">
+                        </div>
+                        <span class="time-display">0:00 / 0:00</span>
+                    </div>
+
+                    <div class="controls-right">
+                        <button id="settings-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84a.484.484 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.488.488 0 0 0-.59.22L2.05 8.96a.49.49 0 0 0 .12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.27.41.48.41h3.84c.21 0 .43-.17.48-.41l.36-2.54c.59-.24 1.13-.57 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
+                        </button>
+                        <button id="fullscreen-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Menu -->
+            <div class="settings-menu" id="settings-menu">
+                <!-- Main Menu -->
+                <div class="settings-main">
+                    <div class="settings-item" data-target="audio">
+                        <span>Audio</span>
+                        <div class="settings-value-group">
+                            <span id="current-audio">Sub</span> <span>›</span>
+                        </div>
+                    </div>
+                    <div class="settings-item" data-target="source">
+                        <span>Source</span>
+                        <div class="settings-value-group">
+                            <span id="current-source">HD-1</span> <span>›</span>
+                        </div>
+                    </div>
+                    <div class="settings-item" data-target="quality">
+                        <span>Quality</span>
+                        <div class="settings-value-group">
+                            <span id="current-quality">Auto</span> <span>›</span>
+                        </div>
+                    </div>
+                    <div class="settings-item" data-target="speed">
+                        <span>Speed</span>
+                        <div class="settings-value-group">
+                            <span id="current-speed">Normal</span> <span>›</span>
+                        </div>
+                    </div>
+                    <div class="settings-item" data-target="subs">
+                        <span>Subtitles</span>
+                        <div class="settings-value-group">
+                            <span id="current-subs">Off</span> <span>›</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sub Menus -->
+                <div class="settings-submenu" id="submenu-audio">
+                    <div class="settings-header"><span class="settings-back">‹</span> Audio</div>
+                    <div id="settings-audio-options"></div>
+                </div>
+
+                <div class="settings-submenu" id="submenu-source">
+                    <div class="settings-header"><span class="settings-back">‹</span> Source</div>
+                    <div id="settings-source-options"></div>
+                </div>
+
+                <div class="settings-submenu" id="submenu-quality">
+                    <div class="settings-header"><span class="settings-back">‹</span> Quality</div>
+                    <div id="settings-quality-options">
+                        <div class="settings-item selected" data-value="auto">
+                            <span>Auto</span> <span class="check-icon">✓</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="settings-submenu" id="submenu-speed">
+                    <div class="settings-header"><span class="settings-back">‹</span> Speed</div>
+                    <div id="settings-speed-options"></div>
+                </div>
+
+                <div class="settings-submenu" id="submenu-subs">
+                    <div class="settings-header"><span class="settings-back">‹</span> Subtitles</div>
+                    <div id="settings-subs-options">
+                        <div class="settings-item selected" data-value="off">
+                            <span>Off</span> <span class="check-icon">✓</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Player Disclaimer/Notice -->
+    <div class="player-notice">
+        <p>
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="notice-icon"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            <span>If the video is not loading properly, please try changing the <strong>Source</strong> (e.g. HD-1 to HD-2) in the settings menu <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="inline-icon"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>.</span>
+        </p>
+    </div>
+    
+    <div class="episode-info">
+        {% if anime.name %}
+            <h2>{{ anime.name }}</h2>
+            {% if current_ep.number %}
+                <h3>Episode {{ current_ep.number }}: {{ current_ep.title }}</h3>
+            {% else %}
+                <h3>{{ episode_id }}</h3>
+            {% endif %}
+        {% else %}
+            <h2>Now Playing: {{ episode_id }}</h2>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const episodeId = "{{ episode_id }}";
+        const serversData = {{ servers | tojson | safe }};
+        
+        // Pass server data directly to player
+        const player = new CustomPlayer('player-wrapper', episodeId, {
+            servers: serversData
+        });
+        
+        // Start with sub or first available
+        player.init('sub');
+    });
+</script>
+{% endblock %}

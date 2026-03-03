@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Search: {{ query }} - AniVerse{% endblock %}
+
+{% block content %}
+<section class="search-results">
+    <h2>Search Results for "{{ query }}"</h2>
+    
+    {% if data.data and data.data.animes %}
+    <div class="grid">
+        {% for anime in data.data.animes %}
+        <div class="anime-card">
+            <a href="/anime/{{ anime.id }}">
+                <img src="{{ anime.poster }}" alt="{{ anime.name }}">
+                <div class="card-info">
+                    <h4>{{ anime.name }}</h4>
+                    <span class="type">{{ anime.type }}</span>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination (Simple) -->
+    <div class="pagination">
+        {% if data.data.currentPage > 1 %}
+        <a href="/search?q={{ query }}&page={{ data.data.currentPage - 1 }}" class="page-btn">Previous</a>
+        {% endif %}
+        
+        {% if data.data.hasNextPage %}
+        <a href="/search?q={{ query }}&page={{ data.data.currentPage + 1 }}" class="page-btn">Next</a>
+        {% endif %}
+    </div>
+    {% else %}
+    <p>No results found.</p>
+    {% endif %}
+</section>
+{% endblock %}

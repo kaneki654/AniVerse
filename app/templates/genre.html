@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Genre: {{ genre|title }} - AniVerse{% endblock %}
+
+{% block content %}
+<section class="genre-results">
+    <h2>Genre: {{ genre|title }}</h2>
+    
+    {% if data.data and data.data.animes %}
+    <div class="grid">
+        {% for anime in data.data.animes %}
+        <div class="anime-card">
+            <a href="/anime/{{ anime.id }}">
+                <img src="{{ anime.poster }}" alt="{{ anime.name }}">
+                <div class="card-info">
+                    <h4>{{ anime.name }}</h4>
+                    <span class="type">{{ anime.type }}</span>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination">
+        {% if data.data.currentPage > 1 %}
+        <a href="/genre/{{ genre }}?page={{ data.data.currentPage - 1 }}" class="page-btn">Previous</a>
+        {% endif %}
+        
+        {% if data.data.hasNextPage %}
+        <a href="/genre/{{ genre }}?page={{ data.data.currentPage + 1 }}" class="page-btn">Next</a>
+        {% endif %}
+    </div>
+    {% else %}
+    <p>No results found for this genre.</p>
+    {% endif %}
+</section>
+{% endblock %}

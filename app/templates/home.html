@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}AniVerse - Home{% endblock %}
+
+{% block content %}
+<section class="hero-carousel">
+    <h2>Spotlight</h2>
+    <div class="carousel-container">
+        {% for anime in data.data.spotlightAnimes %}
+        <div class="carousel-item">
+            <img src="{{ anime.poster }}" alt="{{ anime.name }}">
+            <div class="carousel-content">
+                <h3><a href="/anime/{{ anime.id }}">{{ anime.name }}</a></h3>
+                <p>{{ anime.description[:100] }}...</p>
+                <div class="meta">
+                    <span class="rating">{{ anime.quality }}</span>
+                    <span class="type">{{ anime.type }}</span>
+                    <span class="duration">{{ anime.duration }}</span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="trending">
+    <h2>Trending Now</h2>
+    <div class="scroll-row">
+        {% for anime in data.data.trendingAnimes %}
+        <div class="anime-card">
+            <a href="/anime/{{ anime.id }}">
+                <img src="{{ anime.poster }}" alt="{{ anime.name }}">
+                <div class="card-info">
+                    <h4>{{ anime.name }}</h4>
+                    <span class="rank">#{{ anime.rank }}</span>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="latest-episodes">
+    <h2>Latest Episodes</h2>
+    <div class="grid">
+        {% for anime in data.data.latestEpisodeAnimes %}
+        <div class="anime-card">
+            <a href="/anime/{{ anime.id }}">
+                <img src="{{ anime.poster }}" alt="{{ anime.name }}">
+                <div class="card-info">
+                    <h4>{{ anime.name }}</h4>
+                    <span class="episode-badge">Ep {{ anime.episodes.sub }}</span>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="top-airing">
+    <h2>Top Airing</h2>
+    <div class="grid">
+        {% for anime in data.data.topAiringAnimes %}
+        <div class="anime-card">
+            <a href="/anime/{{ anime.id }}">
+                <img src="{{ anime.poster }}" alt="{{ anime.name }}">
+                <div class="card-info">
+                    <h4>{{ anime.name }}</h4>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}
