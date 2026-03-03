@@ -44,3 +44,23 @@ A lightweight anime streaming application built with FastAPI, Jinja2, Vanilla JS
 
 - This app acts as a proxy to the `hianime` API.
 - HLS.js is loaded from CDN for video playback.
+
+## Deployment to Render
+
+1.  **Push to GitHub**:
+    *   Initialize a git repository if you haven't: `git init`
+    *   Add files: `git add .`
+    *   Commit: `git commit -m "Initial commit"`
+    *   Push to your GitHub repository.
+
+2.  **Deploy on Render**:
+    *   Go to [Render Dashboard](https://dashboard.render.com/).
+    *   Click **New +** -> **Web Service**.
+    *   Connect your GitHub repository.
+    *   Render will detect the `render.yaml` file and configure the service automatically.
+    *   Click **Create Web Service**.
+
+3.  **Manual Configuration** (if not using Blueprint):
+    *   **Runtime**: Python 3
+    *   **Build Command**: `pip install -r requirements.txt`
+    *   **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
