@@ -3,6 +3,7 @@ import os
 import re
 from urllib.parse import urljoin, quote, unquote
 from datetime import date as dt
+import asyncio
 
 # Add libs to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'libs')))
@@ -308,6 +309,9 @@ async def manga_detail(request: Request, manga_id: str):
         has_english = False
         
         try:
+            # Add delay to prevent rate limits
+            await asyncio.sleep(0.2)
+            
             # Manga Info
             resp = await client.get(f"{MANGA_API_BASE}/manga/{manga_id}?includes[]=author&includes[]=artist&includes[]=cover_art")
             if resp.status_code == 200:
@@ -333,7 +337,8 @@ async def manga_detail(request: Request, manga_id: str):
                     "tags": [t['attributes']['name']['en'] for t in attrs.get('tags', [])]
                 }
 
-            # Chapters - Fetch English feed with limit 500 to get substantial history
+            # Chapters - Fetch English feed
+            await asyncio.sleep(0.2) # Small delay
             feed_resp = await client.get(f"{MANGA_API_BASE}/manga/{manga_id}/feed?translatedLanguage[]=en&order[chapter]=desc&limit=500&includes[]=scanlation_group")
             
             if feed_resp.status_code == 200:
@@ -350,18 +355,17 @@ async def manga_detail(request: Request, manga_id: str):
                         
                         # Handle oneshots or nulls
                         if ch_num is None:
-                            ch_num_key = "oneshot_" + ch['id'] # unique key for oneshots to show all
+                            ch_num_key = "oneshot_" + ch['id']
                         else:
                             ch_num_key = ch_num
                             
-                        # Deduplication: Only take first occurrence of a chapter number
+                        # Deduplication
                         if ch_num_key in seen_chapters and ch_num is not None:
                             continue
                         
                         if ch_num is not None:
                             seen_chapters.add(ch_num_key)
                             
-                        # Extract Group Name
                         group_name = "Unknown Group"
                         for rel in ch.get('relationships', []):
                             if rel['type'] == 'scanlation_group':
@@ -409,9 +413,10 @@ async def manga_read(request: Request, chapter_id: str):
                 chapter_hash = data.get('chapter', {}).get('hash')
                 filenames = data.get('chapter', {}).get('data', [])
                 
-                pages = [f"{base_url}/data/{chapter_hash}/{fn}" for fn in filenames]
+                # Use proxy URL for images
+                pages = [f"/proxy/manga-page?url={quote(f'{base_url}/data/{chapter_hash}/{fn}')}" for fn in filenames]
 
-            # 2. Get Chapter Info (to find parent manga)
+            # 2. Get Chapter Info
             ch_resp = await client.get(f"{MANGA_API_BASE}/chapter/{chapter_id}?includes[]=manga")
             if ch_resp.status_code == 200:
                 ch_data = ch_resp.json().get('data', {})
@@ -424,12 +429,11 @@ async def manga_read(request: Request, chapter_id: str):
                 
                 # 3. Find Neighbors
                 if chapter_info["manga_id"]:
-                    # Fetch sparse feed for navigation
+                    await asyncio.sleep(0.2) # Small delay
                     feed_resp = await client.get(f"{MANGA_API_BASE}/manga/{chapter_info['manga_id']}/feed?translatedLanguage[]=en&order[chapter]=asc&limit=500")
                     if feed_resp.status_code == 200:
                         all_chapters = feed_resp.json().get('data', [])
                         
-                        # Filter for unique chapters to match navigation
                         unique_chapters = []
                         seen = set()
                         for ch in all_chapters:
@@ -510,6 +514,27 @@ async def manga_search_suggestion_proxy(q: str):
             return {"results": []}
 
 # --- PROXY ENDPOINTS ---
+
+@app.get("/proxy/manga-page")
+async def proxy_manga_page(url: str):
+    if not url: return Response(status_code=400)
+    
+    clean_url = unquote(url)
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Referer": "https://mangadex.org/",
+        "Origin": "https://mangadex.org/"
+    }
+
+    async with httpx.AsyncClient(verify=False, follow_redirects=True) as client:
+        try:
+            resp = await client.get(clean_url, headers=headers)
+            if resp.status_code != 200:
+                return Response(status_code=resp.status_code)
+            
+            return Response(content=resp.content, media_type="image/jpeg")
+        except:
+            return Response(status_code=500)
 
 @app.get("/proxy/m3u8")
 async def proxy_m3u8(url: str, referer: str = None):
