@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Manga - AniVerse{% endblock %}
+
+{% block content %}
+<div class="manga-search-container">
+    <form action="/manga/search" method="get" class="manga-search-form">
+        <input type="text" name="title" placeholder="Search for manga..." required>
+        <button type="submit">Search</button>
+    </form>
+</div>
+
+<section class="hero-carousel">
+    <h2>Featured Manga</h2>
+    <div class="carousel-container">
+        {% for item in popular[:5] %}
+        <div class="carousel-item">
+            <a href="/manga/{{ item.id }}">
+                <img src="{{ item.cover }}" alt="{{ item.title }}">
+                <div class="carousel-content">
+                    <h3>{{ item.title }}</h3>
+                    <p>{{ item.desc | truncate(100) }}</p>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section>
+    <h2>Latest Updates</h2>
+    <div class="scroll-row">
+        {% for item in latest %}
+        <div class="anime-card">
+            <a href="/manga/{{ item.id }}">
+                <img src="{{ item.cover }}" alt="{{ item.title }}" loading="lazy">
+                <div class="card-info">
+                    <h4>{{ item.title }}</h4>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section>
+    <h2>Popular Manga</h2>
+    <div class="grid">
+        {% for item in popular %}
+        <div class="anime-card">
+            <a href="/manga/{{ item.id }}">
+                <div class="rank">#{{ loop.index }}</div>
+                <img src="{{ item.cover }}" alt="{{ item.title }}" loading="lazy">
+                <div class="card-info">
+                    <h4>{{ item.title }}</h4>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section>
+    <h2>Browse by Genre</h2>
+    <div class="genres">
+        {% for tag in tags %}
+        <a href="/manga/search?tag={{ tag.id }}">{{ tag.attributes.name.en }}</a>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}

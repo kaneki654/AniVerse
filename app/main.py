@@ -22,6 +22,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 API_BASE = "https://aniverseaniwatch.vercel.app/api/v2/hianime"
+MANGA_API_BASE = "https://api.mangadex.org"
 DEFAULT_REFERER = "https://hianime.to/"
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
@@ -31,6 +32,8 @@ def get_proxy_headers(referer: str = None):
         "Referer": referer if referer else DEFAULT_REFERER,
         "Origin": referer if referer else DEFAULT_REFERER
     }
+
+# --- ANIME ROUTES ---
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
@@ -195,6 +198,234 @@ async def genre(request: Request, name: str, page: int = 1):
         request=request, 
         name="genre.html", 
         context={"data": data, "genre": name, "page": page}
+    )
+
+# --- MANGA ROUTES ---
+
+def process_manga_list(data):
+    """Helper to process MangaDex API response into a cleaner format."""
+    manga_list = []
+    for item in data:
+        manga_id = item.get('id')
+        attrs = item.get('attributes', {})
+        relationships = item.get('relationships', [])
+        
+        # Get title (prioritize en)
+        title = attrs.get('title', {}).get('en') or list(attrs.get('title', {}).values())[0]
+        
+        # Get cover filename
+        cover_filename = None
+        for rel in relationships:
+            if rel.get('type') == 'cover_art':
+                cover_filename = rel.get('attributes', {}).get('fileName')
+                break
+        
+        cover_url = f"https://uploads.mangadex.org/covers/{manga_id}/{cover_filename}.256.jpg" if cover_filename else "/static/placeholder.jpg"
+        
+        manga_list.append({
+            "id": manga_id,
+            "title": title,
+            "cover": cover_url,
+            "desc": attrs.get('description', {}).get('en', '')
+        })
+    return manga_list
+
+@app.get("/manga", response_class=HTMLResponse)
+async def manga_home(request: Request):
+    async with httpx.AsyncClient() as client:
+        popular_data = []
+        latest_data = []
+        tags = []
+        try:
+            # Popular Manga
+            pop_resp = await client.get(f"{MANGA_API_BASE}/manga?limit=20&order[followedCount]=desc&includes[]=cover_art&contentRating[]=safe")
+            if pop_resp.status_code == 200:
+                popular_data = process_manga_list(pop_resp.json().get('data', []))
+
+            # Latest Updates
+            latest_resp = await client.get(f"{MANGA_API_BASE}/manga?limit=20&order[latestUploadedChapter]=desc&includes[]=cover_art&contentRating[]=safe")
+            if latest_resp.status_code == 200:
+                latest_data = process_manga_list(latest_resp.json().get('data', []))
+                
+            # Tags
+            tags_resp = await client.get(f"{MANGA_API_BASE}/manga/tag")
+            if tags_resp.status_code == 200:
+                tags = sorted(tags_resp.json().get('data', []), key=lambda x: x['attributes']['name']['en'])
+
+        except Exception as e:
+            print(f"Manga Home Error: {e}")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="manga_home.html",
+        context={
+            "popular": popular_data,
+            "latest": latest_data,
+            "tags": tags
+        }
+    )
+
+@app.get("/manga/search", response_class=HTMLResponse)
+async def manga_search(request: Request, title: str = "", tag: str = None, page: int = 1):
+    limit = 20
+    offset = (page - 1) * limit
+    async with httpx.AsyncClient() as client:
+        results = []
+        try:
+            params = {
+                "limit": limit,
+                "offset": offset,
+                "includes[]": "cover_art",
+                "contentRating[]": "safe"
+            }
+            if title:
+                params["title"] = title
+            if tag:
+                params["includedTags[]"] = tag
+            
+            resp = await client.get(f"{MANGA_API_BASE}/manga", params=params)
+            if resp.status_code == 200:
+                results = process_manga_list(resp.json().get('data', []))
+        except Exception as e:
+            print(f"Manga Search Error: {e}")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="manga_search.html",
+        context={
+            "results": results,
+            "query": title,
+            "page": page,
+            "tag": tag
+        }
+    )
+
+@app.get("/manga/{manga_id}", response_class=HTMLResponse)
+async def manga_detail(request: Request, manga_id: str):
+    async with httpx.AsyncClient() as client:
+        manga_info = {}
+        chapters = {}
+        try:
+            # Manga Info
+            resp = await client.get(f"{MANGA_API_BASE}/manga/{manga_id}?includes[]=author&includes[]=artist&includes[]=cover_art")
+            if resp.status_code == 200:
+                data = resp.json().get('data', {})
+                attrs = data.get('attributes', {})
+                rels = data.get('relationships', [])
+                
+                # Extract cover
+                cover = next((r for r in rels if r['type'] == 'cover_art'), {})
+                cover_file = cover.get('attributes', {}).get('fileName')
+                cover_url = f"https://uploads.mangadex.org/covers/{manga_id}/{cover_file}" if cover_file else ""
+                
+                # Extract author
+                author = next((r for r in rels if r['type'] == 'author'), {})
+                author_name = author.get('attributes', {}).get('name', 'Unknown')
+
+                manga_info = {
+                    "id": data.get('id'),
+                    "title": attrs.get('title', {}).get('en') or list(attrs.get('title', {}).values())[0],
+                    "desc": attrs.get('description', {}).get('en', ''),
+                    "cover": cover_url,
+                    "author": author_name,
+                    "status": attrs.get('status'),
+                    "year": attrs.get('year'),
+                    "tags": [t['attributes']['name']['en'] for t in attrs.get('tags', [])]
+                }
+
+            # Chapters (Aggregate for simplicity in volumes, but let's just get the feed)
+            feed_resp = await client.get(f"{MANGA_API_BASE}/manga/{manga_id}/feed?translatedLanguage[]=en&order[chapter]=desc&limit=100&includes[]=scanlation_group")
+            if feed_resp.status_code == 200:
+                feed_data = feed_resp.json().get('data', [])
+                # Organize by volume/chapter? Or just list. Let's just list for now.
+                processed_chapters = []
+                for ch in feed_data:
+                    attrs = ch.get('attributes', {})
+                    processed_chapters.append({
+                        "id": ch.get('id'),
+                        "chapter": attrs.get('chapter'),
+                        "volume": attrs.get('volume'),
+                        "title": attrs.get('title'),
+                        "date": attrs.get('publishAt', '').split('T')[0]
+                    })
+                chapters = processed_chapters
+
+        except Exception as e:
+            print(f"Manga Detail Error: {e}")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="manga_detail.html",
+        context={
+            "manga": manga_info,
+            "chapters": chapters
+        }
+    )
+
+@app.get("/manga/read/{chapter_id}", response_class=HTMLResponse)
+async def manga_read(request: Request, chapter_id: str):
+    pages = []
+    chapter_info = {}
+    next_chapter = None
+    prev_chapter = None
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            # 1. Get Chapter Pages (At-Home Server)
+            resp = await client.get(f"{MANGA_API_BASE}/at-home/server/{chapter_id}")
+            if resp.status_code == 200:
+                data = resp.json()
+                base_url = data.get('baseUrl')
+                chapter_hash = data.get('chapter', {}).get('hash')
+                filenames = data.get('chapter', {}).get('data', [])
+                
+                # Construct page URLs
+                pages = [f"{base_url}/data/{chapter_hash}/{fn}" for fn in filenames]
+
+            # 2. Get Chapter Info (to find parent manga)
+            ch_resp = await client.get(f"{MANGA_API_BASE}/chapter/{chapter_id}?includes[]=manga")
+            if ch_resp.status_code == 200:
+                ch_data = ch_resp.json().get('data', {})
+                attrs = ch_data.get('attributes', {})
+                chapter_info = {
+                    "title": attrs.get('title'),
+                    "chapter": attrs.get('chapter'),
+                    "manga_id": next((r['id'] for r in ch_data.get('relationships', []) if r['type'] == 'manga'), None)
+                }
+                
+                # 3. Find Next/Prev Chapter (simplified check)
+                # Ideally, call the aggregate endpoint or feed again.
+                # For this MVP, we might skip prev/next logic in backend and rely on user going back to detail
+                # Or fetch the feed again to find neighbors.
+                if chapter_info["manga_id"]:
+                    feed_resp = await client.get(f"{MANGA_API_BASE}/manga/{chapter_info['manga_id']}/feed?translatedLanguage[]=en&order[chapter]=asc&limit=500")
+                    if feed_resp.status_code == 200:
+                        all_chapters = feed_resp.json().get('data', [])
+                        # Find current index
+                        curr_idx = -1
+                        for i, ch in enumerate(all_chapters):
+                            if ch['id'] == chapter_id:
+                                curr_idx = i
+                                break
+                        
+                        if curr_idx != -1:
+                            if curr_idx > 0:
+                                prev_chapter = all_chapters[curr_idx - 1]['id']
+                            if curr_idx < len(all_chapters) - 1:
+                                next_chapter = all_chapters[curr_idx + 1]['id']
+
+        except Exception as e:
+            print(f"Manga Read Error: {e}")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="manga_read.html",
+        context={
+            "pages": pages,
+            "info": chapter_info,
+            "next_id": next_chapter,
+            "prev_id": prev_chapter
+        }
     )
 
 # --- PROXY ENDPOINTS ---

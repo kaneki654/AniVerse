@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Search Manga - AniVerse{% endblock %}
+
+{% block content %}
+<div class="manga-search-container">
+    <form action="/manga/search" method="get" class="manga-search-form">
+        <input type="text" name="title" value="{{ query }}" placeholder="Search for manga..." required>
+        <button type="submit">Search</button>
+    </form>
+</div>
+
+<section class="search-results">
+    <h2>
+        {% if query %}Search Results for "{{ query }}"
+        {% elif tag %}Manga with Tag
+        {% else %}Manga List{% endif %}
+    </h2>
+    
+    {% if results %}
+    <div class="grid">
+        {% for item in results %}
+        <div class="anime-card">
+            <a href="/manga/{{ item.id }}">
+                <img src="{{ item.cover }}" alt="{{ item.title }}" loading="lazy">
+                <div class="card-info">
+                    <h4>{{ item.title }}</h4>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <div class="pagination">
+        {% if page > 1 %}
+        <a href="/manga/search?title={{ query }}&tag={{ tag }}&page={{ page - 1 }}" class="page-btn">Previous</a>
+        {% endif %}
+        <a href="/manga/search?title={{ query }}&tag={{ tag }}&page={{ page + 1 }}" class="page-btn">Next</a>
+    </div>
+    {% else %}
+    <p>No manga found.</p>
+    {% endif %}
+</section>
+{% endblock %}

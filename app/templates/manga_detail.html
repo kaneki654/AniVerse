@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}{{ manga.title }} - AniVerse{% endblock %}
+
+{% block content %}
+<div class="anime-detail-container">
+    <div class="anime-header">
+        <div class="poster">
+            <img src="{{ manga.cover }}" alt="{{ manga.title }}">
+        </div>
+        <div class="info">
+            <h1>{{ manga.title }}</h1>
+            <div class="stats">
+                <span class="quality">{{ manga.status | upper }}</span>
+                <span>{{ manga.year }}</span>
+                <span>{{ manga.author }}</span>
+            </div>
+            <div class="genres">
+                {% for tag in manga.tags %}
+                <a href="#">{{ tag }}</a>
+                {% endfor %}
+            </div>
+            <p class="description">{{ manga.desc }}</p>
+        </div>
+    </div>
+
+    <div class="episodes-section">
+        <h2>Chapters</h2>
+        <div class="episodes-grid">
+            {% for ch in chapters %}
+            <a href="/manga/read/{{ ch.id }}" class="episode-card">
+                <div class="ep-number">
+                    {% if ch.chapter != 'none' %}Ch. {{ ch.chapter }}{% else %}Oneshot{% endif %}
+                </div>
+                <div class="ep-title">{{ ch.title or 'No Title' }}</div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}Reading {{ info.title }} - AniVerse{% endblock %}
+
+{% block head %}
+<style>
+    .reader-container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 1rem;
+        text-align: center;
+    }
+    
+    .reader-controls {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #1f1f1f;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border-radius: 8px;
+        position: sticky;
+        top: 60px; /* Below header */
+        z-index: 50;
+    }
+    
+    .reader-pages img {
+        width: 100%;
+        height: auto;
+        display: block;
+        margin-bottom: 5px;
+    }
+    
+    .nav-btn {
+        background: #e50914;
+        color: #fff;
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        font-weight: bold;
+    }
+    
+    .nav-btn.disabled {
+        background: #333;
+        color: #666;
+        pointer-events: none;
+    }
+    
+    .chapter-title {
+        font-size: 1.1rem;
+        font-weight: bold;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="reader-container">
+    <div class="reader-controls">
+        {% if prev_id %}
+        <a href="/manga/read/{{ prev_id }}" class="nav-btn">Previous</a>
+        {% else %}
+        <span class="nav-btn disabled">Previous</span>
+        {% endif %}
+        
+        <div class="chapter-info">
+            <div class="chapter-title">
+                {% if info.chapter != 'none' %}Ch. {{ info.chapter }}{% endif %}
+                {% if info.title %} - {{ info.title }}{% endif %}
+            </div>
+            <a href="/manga/{{ info.manga_id }}" style="font-size: 0.9rem; color: #aaa;">Back to Manga</a>
+        </div>
+        
+        {% if next_id %}
+        <a href="/manga/read/{{ next_id }}" class="nav-btn">Next</a>
+        {% else %}
+        <span class="nav-btn disabled">Next</span>
+        {% endif %}
+    </div>
+
+    <div class="reader-pages">
+        {% for page in pages %}
+        <img src="{{ page }}" loading="lazy" alt="Page {{ loop.index }}">
+        {% endfor %}
+    </div>
+    
+    <div class="reader-controls" style="margin-top: 1rem;">
+        {% if next_id %}
+        <a href="/manga/read/{{ next_id }}" class="nav-btn" style="width: 100%; text-align: center;">Next Chapter</a>
+        {% else %}
+        <a href="/manga/{{ info.manga_id }}" class="nav-btn" style="width: 100%; text-align: center;">Finish Reading</a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
