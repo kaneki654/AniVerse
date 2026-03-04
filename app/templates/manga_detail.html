@@ -6,7 +6,7 @@
 <div class="anime-detail-container">
     <div class="anime-header">
         <div class="poster">
-            <img src="{{ manga.cover }}" alt="{{ manga.title }}">
+            <img src="{{ manga.cover }}" alt="{{ manga.title }}" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
         </div>
         <div class="info">
             <h1>{{ manga.title }}</h1>
@@ -26,16 +26,23 @@
 
     <div class="episodes-section">
         <h2>Chapters</h2>
+        {% if chapters %}
         <div class="episodes-grid">
             {% for ch in chapters %}
-            <a href="/manga/read/{{ ch.id }}" class="episode-card">
+            <a href="/manga/read/{{ ch.id }}" class="episode-card" title="{{ ch.group }}">
                 <div class="ep-number">
-                    {% if ch.chapter != 'none' %}Ch. {{ ch.chapter }}{% else %}Oneshot{% endif %}
+                    {% if ch.chapter %}Ch. {{ ch.chapter }}{% else %}Oneshot{% endif %}
                 </div>
                 <div class="ep-title">{{ ch.title or 'No Title' }}</div>
+                <div style="font-size: 0.7rem; color: #666; margin-top: 2px;">{{ ch.group }}</div>
             </a>
             {% endfor %}
         </div>
+        {% else %}
+        <div class="no-content">
+            <p>No English chapters available for this manga yet.</p>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

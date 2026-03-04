@@ -304,7 +304,9 @@ async def manga_search(request: Request, title: str = "", tag: str = None, page:
 async def manga_detail(request: Request, manga_id: str):
     async with httpx.AsyncClient() as client:
         manga_info = {}
-        chapters = {}
+        chapters = []
+        has_english = False
+        
         try:
             # Manga Info
             resp = await client.get(f"{MANGA_API_BASE}/manga/{manga_id}?includes[]=author&includes[]=artist&includes[]=cover_art")
@@ -313,12 +315,10 @@ async def manga_detail(request: Request, manga_id: str):
                 attrs = data.get('attributes', {})
                 rels = data.get('relationships', [])
                 
-                # Extract cover
                 cover = next((r for r in rels if r['type'] == 'cover_art'), {})
                 cover_file = cover.get('attributes', {}).get('fileName')
                 cover_url = f"https://uploads.mangadex.org/covers/{manga_id}/{cover_file}" if cover_file else ""
                 
-                # Extract author
                 author = next((r for r in rels if r['type'] == 'author'), {})
                 author_name = author.get('attributes', {}).get('name', 'Unknown')
 
@@ -333,22 +333,51 @@ async def manga_detail(request: Request, manga_id: str):
                     "tags": [t['attributes']['name']['en'] for t in attrs.get('tags', [])]
                 }
 
-            # Chapters (Aggregate for simplicity in volumes, but let's just get the feed)
-            feed_resp = await client.get(f"{MANGA_API_BASE}/manga/{manga_id}/feed?translatedLanguage[]=en&order[chapter]=desc&limit=100&includes[]=scanlation_group")
+            # Chapters - Fetch English feed with limit 500 to get substantial history
+            feed_resp = await client.get(f"{MANGA_API_BASE}/manga/{manga_id}/feed?translatedLanguage[]=en&order[chapter]=desc&limit=500&includes[]=scanlation_group")
+            
             if feed_resp.status_code == 200:
                 feed_data = feed_resp.json().get('data', [])
-                # Organize by volume/chapter? Or just list. Let's just list for now.
+                
                 processed_chapters = []
-                for ch in feed_data:
-                    attrs = ch.get('attributes', {})
-                    processed_chapters.append({
-                        "id": ch.get('id'),
-                        "chapter": attrs.get('chapter'),
-                        "volume": attrs.get('volume'),
-                        "title": attrs.get('title'),
-                        "date": attrs.get('publishAt', '').split('T')[0]
-                    })
-                chapters = processed_chapters
+                seen_chapters = set()
+                
+                if feed_data:
+                    has_english = True
+                    for ch in feed_data:
+                        attrs = ch.get('attributes', {})
+                        ch_num = attrs.get('chapter')
+                        
+                        # Handle oneshots or nulls
+                        if ch_num is None:
+                            ch_num_key = "oneshot_" + ch['id'] # unique key for oneshots to show all
+                        else:
+                            ch_num_key = ch_num
+                            
+                        # Deduplication: Only take first occurrence of a chapter number
+                        if ch_num_key in seen_chapters and ch_num is not None:
+                            continue
+                        
+                        if ch_num is not None:
+                            seen_chapters.add(ch_num_key)
+                            
+                        # Extract Group Name
+                        group_name = "Unknown Group"
+                        for rel in ch.get('relationships', []):
+                            if rel['type'] == 'scanlation_group':
+                                group_name = rel.get('attributes', {}).get('name')
+                                break
+
+                        processed_chapters.append({
+                            "id": ch.get('id'),
+                            "chapter": ch_num,
+                            "volume": attrs.get('volume'),
+                            "title": attrs.get('title'),
+                            "group": group_name,
+                            "date": attrs.get('publishAt', '').split('T')[0]
+                        })
+                    
+                    chapters = processed_chapters
 
         except Exception as e:
             print(f"Manga Detail Error: {e}")
@@ -358,7 +387,8 @@ async def manga_detail(request: Request, manga_id: str):
         name="manga_detail.html",
         context={
             "manga": manga_info,
-            "chapters": chapters
+            "chapters": chapters,
+            "has_english": has_english
         }
     )
 
@@ -379,7 +409,6 @@ async def manga_read(request: Request, chapter_id: str):
                 chapter_hash = data.get('chapter', {}).get('hash')
                 filenames = data.get('chapter', {}).get('data', [])
                 
-                # Construct page URLs
                 pages = [f"{base_url}/data/{chapter_hash}/{fn}" for fn in filenames]
 
             # 2. Get Chapter Info (to find parent manga)
@@ -393,26 +422,35 @@ async def manga_read(request: Request, chapter_id: str):
                     "manga_id": next((r['id'] for r in ch_data.get('relationships', []) if r['type'] == 'manga'), None)
                 }
                 
-                # 3. Find Next/Prev Chapter (simplified check)
-                # Ideally, call the aggregate endpoint or feed again.
-                # For this MVP, we might skip prev/next logic in backend and rely on user going back to detail
-                # Or fetch the feed again to find neighbors.
+                # 3. Find Neighbors
                 if chapter_info["manga_id"]:
+                    # Fetch sparse feed for navigation
                     feed_resp = await client.get(f"{MANGA_API_BASE}/manga/{chapter_info['manga_id']}/feed?translatedLanguage[]=en&order[chapter]=asc&limit=500")
                     if feed_resp.status_code == 200:
                         all_chapters = feed_resp.json().get('data', [])
-                        # Find current index
+                        
+                        # Filter for unique chapters to match navigation
+                        unique_chapters = []
+                        seen = set()
+                        for ch in all_chapters:
+                            num = ch['attributes']['chapter']
+                            if num and num not in seen:
+                                seen.add(num)
+                                unique_chapters.append(ch)
+                            elif num is None:
+                                unique_chapters.append(ch)
+
                         curr_idx = -1
-                        for i, ch in enumerate(all_chapters):
-                            if ch['id'] == chapter_id:
+                        for i, ch in enumerate(unique_chapters):
+                            if ch['id'] == chapter_id or (ch['attributes']['chapter'] == chapter_info['chapter'] and chapter_info['chapter'] is not None):
                                 curr_idx = i
                                 break
                         
                         if curr_idx != -1:
                             if curr_idx > 0:
-                                prev_chapter = all_chapters[curr_idx - 1]['id']
-                            if curr_idx < len(all_chapters) - 1:
-                                next_chapter = all_chapters[curr_idx + 1]['id']
+                                prev_chapter = unique_chapters[curr_idx - 1]['id']
+                            if curr_idx < len(unique_chapters) - 1:
+                                next_chapter = unique_chapters[curr_idx + 1]['id']
 
         except Exception as e:
             print(f"Manga Read Error: {e}")
@@ -427,6 +465,49 @@ async def manga_read(request: Request, chapter_id: str):
             "prev_id": prev_chapter
         }
     )
+
+@app.get("/manga/search/suggestion")
+async def manga_search_suggestion_proxy(q: str):
+    async with httpx.AsyncClient() as client:
+        try:
+            params = {
+                "title": q,
+                "limit": 6,
+                "includes[]": "cover_art",
+                "contentRating[]": "safe"
+            }
+            resp = await client.get(f"{MANGA_API_BASE}/manga", params=params)
+            if resp.status_code == 200:
+                raw_data = resp.json().get('data', [])
+                results = []
+                for item in raw_data:
+                    manga_id = item.get('id')
+                    attrs = item.get('attributes', {})
+                    relationships = item.get('relationships', [])
+                    
+                    title = attrs.get('title', {}).get('en') or list(attrs.get('title', {}).values())[0]
+                    
+                    cover_filename = None
+                    for rel in relationships:
+                        if rel.get('type') == 'cover_art':
+                            cover_filename = rel.get('attributes', {}).get('fileName')
+                            break
+                    
+                    cover_url = f"https://uploads.mangadex.org/covers/{manga_id}/{cover_filename}.256.jpg" if cover_filename else "/static/placeholder.jpg"
+                    
+                    tags = [t['attributes']['name']['en'] for t in attrs.get('tags', [])]
+                    
+                    results.append({
+                        "id": manga_id,
+                        "title": title,
+                        "cover": cover_url,
+                        "status": attrs.get('status'),
+                        "tags": tags
+                    })
+                return {"results": results}
+        except Exception as e:
+            print(f"Manga Suggestion Error: {e}")
+            return {"results": []}
 
 # --- PROXY ENDPOINTS ---
 
@@ -534,46 +615,3 @@ async def proxy_subtitle(url: str, referer: str = None):
             return Response(content=resp.content, media_type="text/vtt")
         except:
             return Response(status_code=500)
-
-@app.get("/manga/search/suggestion")
-async def manga_search_suggestion_proxy(q: str):
-    async with httpx.AsyncClient() as client:
-        try:
-            params = {
-                "title": q,
-                "limit": 6,
-                "includes[]": "cover_art",
-                "contentRating[]": "safe"
-            }
-            resp = await client.get(f"{MANGA_API_BASE}/manga", params=params)
-            if resp.status_code == 200:
-                raw_data = resp.json().get('data', [])
-                results = []
-                for item in raw_data:
-                    manga_id = item.get('id')
-                    attrs = item.get('attributes', {})
-                    relationships = item.get('relationships', [])
-                    
-                    title = attrs.get('title', {}).get('en') or list(attrs.get('title', {}).values())[0]
-                    
-                    cover_filename = None
-                    for rel in relationships:
-                        if rel.get('type') == 'cover_art':
-                            cover_filename = rel.get('attributes', {}).get('fileName')
-                            break
-                    
-                    cover_url = f"https://uploads.mangadex.org/covers/{manga_id}/{cover_filename}.256.jpg" if cover_filename else "/static/placeholder.jpg"
-                    
-                    tags = [t['attributes']['name']['en'] for t in attrs.get('tags', [])]
-                    
-                    results.append({
-                        "id": manga_id,
-                        "title": title,
-                        "cover": cover_url,
-                        "status": attrs.get('status'),
-                        "tags": tags
-                    })
-                return {"results": results}
-        except Exception as e:
-            print(f"Manga Suggestion Error: {e}")
-            return {"results": []}
