@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap');
+
 /* Reset & Base Styles */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Arial', sans-serif; background: #121212; color: #fff; line-height: 1.6; }
@@ -6,8 +8,52 @@ img { max-width: 100%; display: block; border-radius: 4px; }
 
 /* Header */
 header { background: #1f1f1f; padding: 0.5rem 2rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
-.logo a { font-size: 1.5rem; font-weight: bold; color: #e50914; }
 
+/* Logo Styles with Robust Glitch Effect */
+.logo {
+    position: relative;
+    z-index: 1; /* Establish stacking context */
+}
+
+.logo a {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 2.2rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    position: relative;
+    color: #fff;
+    letter-spacing: 3px;
+    display: inline-block;
+    text-decoration: none;
+}
+
+/* Glitch layers */
+.logo a::before,
+.logo a::after {
+    content: attr(data-text);
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.8;
+}
+
+/* Layer 1 - Cyan/Blue offset */
+.logo a::before {
+    color: #00ffff;
+    z-index: -1;
+    animation: glitch-effect-1 0.4s infinite;
+}
+
+/* Layer 2 - Magenta/Red offset */
+.logo a::after {
+    color: #ff00ff;
+    z-index: -2;
+    animation: glitch-effect-2 0.4s infinite;
+}
+
+/* Nav */
 nav { display: flex; align-items: center; }
 
 .nav-item { 
@@ -31,7 +77,7 @@ nav { display: flex; align-items: center; }
 
 .search-bar { 
     position: relative; 
-    z-index: 101; /* Ensure search bar context is high */
+    z-index: 101; 
 } 
 .search-bar input { padding: 0.5rem; border: none; border-radius: 4px; background: #333; color: #fff; width: 250px; }
 
@@ -65,18 +111,18 @@ footer { text-align: center; padding: 2rem; background: #0f0f0f; color: #666; ma
 /* Search Suggestions */
 .suggestions-dropdown {
     position: absolute;
-    top: 100%; /* Position directly below the input */
+    top: 100%; 
     left: 0;
     right: 0;
-    width: 100%; /* Match width of search bar */
+    width: 100%; 
     background: #1f1f1f;
-    border-radius: 0 0 4px 4px; /* Rounded corners only at bottom */
+    border-radius: 0 0 4px 4px; 
     box-shadow: 0 4px 6px rgba(0,0,0,0.5);
-    z-index: 200; /* Higher than search bar */
+    z-index: 200; 
     max-height: 400px;
     overflow-y: auto;
     display: none;
-    margin-top: 2px; /* Slight gap */
+    margin-top: 2px; 
 }
 .suggestion-item {
     display: flex;
@@ -265,18 +311,23 @@ video {
     color: #ddd;
 }
 
-/* Custom Font for Logo */
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap');
+/* Glitch Animation Keyframes */
+@keyframes glitch-effect-1 {
+  0% { transform: translate(0, 0); }
+  20% { transform: translate(-2px, 2px); }
+  40% { transform: translate(-2px, -2px); }
+  60% { transform: translate(2px, 2px); }
+  80% { transform: translate(2px, -2px); }
+  100% { transform: translate(0, 0); }
+}
 
-.logo a {
-    font-family: 'Orbitron', sans-serif;
-    font-size: 1.8rem;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    background: -webkit-linear-gradient(#e50914, #ff6b6b);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    text-shadow: 0px 0px 10px rgba(229, 9, 20, 0.5);
+@keyframes glitch-effect-2 {
+  0% { transform: translate(0, 0); }
+  20% { transform: translate(2px, -2px); }
+  40% { transform: translate(2px, 2px); }
+  60% { transform: translate(-2px, -2px); }
+  80% { transform: translate(-2px, 2px); }
+  100% { transform: translate(0, 0); }
 }
 
 /* Mobile Adjustments */

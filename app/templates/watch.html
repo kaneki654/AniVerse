@@ -160,11 +160,13 @@
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         const episodeId = "{{ episode_id }}";
+        const nextEpId = "{{ next_ep_id if next_ep_id else '' }}";
         const serversData = {{ servers | tojson | safe }};
         
         // Pass server data directly to player
         const player = new CustomPlayer('player-wrapper', episodeId, {
-            servers: serversData
+            servers: serversData,
+            nextEpId: nextEpId
         });
         
         // Start with sub or first available

@@ -101,6 +101,7 @@ async def watch(request: Request, episode_id: str, ep: str = None):
     servers_data = {}
     anime_info = {}
     current_ep = {}
+    next_ep_id = None
 
     async with httpx.AsyncClient() as client:
         try:
@@ -109,15 +110,17 @@ async def watch(request: Request, episode_id: str, ep: str = None):
             if servers_resp.status_code == 200:
                 servers_data = servers_resp.json().get('data', {})
             
-            # 2. Get Episode Info (for title)
+            # 2. Get Episode Info (for title and next episode)
             episodes_resp = await client.get(f"{API_BASE}/anime/{anime_id}/episodes")
             if episodes_resp.status_code == 200:
                 episodes_data = episodes_resp.json().get('data', {})
                 if episodes_data and 'episodes' in episodes_data:
-                    for ep_obj in episodes_data['episodes']:
-                        # Loose match to handle potential ID discrepancies
+                    ep_list = episodes_data['episodes']
+                    for i, ep_obj in enumerate(ep_list):
                         if ep_obj.get('episodeId') == full_episode_id:
                             current_ep = ep_obj
+                            if i + 1 < len(ep_list):
+                                next_ep_id = ep_list[i+1].get('episodeId')
                             break
             
             # 3. Get Anime Info (for series title)
@@ -135,7 +138,8 @@ async def watch(request: Request, episode_id: str, ep: str = None):
             "episode_id": full_episode_id,
             "servers": servers_data,
             "anime": anime_info,
-            "current_ep": current_ep
+            "current_ep": current_ep,
+            "next_ep_id": next_ep_id
         }
     )
 
