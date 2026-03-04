@@ -534,3 +534,46 @@ async def proxy_subtitle(url: str, referer: str = None):
             return Response(content=resp.content, media_type="text/vtt")
         except:
             return Response(status_code=500)
+
+@app.get("/manga/search/suggestion")
+async def manga_search_suggestion_proxy(q: str):
+    async with httpx.AsyncClient() as client:
+        try:
+            params = {
+                "title": q,
+                "limit": 6,
+                "includes[]": "cover_art",
+                "contentRating[]": "safe"
+            }
+            resp = await client.get(f"{MANGA_API_BASE}/manga", params=params)
+            if resp.status_code == 200:
+                raw_data = resp.json().get('data', [])
+                results = []
+                for item in raw_data:
+                    manga_id = item.get('id')
+                    attrs = item.get('attributes', {})
+                    relationships = item.get('relationships', [])
+                    
+                    title = attrs.get('title', {}).get('en') or list(attrs.get('title', {}).values())[0]
+                    
+                    cover_filename = None
+                    for rel in relationships:
+                        if rel.get('type') == 'cover_art':
+                            cover_filename = rel.get('attributes', {}).get('fileName')
+                            break
+                    
+                    cover_url = f"https://uploads.mangadex.org/covers/{manga_id}/{cover_filename}.256.jpg" if cover_filename else "/static/placeholder.jpg"
+                    
+                    tags = [t['attributes']['name']['en'] for t in attrs.get('tags', [])]
+                    
+                    results.append({
+                        "id": manga_id,
+                        "title": title,
+                        "cover": cover_url,
+                        "status": attrs.get('status'),
+                        "tags": tags
+                    })
+                return {"results": results}
+        except Exception as e:
+            print(f"Manga Suggestion Error: {e}")
+            return {"results": []}

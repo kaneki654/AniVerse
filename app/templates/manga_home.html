@@ -4,10 +4,11 @@
 
 {% block content %}
 <div class="manga-search-container">
-    <form action="/manga/search" method="get" class="manga-search-form">
-        <input type="text" name="title" placeholder="Search for manga..." required>
+    <form action="/manga/search" method="get" class="manga-search-form" autocomplete="off">
+        <input type="text" id="manga-search-input" name="title" placeholder="Search for manga..." required>
         <button type="submit">Search</button>
     </form>
+    <div id="manga-suggestions" class="manga-suggestions-dropdown"></div>
 </div>
 
 <section class="hero-carousel">
@@ -16,7 +17,7 @@
         {% for item in popular[:5] %}
         <div class="carousel-item">
             <a href="/manga/{{ item.id }}">
-                <img src="{{ item.cover }}" alt="{{ item.title }}">
+                <img src="{{ item.cover }}" alt="{{ item.title }}" onerror="this.src='/static/placeholder.jpg'">
                 <div class="carousel-content">
                     <h3>{{ item.title }}</h3>
                     <p>{{ item.desc | truncate(100) }}</p>
@@ -33,7 +34,7 @@
         {% for item in latest %}
         <div class="anime-card">
             <a href="/manga/{{ item.id }}">
-                <img src="{{ item.cover }}" alt="{{ item.title }}" loading="lazy">
+                <img src="{{ item.cover }}" alt="{{ item.title }}" loading="lazy" onerror="this.src='/static/placeholder.jpg'">
                 <div class="card-info">
                     <h4>{{ item.title }}</h4>
                 </div>
@@ -50,7 +51,7 @@
         <div class="anime-card">
             <a href="/manga/{{ item.id }}">
                 <div class="rank">#{{ loop.index }}</div>
-                <img src="{{ item.cover }}" alt="{{ item.title }}" loading="lazy">
+                <img src="{{ item.cover }}" alt="{{ item.title }}" loading="lazy" onerror="this.src='/static/placeholder.jpg'">
                 <div class="card-info">
                     <h4>{{ item.title }}</h4>
                 </div>
@@ -68,4 +69,8 @@
         {% endfor %}
     </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/manga_search.js"></script>
 {% endblock %}
