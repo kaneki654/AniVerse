@@ -238,13 +238,13 @@ async def manga_home(request: Request):
         latest_data = []
         tags = []
         try:
-            # Popular Manga
-            pop_resp = await client.get(f"{MANGA_API_BASE}/manga?limit=20&order[followedCount]=desc&includes[]=cover_art&contentRating[]=safe")
+            # Popular Manga - ADDED availableTranslatedLanguage[]=en
+            pop_resp = await client.get(f"{MANGA_API_BASE}/manga?limit=20&order[followedCount]=desc&includes[]=cover_art&contentRating[]=safe&availableTranslatedLanguage[]=en")
             if pop_resp.status_code == 200:
                 popular_data = process_manga_list(pop_resp.json().get('data', []))
 
-            # Latest Updates
-            latest_resp = await client.get(f"{MANGA_API_BASE}/manga?limit=20&order[latestUploadedChapter]=desc&includes[]=cover_art&contentRating[]=safe")
+            # Latest Updates - ADDED availableTranslatedLanguage[]=en
+            latest_resp = await client.get(f"{MANGA_API_BASE}/manga?limit=20&order[latestUploadedChapter]=desc&includes[]=cover_art&contentRating[]=safe&availableTranslatedLanguage[]=en")
             if latest_resp.status_code == 200:
                 latest_data = process_manga_list(latest_resp.json().get('data', []))
                 
@@ -277,7 +277,8 @@ async def manga_search(request: Request, title: str = "", tag: str = None, page:
                 "limit": limit,
                 "offset": offset,
                 "includes[]": "cover_art",
-                "contentRating[]": "safe"
+                "contentRating[]": "safe",
+                "availableTranslatedLanguage[]": "en" # ADDED FILTER
             }
             if title:
                 params["title"] = title
@@ -338,7 +339,7 @@ async def manga_detail(request: Request, manga_id: str):
                 }
 
             # Chapters - Fetch English feed
-            await asyncio.sleep(0.2) # Small delay
+            await asyncio.sleep(0.3) # Increased delay slightly
             feed_resp = await client.get(f"{MANGA_API_BASE}/manga/{manga_id}/feed?translatedLanguage[]=en&order[chapter]=desc&limit=500&includes[]=scanlation_group")
             
             if feed_resp.status_code == 200:
@@ -478,7 +479,8 @@ async def manga_search_suggestion_proxy(q: str):
                 "title": q,
                 "limit": 6,
                 "includes[]": "cover_art",
-                "contentRating[]": "safe"
+                "contentRating[]": "safe",
+                "availableTranslatedLanguage[]": "en" # ADDED FILTER
             }
             resp = await client.get(f"{MANGA_API_BASE}/manga", params=params)
             if resp.status_code == 200:
