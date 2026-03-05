@@ -18,6 +18,7 @@
             <!-- Visual Feedback Elements -->
             <div class="loading-spinner"><i data-lucide="loader-2" class="spin"></i></div>
             
+            <div class="top-gradient-overlay"></div>
             <div class="feedback-overlay">
                 <i data-lucide="play" class="feedback-icon" id="fb-play"></i>
                 <i data-lucide="pause" class="feedback-icon" id="fb-pause"></i>
@@ -231,3 +232,15 @@
     });
 </script>
 {% endblock %}
+
+<!-- Add Top Gradient Div inside player-container -->
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const container = document.getElementById('player-container');
+        if(container && !container.querySelector('.top-gradient-overlay')) {
+            const grad = document.createElement('div');
+            grad.className = 'top-gradient-overlay';
+            container.appendChild(grad);
+        }
+    });
+</script>

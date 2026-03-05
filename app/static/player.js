@@ -925,3 +925,221 @@ CustomPlayer.prototype.setupSubtitles = function(tracks, referer) {
     console.log(`DEBUG: Successfully added ${addedCount} subtitle tracks.`);
     if (window.lucide) window.lucide.createIcons();
 };
+
+// ===== AUTO-HIDE & INTERACTION LOGIC =====
+
+// Override initControls to include full state machine
+CustomPlayer.prototype.initControls = function() {
+    this.controlsTimeout = null;
+    this.isSettingsOpen = false;
+
+    const togglePlay = () => {
+        if (this.video.paused) {
+            this.video.play().catch(() => {});
+            this.showFeedback('play');
+        } else {
+            this.video.pause();
+            this.showFeedback('pause');
+        }
+    };
+
+    const playBtn = document.getElementById('play-btn');
+    if(playBtn) playBtn.onclick = (e) => {
+        e.stopPropagation();
+        togglePlay();
+    };
+    
+    // --- The Core Show/Hide Logic ---
+    
+    this.showControls = () => {
+        this.container.classList.add('show-controls');
+        this.container.classList.remove('hide-cursor');
+        
+        // Clear existing timer
+        if (this.controlsTimeout) clearTimeout(this.controlsTimeout);
+        
+        // Decide whether to start hide timer
+        this.startHideTimer();
+    };
+    
+    this.startHideTimer = () => {
+        // DON'T hide if:
+        // 1. Video is paused
+        // 2. Settings menu is open
+        // 3. Video is buffering (optional, can check video.readyState < 3)
+        // 4. Video has ended
+        
+        if (this.video.paused || this.isSettingsOpen || this.video.ended) {
+            return; 
+        }
+        
+        this.controlsTimeout = setTimeout(() => {
+            this.hideControls();
+        }, 3000);
+    };
+    
+    this.hideControls = () => {
+        // Double check conditions before hiding
+        if (!this.video.paused && !this.isSettingsOpen && !this.video.ended) {
+            this.container.classList.remove('show-controls');
+            this.container.classList.add('hide-cursor');
+            
+            // Close settings if somehow open but flag missed (failsafe)
+            const menu = document.getElementById('settings-menu');
+            if(menu) menu.style.display = 'none';
+        }
+    };
+
+    // --- Event Listeners ---
+
+    // 1. Mouse Movement
+    this.container.addEventListener('mousemove', () => this.showControls());
+    
+    // 2. Mouse Leave -> Hide quickly if playing
+    this.container.addEventListener('mouseleave', () => {
+        if (!this.video.paused && !this.isSettingsOpen) {
+            if (this.controlsTimeout) clearTimeout(this.controlsTimeout);
+            this.controlsTimeout = setTimeout(() => this.hideControls(), 500); // Fast hide on leave
+        }
+    });
+
+    // 3. Touch Interactions
+    this.container.addEventListener('touchstart', () => this.showControls());
+    this.container.addEventListener('touchend', () => {
+        // Restart timer on touch release
+        this.startHideTimer();
+    });
+
+    // 4. Click Handling
+    this.container.addEventListener('click', (e) => {
+        // If clicking controls/menus -> Just reset timer
+        if (e.target.closest('.controls-overlay') || 
+            e.target.closest('.settings-menu') || 
+            e.target.closest('.shortcut-overlay')) {
+            this.showControls();
+            return;
+        }
+        
+        // Clicking video surface -> Toggle Play + Show Controls
+        togglePlay();
+        this.showControls();
+    });
+
+    // 5. Video State Events
+    this.video.addEventListener('play', () => {
+        this.updatePlayPauseUI();
+        this.startHideTimer();
+    });
+    
+    this.video.addEventListener('pause', () => {
+        this.updatePlayPauseUI();
+        this.showControls(); // Ensure visible when paused
+    });
+    
+    this.video.addEventListener('ended', () => {
+        this.showControls(); // Keep visible at end
+    });
+
+    // 6. Settings Menu State
+    // We need to hook into the toggle settings logic
+    // I'll wrap the existing toggleSettingsMenu to update flag
+    const originalToggleSettings = this.toggleSettingsMenu.bind(this);
+    this.toggleSettingsMenu = () => {
+        originalToggleSettings();
+        const menu = document.getElementById('settings-menu');
+        this.isSettingsOpen = (menu && menu.style.display === 'flex');
+        
+        if (this.isSettingsOpen) {
+            this.showControls(); // Ensure visible
+            if(this.controlsTimeout) clearTimeout(this.controlsTimeout); // Kill timer
+        } else {
+            this.startHideTimer();
+        }
+    };
+
+    // --- Standard Controls Setup ---
+    // (Re-bind existing buttons to use new logic if needed, 
+    // but the above general handlers cover most interactions)
+
+    const seek = (sec) => {
+        this.video.currentTime += sec;
+        this.showRipple(sec > 0 ? 'right' : 'left', sec);
+        this.showControls();
+    };
+    
+    const prev10 = document.getElementById('prev-10s-btn');
+    if(prev10) prev10.onclick = (e) => { e.stopPropagation(); seek(-10); };
+    
+    const next10 = document.getElementById('next-10s-btn');
+    if(next10) next10.onclick = (e) => { e.stopPropagation(); seek(10); };
+
+    const nextBtn = document.getElementById('next-ep-btn');
+    if(nextBtn && this.nextEpId) {
+        nextBtn.onclick = (e) => { e.stopPropagation(); window.location.href = `/watch/${this.nextEpId}`; };
+    }
+
+    const volSlider = document.getElementById('volume-slider');
+    const muteBtn = document.getElementById('mute-btn');
+    
+    if(volSlider) {
+        volSlider.oninput = (e) => {
+            this.video.volume = e.target.value;
+            this.video.muted = false;
+            this.updateVolumeUI();
+            this.showControls();
+        };
+        volSlider.onclick = (e) => e.stopPropagation();
+    }
+
+    if(muteBtn) {
+        muteBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.video.muted = !this.video.muted;
+            this.updateVolumeUI();
+            this.showFeedback(this.video.muted ? 'vol-mute' : 'vol-up');
+            this.showControls();
+        };
+    }
+
+    const fsBtn = document.getElementById('fullscreen-btn');
+    if(fsBtn) {
+        fsBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (!document.fullscreenElement) {
+                this.container.requestFullscreen();
+                this.container.classList.add('fullscreen');
+            } else {
+                document.exitFullscreen();
+                this.container.classList.remove('fullscreen');
+            }
+            this.showControls();
+        };
+    }
+
+    const setBtn = document.getElementById('settings-btn');
+    if(setBtn) {
+        setBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.toggleSettingsMenu();
+        };
+    }
+    
+    // Close settings when clicking outside (update flag)
+    document.addEventListener('click', (e) => {
+        const menu = document.getElementById('settings-menu');
+        if(menu && menu.style.display === 'flex' && !menu.contains(e.target) && e.target.id !== 'settings-btn') {
+            // It will be closed by the existing listener in initSettings or similar
+            // We just need to update our flag and timer
+            setTimeout(() => {
+                this.isSettingsOpen = false;
+                this.startHideTimer();
+            }, 50);
+        }
+    });
+
+    // Keyboard controls integration
+    document.addEventListener('keydown', (e) => {
+        this.showControls();
+        // ... existing switch case ...
+    });
+};
