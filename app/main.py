@@ -143,7 +143,7 @@ async def watch(request: Request, episode_id: str, ep: str = None):
             "servers": servers_data,
             "anime": anime_info,
             "current_ep": current_ep,
-            "next_ep_id": next_ep_id
+            "next_ep_id": next_ep_id, "episodes": episodes_data.get("episodes", [])
         }
     )
 

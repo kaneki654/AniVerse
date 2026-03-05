@@ -595,3 +595,42 @@ video {
 .player-container:not(.show-controls):not(.paused):hover {
     cursor: none;
 }
+
+/* ===== MOBILE PLAYER OPTIMIZATIONS ===== */
+
+@media (max-width: 768px) {
+    /* 1. Hide Volume Slider on Mobile */
+    #volume-slider {
+        display: none !important;
+    }
+    
+    /* 2. Settings Menu Position */
+    .settings-menu {
+        bottom: 60px !important; /* Move up slightly */
+        right: 10px !important;
+        width: 240px !important;
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+    
+    /* 3. Ensure Fullscreen Button Visible */
+    #fullscreen-btn {
+        display: flex !important;
+    }
+    
+    /* 4. Controls Spacing */
+    .controls-left {
+        gap: 10px;
+    }
+    
+    .time-display {
+        font-size: 12px;
+        margin-left: 5px;
+    }
+    
+    /* 5. Fix Player Height (Already 16/9, but ensure container fits) */
+    .video-player-wrapper {
+        width: 100%;
+        margin: 0;
+    }
+}

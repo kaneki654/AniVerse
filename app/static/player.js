@@ -23,33 +23,25 @@ class CustomPlayer {
             servers: { sub: [], dub: [], raw: [] }
         };
 
-        // Initialize controls first
         this.initControls();
+        this.initMobileGestures();
         this.initSettings();
         
-        // Initial state logic to ensure UI matches state
         this.updateVolumeUI(); 
         this.updatePlayPauseUI();
         
-        // Init Lucide
         if (window.lucide) {
             window.lucide.createIcons();
         }
 
-        // CRITICAL FIX: Ensure correct initial classes on load
-        // Wait slightly for player to init
+        // Initial Mobile Setup
         setTimeout(() => {
             if (this.container) {
-                // Default to paused state
                 this.container.classList.add('paused');
                 this.container.classList.remove('playing');
-                
-                // Default to high volume state
                 this.container.setAttribute('data-volume', 'high');
-                
-                // Show controls initially
                 this.container.classList.add('show-controls');
-                this.resetControlsTimeout();
+                if(this.resetControlsTimeout) this.resetControlsTimeout();
             }
         }, 100);
     }
@@ -123,7 +115,7 @@ class CustomPlayer {
                     this.updateQualityOptions();
                     this.showLoading(false);
                 });
-                // Error handling for 0:00 issue
+                
                 this.hls.on(Hls.Events.ERROR, (event, data) => {
                     if (data.fatal) {
                         switch (data.type) {
@@ -162,17 +154,15 @@ class CustomPlayer {
     }
 
     updatePlayPauseUI() {
-        // Toggle class on the container to control icon visibility via CSS
-        // See player.css: .player-container.paused .icon-play { display: block; }
         if (this.video.paused) {
             this.container.classList.add('paused');
             this.container.classList.remove('playing');
-            this.container.classList.add('show-controls'); // Always show controls when paused
+            this.container.classList.add('show-controls');
             if (this.controlsTimeout) clearTimeout(this.controlsTimeout);
         } else {
             this.container.classList.remove('paused');
             this.container.classList.add('playing');
-            this.resetControlsTimeout(); // Start auto-hide timer when playing
+            if(this.resetControlsTimeout) this.resetControlsTimeout();
         }
     }
 
@@ -180,7 +170,7 @@ class CustomPlayer {
         const vol = this.video.volume;
         const isMuted = this.video.muted;
         
-        let state = 'high'; // Default
+        let state = 'high';
         
         if (isMuted || vol === 0) {
             state = 'mute';
@@ -190,7 +180,6 @@ class CustomPlayer {
             state = 'high';
         }
         
-        // Update container data attribute for CSS control
         this.container.setAttribute('data-volume', state);
     }
 
@@ -209,38 +198,34 @@ class CustomPlayer {
 
         const playBtn = document.getElementById('play-btn');
         if(playBtn) playBtn.onclick = (e) => {
-            e.stopPropagation(); // Prevent container click
+            e.stopPropagation();
             togglePlay();
         };
         
-        // Show/Hide Controls Logic
         this.resetControlsTimeout = () => {
             if (this.controlsTimeout) clearTimeout(this.controlsTimeout);
             this.container.classList.add('show-controls');
             
             if (!this.video.paused) {
                 this.controlsTimeout = setTimeout(() => {
-                    this.container.classList.remove('show-controls');
-                    // Hide settings menu if open
+                    // Don't hide if settings menu is open
                     const menu = document.getElementById('settings-menu');
-                    if(menu) menu.style.display = 'none';
-                }, 3000); // Hide after 3 seconds
+                    if(menu && menu.style.display === 'flex') return;
+                    
+                    this.container.classList.remove('show-controls');
+                }, 3000);
             }
         };
 
-        // Container interactions
         this.container.addEventListener('mousemove', () => this.resetControlsTimeout());
         this.container.addEventListener('touchstart', () => this.resetControlsTimeout());
         this.container.addEventListener('click', (e) => {
-            // Ignore if clicking on controls or menus
             if (e.target.closest('.controls-overlay') || 
                 e.target.closest('.settings-menu') || 
                 e.target.closest('.shortcut-overlay')) {
                 this.resetControlsTimeout();
                 return;
             }
-            
-            // Toggle play/pause on click/tap, but also ensure controls are shown
             togglePlay();
             this.resetControlsTimeout();
         });
@@ -373,9 +358,8 @@ class CustomPlayer {
             };
             fwdBtn.onmouseup = releaseSpeed;
             fwdBtn.onmouseleave = releaseSpeed;
-            // Touch events for mobile seek hold
             fwdBtn.addEventListener('touchstart', (e) => {
-                e.preventDefault(); // Prevent click simulation
+                e.preventDefault();
                 pressTimer = setTimeout(() => {
                     this.video.playbackRate = 2.0;
                     const fb = document.getElementById('fb-speed');
@@ -454,6 +438,74 @@ class CustomPlayer {
         }
     }
 
+    initMobileGestures() {
+        let lastTap = 0;
+        let touchStartX = 0;
+        let touchStartY = 0;
+        
+        const container = this.container;
+        
+        container.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+            
+            const currentTime = Date.now();
+            const tapLength = currentTime - lastTap;
+            
+            // Double Tap Detection
+            if (tapLength < 300 && tapLength > 0) {
+                e.preventDefault();
+                const rect = container.getBoundingClientRect();
+                const relX = touchStartX - rect.left;
+                
+                if (relX < rect.width * 0.35) {
+                    this.video.currentTime -= 10;
+                    this.showRipple('left', 10);
+                } else if (relX > rect.width * 0.65) {
+                    this.video.currentTime += 10;
+                    this.showRipple('right', 10);
+                }
+            }
+            lastTap = currentTime;
+        }, { passive: false });
+        
+        // Swipe Volume
+        container.addEventListener('touchmove', (e) => {
+            const touchX = e.touches[0].clientX;
+            const touchY = e.touches[0].clientY;
+            const deltaX = touchX - touchStartX;
+            const deltaY = touchY - touchStartY;
+            
+            // Vertical Swipe Check
+            if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 20) {
+                e.preventDefault();
+                
+                const sensitivity = 0.005; // Finer control
+                // Swipe Up (Negative Y) -> Increase Volume
+                let newVol = this.video.volume - (deltaY * sensitivity);
+                newVol = Math.max(0, Math.min(1, newVol));
+                
+                this.video.volume = newVol;
+                this.video.muted = false;
+                this.updateVolumeUI();
+                
+                // Only show toast occasionally or update it
+                // this.showToast(`Volume: ${Math.round(newVol * 100)}%`);
+                
+                // Update start point
+                // touchStartY = touchY; 
+            }
+        }, { passive: false });
+        
+        // Volume toast on end
+        container.addEventListener('touchend', (e) => {
+             const touchY = e.changedTouches[0].clientY;
+             if (Math.abs(touchY - touchStartY) > 20) {
+                 this.showToast(`Volume: ${Math.round(this.video.volume * 100)}%`);
+             }
+        });
+    }
+
     showFeedback(type) {
         const id = `fb-${type}`;
         const el = document.getElementById(id);
@@ -483,15 +535,11 @@ class CustomPlayer {
     }
     
     showError(msg) {
-        // Simple error display - can be improved
         this.showToast("Error: " + msg);
-        // Also log to console
         console.error(msg);
     }
     
-    hideError() {
-        // Clear any persistent error state if needed
-    }
+    hideError() { }
 
     formatTime(s) {
         if (!s || isNaN(s)) return '0:00';

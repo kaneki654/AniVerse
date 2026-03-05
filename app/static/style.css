@@ -758,3 +758,80 @@ video {
         max-width: 240px;
     }
 }
+
+/* ===== MOBILE ENHANCEMENTS ===== */
+
+/* 1. Red Logo */
+.logo a::before, 
+.logo a::after {
+    display: none; /* Remove glitch layers */
+}
+.logo a {
+    color: #e50914 !important;
+    text-shadow: none;
+    animation: none;
+}
+
+/* 2. Episode List below player */
+.episode-list-container {
+    width: 100%;
+    max-width: 1200px;
+    margin-top: 1rem;
+    padding: 0 1rem;
+}
+
+.episode-list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    background: #1f1f1f;
+    padding: 10px;
+    border-radius: 4px;
+}
+
+.episode-scroll-area {
+    display: flex;
+    overflow-x: auto;
+    gap: 10px;
+    padding-bottom: 10px;
+    scrollbar-width: thin;
+}
+
+.ep-btn {
+    min-width: 50px;
+    height: 40px;
+    background: #333;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: bold;
+    flex-shrink: 0;
+}
+
+.ep-btn:hover, .ep-btn.active {
+    background: #e50914;
+}
+
+/* Dismissible Warning */
+.player-notice {
+    position: relative;
+    padding-right: 30px; /* Space for X button */
+}
+
+.dismiss-btn {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background: none;
+    border: none;
+    color: #ffc107;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 16px;
+    padding: 0 5px;
+}
