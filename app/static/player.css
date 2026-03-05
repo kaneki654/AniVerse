@@ -528,3 +528,25 @@ video {
 .player-container.fullscreen .icon-min {
     display: block !important;
 }
+
+/* ===== SETTINGS MENU LAYOUT FIX ===== */
+
+/* Ensure settings menu containers are always vertical (portrait) */
+.settings-main, 
+.settings-submenu {
+    display: flex;
+    flex-direction: column !important;
+    width: 100%;
+}
+
+/* Ensure menu itself is vertical */
+.settings-menu {
+    flex-direction: column !important;
+    width: 260px !important; /* Force width */
+}
+
+/* Ensure items take full width */
+.settings-item {
+    width: 100%;
+    box-sizing: border-box; /* Include padding in width */
+}
