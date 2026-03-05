@@ -1143,3 +1143,295 @@ CustomPlayer.prototype.initControls = function() {
         // ... existing switch case ...
     });
 };
+
+// ===== CRITICAL FIXES FOR DESKTOP & TIME DISPLAY =====
+
+// 1. Override initControls to fix mousemove and keydown
+CustomPlayer.prototype.initControls = function() {
+    this.controlsTimeout = null;
+    this.isSettingsOpen = false;
+
+    const togglePlay = () => {
+        if (this.video.paused) {
+            this.video.play().catch(() => {});
+            this.showFeedback('play');
+        } else {
+            this.video.pause();
+            this.showFeedback('pause');
+        }
+    };
+
+    const playBtn = document.getElementById('play-btn');
+    if(playBtn) playBtn.onclick = (e) => {
+        e.stopPropagation();
+        togglePlay();
+    };
+    
+    // Show/Hide Logic
+    this.showControls = () => {
+        this.container.classList.add('show-controls');
+        this.container.classList.remove('hide-cursor');
+        
+        if (this.controlsTimeout) clearTimeout(this.controlsTimeout);
+        this.startHideTimer();
+    };
+    
+    this.startHideTimer = () => {
+        if (this.video.paused || this.isSettingsOpen || this.video.ended) return; 
+        
+        this.controlsTimeout = setTimeout(() => {
+            if (!this.video.paused && !this.isSettingsOpen && !this.video.ended) {
+                this.container.classList.remove('show-controls');
+                this.container.classList.add('hide-cursor');
+                const menu = document.getElementById('settings-menu');
+                if(menu) menu.style.display = 'none';
+            }
+        }, 3000);
+    };
+
+    // --- FIX 3: Mouse Interactions on Container ---
+    // Attach to container, ensure overlay doesn't block (pointer-events handles overlay)
+    // But container mousemove should always fire
+    this.container.addEventListener('mousemove', () => this.showControls());
+    
+    this.container.addEventListener('mouseleave', () => {
+        if (!this.video.paused && !this.isSettingsOpen) {
+            if (this.controlsTimeout) clearTimeout(this.controlsTimeout);
+            this.controlsTimeout = setTimeout(() => {
+                 this.container.classList.remove('show-controls');
+            }, 500);
+        }
+    });
+
+    // Touch Interactions
+    this.container.addEventListener('touchstart', () => this.showControls());
+    this.container.addEventListener('touchend', () => this.startHideTimer());
+
+    // Click Handling
+    this.container.addEventListener('click', (e) => {
+        if (e.target.closest('.controls-overlay') || 
+            e.target.closest('.settings-menu') || 
+            e.target.closest('.shortcut-overlay')) {
+            this.showControls();
+            return;
+        }
+        togglePlay();
+        this.showControls();
+    });
+
+    // Video Events
+    this.video.addEventListener('play', () => {
+        this.updatePlayPauseUI();
+        this.startHideTimer();
+    });
+    
+    this.video.addEventListener('pause', () => {
+        this.updatePlayPauseUI();
+        this.showControls();
+    });
+    
+    this.video.addEventListener('ended', () => this.showControls());
+
+    // Settings Toggle Hook
+    const originalToggleSettings = this.toggleSettingsMenu.bind(this);
+    this.toggleSettingsMenu = () => {
+        originalToggleSettings();
+        const menu = document.getElementById('settings-menu');
+        this.isSettingsOpen = (menu && menu.style.display === 'flex');
+        
+        if (this.isSettingsOpen) {
+            this.showControls();
+            if(this.controlsTimeout) clearTimeout(this.controlsTimeout);
+        } else {
+            this.startHideTimer();
+        }
+    };
+
+    // --- FIX 1: Time Display & Duration ---
+    // Handle multiple time displays if any
+    const updateTimeDisplay = () => {
+        const currentTime = this.video.currentTime || 0;
+        const duration = this.video.duration || 0;
+        const text = `${this.formatTime(currentTime)} / ${this.formatTime(duration)}`;
+        
+        // Query all displays inside this player's wrapper
+        // Use document query to be safe if moved
+        document.querySelectorAll('.time-display').forEach(el => {
+            el.innerText = text;
+        });
+        
+        const bar = document.querySelector('.progress-bar');
+        if(bar) {
+            const pct = (currentTime / duration) * 100 || 0;
+            bar.style.width = `${pct}%`;
+        }
+        
+        // Helper checkSkip call
+        if(this.checkSkip) this.checkSkip();
+    };
+
+    this.video.addEventListener('timeupdate', updateTimeDisplay);
+    this.video.addEventListener('loadedmetadata', updateTimeDisplay);
+    this.video.addEventListener('durationchange', updateTimeDisplay);
+
+    // Standard Controls
+    const seek = (sec) => {
+        this.video.currentTime += sec;
+        this.showRipple(sec > 0 ? 'right' : 'left', sec);
+        this.showControls();
+    };
+    
+    const prev10 = document.getElementById('prev-10s-btn');
+    if(prev10) prev10.onclick = (e) => { e.stopPropagation(); seek(-10); };
+    
+    const next10 = document.getElementById('next-10s-btn');
+    if(next10) next10.onclick = (e) => { e.stopPropagation(); seek(10); };
+
+    const nextBtn = document.getElementById('next-ep-btn');
+    if(nextBtn && this.nextEpId) {
+        nextBtn.onclick = (e) => { e.stopPropagation(); window.location.href = `/watch/${this.nextEpId}`; };
+    }
+
+    const volSlider = document.getElementById('volume-slider');
+    const muteBtn = document.getElementById('mute-btn');
+    
+    if(volSlider) {
+        volSlider.oninput = (e) => {
+            this.video.volume = e.target.value;
+            this.video.muted = false;
+            this.updateVolumeUI();
+            this.showControls();
+        };
+        volSlider.onclick = (e) => e.stopPropagation();
+    }
+
+    if(muteBtn) {
+        muteBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.video.muted = !this.video.muted;
+            this.updateVolumeUI();
+            this.showFeedback(this.video.muted ? 'vol-mute' : 'vol-up');
+            this.showControls();
+        };
+    }
+
+    const fsBtn = document.getElementById('fullscreen-btn');
+    if(fsBtn) {
+        fsBtn.onclick = (e) => {
+            e.stopPropagation();
+            if (!document.fullscreenElement) {
+                this.container.requestFullscreen();
+                this.container.classList.add('fullscreen');
+            } else {
+                document.exitFullscreen();
+                this.container.classList.remove('fullscreen');
+            }
+            this.showControls();
+        };
+    }
+
+    const setBtn = document.getElementById('settings-btn');
+    if(setBtn) {
+        setBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.toggleSettingsMenu();
+        };
+    }
+    
+    // Close settings click outside
+    document.addEventListener('click', (e) => {
+        const menu = document.getElementById('settings-menu');
+        if(menu && menu.style.display === 'flex' && !menu.contains(e.target) && e.target.id !== 'settings-btn') {
+            setTimeout(() => {
+                this.isSettingsOpen = false;
+                this.startHideTimer();
+            }, 50);
+        }
+    });
+
+    // --- FIX 2: Desktop Shortcuts ---
+    // Attached to document, checking active element
+    document.addEventListener('keydown', (e) => {
+        if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+        if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+        this.showControls(); // Always show controls on keypress
+
+        switch(e.key.toLowerCase()) {
+            case ' ':
+            case 'k':
+                e.preventDefault();
+                togglePlay();
+                break;
+            case 'arrowright':
+            case 'l':
+                e.preventDefault();
+                seek(10);
+                break;
+            case 'arrowleft':
+            case 'j':
+                e.preventDefault();
+                seek(-10);
+                break;
+            case 'f':
+                e.preventDefault();
+                if(fsBtn) fsBtn.click();
+                break;
+            case 'm':
+                e.preventDefault();
+                if(muteBtn) muteBtn.click();
+                break;
+            case 'arrowup':
+                e.preventDefault();
+                this.video.volume = Math.min(1, this.video.volume + 0.1);
+                this.showToast(`Volume: ${Math.round(this.video.volume*100)}%`);
+                this.updateVolumeUI();
+                break;
+            case 'arrowdown':
+                e.preventDefault();
+                this.video.volume = Math.max(0, this.video.volume - 0.1);
+                this.showToast(`Volume: ${Math.round(this.video.volume*100)}%`);
+                this.updateVolumeUI();
+                break;
+            case 'n':
+                if (this.nextEpId) window.location.href = `/watch/${this.nextEpId}`;
+                break;
+            case '?':
+            case '/':
+                if (e.shiftKey || e.key === '?') {
+                    const overlay = document.getElementById('shortcut-overlay');
+                    if(overlay) overlay.classList.toggle('active');
+                }
+                break;
+            case 'escape':
+                const overlay = document.getElementById('shortcut-overlay');
+                if(overlay) overlay.classList.remove('active');
+                const menu = document.getElementById('settings-menu');
+                if(menu) menu.style.display = 'none';
+                this.isSettingsOpen = false;
+                this.startHideTimer();
+                break;
+        }
+    });
+};
+
+// Ensure checkSkip is defined on prototype if not already
+CustomPlayer.prototype.checkSkip = function() {
+    const t = this.video.currentTime;
+    const intro = document.getElementById('skip-intro');
+    const outro = document.getElementById('skip-outro');
+    
+    if (this.state.intro && t >= this.state.intro.start && t <= this.state.intro.end) {
+        intro.classList.add('visible');
+        intro.onclick = (e) => { e.stopPropagation(); this.video.currentTime = this.state.intro.end; };
+    } else {
+        intro.classList.remove('visible');
+    }
+    
+    if (this.state.outro && t >= this.state.outro.start && t <= this.state.outro.end) {
+        outro.classList.add('visible');
+        outro.onclick = (e) => { e.stopPropagation(); this.video.currentTime = this.state.outro.end; };
+    } else {
+        outro.classList.remove('visible');
+    }
+};
