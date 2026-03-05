@@ -634,3 +634,40 @@ video {
         margin: 0;
     }
 }
+
+/* ===== MOBILE OVERFLOW FIX ===== */
+@media (max-width: 768px) {
+    /* Hide redundant controls to fit screen width */
+    /* Gestures replace seek buttons */
+    #prev-10s-btn,
+    #next-10s-btn {
+        display: none !important;
+    }
+    
+    /* Episode list below replaces next button */
+    #next-ep-btn {
+        display: none !important;
+    }
+    
+    /* Settings menu contains subtitles option */
+    #subs-btn {
+        display: none !important;
+    }
+    
+    /* Further compact spacing */
+    .controls-left, .controls-right {
+        gap: 5px !important;
+    }
+    
+    /* Ensure container doesn't overflow horizontally */
+    .player-container {
+        width: 100vw;
+        max-width: 100vw;
+        overflow-x: hidden;
+    }
+    
+    /* Reset padding to ensure buttons fit */
+    .control-btn {
+        padding: 10px !important; /* Slightly smaller than 12px to be safe */
+    }
+}
