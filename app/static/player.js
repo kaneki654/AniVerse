@@ -23,6 +23,7 @@ class CustomPlayer {
             servers: { sub: [], dub: [], raw: [] }
         };
 
+        // Initialize controls first
         this.initControls();
         this.initSettings();
         
@@ -34,6 +35,23 @@ class CustomPlayer {
         if (window.lucide) {
             window.lucide.createIcons();
         }
+
+        // CRITICAL FIX: Ensure correct initial classes on load
+        // Wait slightly for player to init
+        setTimeout(() => {
+            if (this.container) {
+                // Default to paused state
+                this.container.classList.add('paused');
+                this.container.classList.remove('playing');
+                
+                // Default to high volume state
+                this.container.setAttribute('data-volume', 'high');
+                
+                // Show controls initially
+                this.container.classList.add('show-controls');
+                this.resetControlsTimeout();
+            }
+        }, 100);
     }
 
     async init(initialCategory = 'sub') {
@@ -149,9 +167,12 @@ class CustomPlayer {
         if (this.video.paused) {
             this.container.classList.add('paused');
             this.container.classList.remove('playing');
+            this.container.classList.add('show-controls'); // Always show controls when paused
+            if (this.controlsTimeout) clearTimeout(this.controlsTimeout);
         } else {
             this.container.classList.remove('paused');
             this.container.classList.add('playing');
+            this.resetControlsTimeout(); // Start auto-hide timer when playing
         }
     }
 
@@ -174,6 +195,8 @@ class CustomPlayer {
     }
 
     initControls() {
+        this.controlsTimeout = null;
+
         const togglePlay = () => {
             if (this.video.paused) {
                 this.video.play().catch(() => {});
@@ -185,12 +208,42 @@ class CustomPlayer {
         };
 
         const playBtn = document.getElementById('play-btn');
-        if(playBtn) playBtn.onclick = togglePlay;
-        
-        this.container.onclick = (e) => {
-            if (e.target.closest('.controls-overlay') || e.target.closest('.settings-menu') || e.target.closest('.shortcut-overlay')) return;
+        if(playBtn) playBtn.onclick = (e) => {
+            e.stopPropagation(); // Prevent container click
             togglePlay();
         };
+        
+        // Show/Hide Controls Logic
+        this.resetControlsTimeout = () => {
+            if (this.controlsTimeout) clearTimeout(this.controlsTimeout);
+            this.container.classList.add('show-controls');
+            
+            if (!this.video.paused) {
+                this.controlsTimeout = setTimeout(() => {
+                    this.container.classList.remove('show-controls');
+                    // Hide settings menu if open
+                    const menu = document.getElementById('settings-menu');
+                    if(menu) menu.style.display = 'none';
+                }, 3000); // Hide after 3 seconds
+            }
+        };
+
+        // Container interactions
+        this.container.addEventListener('mousemove', () => this.resetControlsTimeout());
+        this.container.addEventListener('touchstart', () => this.resetControlsTimeout());
+        this.container.addEventListener('click', (e) => {
+            // Ignore if clicking on controls or menus
+            if (e.target.closest('.controls-overlay') || 
+                e.target.closest('.settings-menu') || 
+                e.target.closest('.shortcut-overlay')) {
+                this.resetControlsTimeout();
+                return;
+            }
+            
+            // Toggle play/pause on click/tap, but also ensure controls are shown
+            togglePlay();
+            this.resetControlsTimeout();
+        });
 
         this.video.addEventListener('play', () => this.updatePlayPauseUI());
         this.video.addEventListener('pause', () => this.updatePlayPauseUI());
@@ -198,18 +251,19 @@ class CustomPlayer {
         const seek = (sec) => {
             this.video.currentTime += sec;
             this.showRipple(sec > 0 ? 'right' : 'left', sec);
+            this.resetControlsTimeout();
         };
         
         const prev10 = document.getElementById('prev-10s-btn');
-        if(prev10) prev10.onclick = () => seek(-10);
+        if(prev10) prev10.onclick = (e) => { e.stopPropagation(); seek(-10); };
         
         const next10 = document.getElementById('next-10s-btn');
-        if(next10) next10.onclick = () => seek(10);
+        if(next10) next10.onclick = (e) => { e.stopPropagation(); seek(10); };
 
         const nextBtn = document.getElementById('next-ep-btn');
         if(nextBtn) {
             if(this.nextEpId) {
-                nextBtn.onclick = () => window.location.href = `/watch/${this.nextEpId}`;
+                nextBtn.onclick = (e) => { e.stopPropagation(); window.location.href = `/watch/${this.nextEpId}`; };
             } else {
                 nextBtn.classList.add('disabled');
                 nextBtn.style.opacity = '0.5';
@@ -224,11 +278,14 @@ class CustomPlayer {
                 this.video.volume = e.target.value;
                 this.video.muted = false;
                 this.updateVolumeUI();
+                this.resetControlsTimeout();
             };
+            volSlider.onclick = (e) => e.stopPropagation();
         }
 
         if(muteBtn) {
-            muteBtn.onclick = () => {
+            muteBtn.onclick = (e) => {
+                e.stopPropagation();
                 this.video.muted = !this.video.muted;
                 this.updateVolumeUI();
                 this.showFeedback(this.video.muted ? 'vol-mute' : 'vol-up');
@@ -237,15 +294,14 @@ class CustomPlayer {
 
         const fsBtn = document.getElementById('fullscreen-btn');
         if(fsBtn) {
-            fsBtn.onclick = () => {
+            fsBtn.onclick = (e) => {
+                e.stopPropagation();
                 if (!document.fullscreenElement) {
                     this.container.requestFullscreen();
                     this.container.classList.add('fullscreen');
-                    // CSS handles icon swap via .fullscreen class
                 } else {
                     document.exitFullscreen();
                     this.container.classList.remove('fullscreen');
-                    // CSS handles icon swap via .fullscreen class
                 }
             };
         }
@@ -255,6 +311,7 @@ class CustomPlayer {
             setBtn.onclick = (e) => {
                 e.stopPropagation();
                 this.toggleSettingsMenu();
+                this.resetControlsTimeout();
             };
         }
 
@@ -265,14 +322,14 @@ class CustomPlayer {
             
             if (this.state.intro && t >= this.state.intro.start && t <= this.state.intro.end) {
                 intro.classList.add('visible');
-                intro.onclick = () => this.video.currentTime = this.state.intro.end;
+                intro.onclick = (e) => { e.stopPropagation(); this.video.currentTime = this.state.intro.end; };
             } else {
                 intro.classList.remove('visible');
             }
             
             if (this.state.outro && t >= this.state.outro.start && t <= this.state.outro.end) {
                 outro.classList.add('visible');
-                outro.onclick = () => this.video.currentTime = this.state.outro.end;
+                outro.onclick = (e) => { e.stopPropagation(); this.video.currentTime = this.state.outro.end; };
             } else {
                 outro.classList.remove('visible');
             }
@@ -291,6 +348,7 @@ class CustomPlayer {
         const progContainer = document.querySelector('.progress-container');
         if(progContainer) {
             progContainer.onclick = (e) => {
+                e.stopPropagation();
                 const rect = e.target.getBoundingClientRect();
                 const pos = (e.clientX - rect.left) / rect.width;
                 this.video.currentTime = pos * this.video.duration;
@@ -315,6 +373,16 @@ class CustomPlayer {
             };
             fwdBtn.onmouseup = releaseSpeed;
             fwdBtn.onmouseleave = releaseSpeed;
+            // Touch events for mobile seek hold
+            fwdBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // Prevent click simulation
+                pressTimer = setTimeout(() => {
+                    this.video.playbackRate = 2.0;
+                    const fb = document.getElementById('fb-speed');
+                    if(fb) fb.classList.add('visible');
+                }, 500);
+            });
+            fwdBtn.addEventListener('touchend', releaseSpeed);
         }
 
         document.addEventListener('keydown', (e) => {
@@ -374,11 +442,13 @@ class CustomPlayer {
                     if(menu) menu.style.display = 'none';
                     break;
             }
+            this.resetControlsTimeout();
         });
         
         const closeShortcuts = document.querySelector('.close-shortcuts');
         if(closeShortcuts) {
-            closeShortcuts.onclick = () => {
+            closeShortcuts.onclick = (e) => {
+                e.stopPropagation();
                 document.getElementById('shortcut-overlay').classList.remove('active');
             };
         }
@@ -633,19 +703,3 @@ class CustomPlayer {
         this.showSubmenu(null);
     }
 }
-
-// CRITICAL FIX: Ensure correct initial classes on load
-document.addEventListener('DOMContentLoaded', () => {
-    // Wait slightly for player to init
-    setTimeout(() => {
-        const container = document.querySelector('.player-container');
-        if (container) {
-            // Default to paused state
-            container.classList.add('paused');
-            container.classList.remove('playing');
-            
-            // Default to high volume state
-            container.setAttribute('data-volume', 'high');
-        }
-    }, 100);
-});

@@ -550,3 +550,48 @@ video {
     width: 100%;
     box-sizing: border-box; /* Include padding in width */
 }
+
+/* ===== MOBILE & TOUCH OPTIMIZATION ===== */
+
+/* 1. Show Controls State (for mobile/touch interactions) */
+.player-container.show-controls .controls-overlay {
+    opacity: 1 !important;
+}
+
+/* 2. Mobile Layout Adjustments */
+@media (max-width: 768px) {
+    /* Increase touch targets */
+    .control-btn {
+        padding: 12px !important; /* Larger hit area */
+    }
+    
+    /* Make volume slider larger for touch */
+    .volume-container {
+        width: 120px;
+    }
+    
+    .volume-container input {
+        height: 5px; /* Thicker slider */
+    }
+    
+    /* Adjust spacing */
+    .controls-left, .controls-right {
+        gap: 10px;
+    }
+    
+    /* Hide specific non-essential controls on small screens if needed */
+    /* Example: Hide volume text or reduce spacing */
+    
+    /* Ensure fullscreen icon is visible and accessible */
+    #fullscreen-btn {
+        margin-left: 5px;
+    }
+    
+    /* Center Play/Pause button on screen overlay? Or keep in bar? */
+    /* For now, keep in bar but make it accessible */
+}
+
+/* 3. Hide cursor when controls are hidden */
+.player-container:not(.show-controls):not(.paused):hover {
+    cursor: none;
+}
