@@ -853,3 +853,75 @@ CustomPlayer.prototype.showSubmenu = function(id) {
         submenus.forEach(el => el.style.display = 'none');
     }
 };
+
+// ===== CRITICAL FIX: OVERRIDE setupSubtitles =====
+// Replaces previous implementations with correct property mapping
+CustomPlayer.prototype.setupSubtitles = function(tracks, referer) {
+    console.log("DEBUG: setupSubtitles called with tracks:", tracks);
+    
+    // Clear existing tracks
+    Array.from(this.video.getElementsByTagName('track')).forEach(t => t.remove());
+
+    const menu = document.getElementById('settings-subs-options');
+    if(!menu) return;
+    
+    // Reset menu content
+    menu.innerHTML = `<div class="settings-item selected" onclick="player.setSubtitle('off')"><span>Off</span> <i data-lucide="check" class="check-icon"></i></div>`;
+    
+    if (!tracks || !Array.isArray(tracks) || tracks.length === 0) {
+        console.log("DEBUG: No subtitle tracks found.");
+        const msg = document.createElement('div');
+        msg.className = 'settings-item';
+        msg.style.pointerEvents = 'none';
+        msg.style.color = '#777';
+        msg.innerText = "No subtitles available";
+        menu.appendChild(msg);
+        return;
+    }
+
+    let addedCount = 0;
+    tracks.forEach(t => {
+        // Safety Check 1: Existence
+        if (!t) return;
+
+        // Map properties (API uses 'lang' and 'url', some might use 'label' and 'file')
+        const label = t.lang || t.label || "Unknown";
+        const url = t.url || t.file;
+        
+        // Safety Check 2: Skip Thumbnails
+        if (label === 'Thumbnails' || (t.kind && t.kind === 'thumbnails')) return;
+        
+        // Safety Check 3: Valid URL
+        if (!url) {
+            console.warn("DEBUG: Skipping track with no URL:", label);
+            return;
+        }
+
+        console.log("DEBUG: Adding track:", label);
+
+        const track = document.createElement('track');
+        // Standardize kind (API might use 'captions' or nothing)
+        track.kind = 'subtitles'; 
+        track.label = label;
+        
+        // Safety Check 4: srclang generation
+        if (label && label.length >= 2) {
+            track.srclang = label.substring(0, 2).toLowerCase();
+        } else {
+            track.srclang = 'en'; // fallback
+        }
+        
+        track.src = `/proxy/subtitle?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(referer)}`;
+        this.video.appendChild(track);
+        
+        const item = document.createElement('div');
+        item.className = 'settings-item';
+        item.onclick = () => this.setSubtitle(label);
+        item.innerHTML = `<span>${label}</span> <i data-lucide="check" class="check-icon"></i>`;
+        menu.appendChild(item);
+        addedCount++;
+    });
+    
+    console.log(`DEBUG: Successfully added ${addedCount} subtitle tracks.`);
+    if (window.lucide) window.lucide.createIcons();
+};
