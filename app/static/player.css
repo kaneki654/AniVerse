@@ -671,3 +671,82 @@ video {
         padding: 10px !important; /* Slightly smaller than 12px to be safe */
     }
 }
+
+/* ===== SUBTITLE MENU POLISH ===== */
+
+/* 1. Refined Menu Styling */
+.settings-menu {
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    background: rgba(20, 20, 20, 0.95);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    /* Improve transition */
+    transition: opacity 0.2s, transform 0.2s;
+    transform-origin: bottom right;
+}
+
+/* 2. Checkmark Styling */
+.check-icon {
+    color: #e50914 !important; /* Force red checkmark */
+    stroke-width: 3px;
+}
+
+.settings-item.selected span {
+    color: #fff;
+    font-weight: bold;
+}
+
+.settings-item:not(.selected) span {
+    color: #ccc;
+}
+
+/* 3. Header Styling with Chevron */
+.settings-header {
+    background: rgba(255,255,255,0.05);
+    color: #eee;
+    font-size: 14px;
+    padding: 12px 15px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.settings-header .lucide-chevron-left {
+    width: 18px;
+    height: 18px;
+    margin-right: 5px;
+}
+
+/* 4. Subtitle List Styling */
+#settings-subs-options {
+    max-height: 250px;
+    overflow-y: auto;
+    /* Custom scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: #444 transparent;
+}
+
+#settings-subs-options::-webkit-scrollbar {
+    width: 6px;
+}
+#settings-subs-options::-webkit-scrollbar-thumb {
+    background-color: #444;
+    border-radius: 3px;
+}
+
+/* Position Settings Menu correctly relative to button */
+/* Desktop */
+@media (min-width: 769px) {
+    .settings-menu {
+        bottom: 60px;
+        right: 20px; /* Aligned with right controls */
+        transform-origin: bottom right;
+    }
+}
+
+/* Mobile is already handled in previous step, but ensuring overrides work */
+@media (max-width: 768px) {
+    .settings-menu {
+        bottom: 70px !important;
+        right: 10px !important;
+    }
+}

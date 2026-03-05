@@ -757,3 +757,99 @@ class CustomPlayer {
         this.showSubmenu(null);
     }
 }
+
+// ===== DEBUGGING SNIPPET: APPEND TO END OF FILE =====
+// This will override the setupSubtitles method temporarily for debugging
+CustomPlayer.prototype.setupSubtitles = function(tracks, referer) {
+    console.log("DEBUG: setupSubtitles called with tracks:", tracks);
+    
+    // Clear existing tracks
+    Array.from(this.video.getElementsByTagName('track')).forEach(t => t.remove());
+
+    const menu = document.getElementById('settings-subs-options');
+    if(!menu) {
+        console.error("DEBUG: Subtitles menu element not found!");
+        return;
+    }
+    
+    // Reset menu content
+    menu.innerHTML = `<div class="settings-item selected" onclick="player.setSubtitle('off')"><span>Off</span> <i data-lucide="check" class="check-icon"></i></div>`;
+    
+    if (!tracks || tracks.length === 0) {
+        console.log("DEBUG: No subtitle tracks found.");
+        const msg = document.createElement('div');
+        msg.className = 'settings-item';
+        msg.style.pointerEvents = 'none';
+        msg.style.color = '#777';
+        msg.innerText = "No subtitles available";
+        menu.appendChild(msg);
+        return;
+    }
+
+    let addedCount = 0;
+    tracks.forEach(t => {
+        // Skip thumbnails
+        if (t.kind === 'thumbnails' || t.label === 'Thumbnails') return;
+        
+        // Debug each track
+        console.log("DEBUG: Processing track:", t.label, t.kind);
+
+        // Standardize kind
+        const kind = (t.kind === 'captions') ? 'captions' : 'subtitles';
+        
+        const track = document.createElement('track');
+        track.kind = kind;
+        track.label = t.label;
+        track.srclang = t.label.substring(0, 2).toLowerCase(); // basic language code guess
+        track.src = `/proxy/subtitle?url=${encodeURIComponent(t.file)}&referer=${encodeURIComponent(referer)}`;
+        this.video.appendChild(track);
+        
+        const item = document.createElement('div');
+        item.className = 'settings-item';
+        item.onclick = () => this.setSubtitle(t.label);
+        // Ensure white text, red check
+        item.innerHTML = `<span>${t.label}</span> <i data-lucide="check" class="check-icon"></i>`;
+        menu.appendChild(item);
+        addedCount++;
+    });
+    
+    console.log(`DEBUG: Added ${addedCount} subtitle tracks to menu.`);
+    
+    if (window.lucide) window.lucide.createIcons();
+};
+
+// ===== MENU UI UPDATES =====
+
+// Override showSubmenu to improve rendering
+CustomPlayer.prototype.showSubmenu = function(id) {
+    const main = document.querySelector('.settings-main');
+    const submenus = document.querySelectorAll('.settings-submenu');
+    
+    if (id) {
+        // Show specific submenu
+        main.style.display = 'none';
+        submenus.forEach(el => el.style.display = 'none');
+        
+        const target = document.getElementById(`submenu-${id}`);
+        if (target) {
+            target.style.display = 'flex';
+            
+            // Ensure header has correct icon
+            const header = target.querySelector('.settings-header');
+            if (header && !header.querySelector('.lucide-chevron-left')) {
+                const text = header.innerText.trim();
+                header.innerHTML = `<i data-lucide="chevron-left"></i> ${text}`;
+                // Re-bind click event since we replaced innerHTML
+                header.onclick = (e) => {
+                    e.stopPropagation();
+                    this.showSubmenu(null);
+                };
+                if(window.lucide) window.lucide.createIcons();
+            }
+        }
+    } else {
+        // Show main menu
+        main.style.display = 'flex';
+        submenus.forEach(el => el.style.display = 'none');
+    }
+};
