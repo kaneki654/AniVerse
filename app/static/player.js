@@ -208,7 +208,6 @@ class CustomPlayer {
             
             if (!this.video.paused) {
                 this.controlsTimeout = setTimeout(() => {
-                    // Don't hide if settings menu is open
                     const menu = document.getElementById('settings-menu');
                     if(menu && menu.style.display === 'flex') return;
                     
@@ -452,7 +451,6 @@ class CustomPlayer {
             const currentTime = Date.now();
             const tapLength = currentTime - lastTap;
             
-            // Double Tap Detection
             if (tapLength < 300 && tapLength > 0) {
                 e.preventDefault();
                 const rect = container.getBoundingClientRect();
@@ -469,35 +467,25 @@ class CustomPlayer {
             lastTap = currentTime;
         }, { passive: false });
         
-        // Swipe Volume
         container.addEventListener('touchmove', (e) => {
             const touchX = e.touches[0].clientX;
             const touchY = e.touches[0].clientY;
             const deltaX = touchX - touchStartX;
             const deltaY = touchY - touchStartY;
             
-            // Vertical Swipe Check
             if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 20) {
                 e.preventDefault();
                 
-                const sensitivity = 0.005; // Finer control
-                // Swipe Up (Negative Y) -> Increase Volume
+                const sensitivity = 0.005; 
                 let newVol = this.video.volume - (deltaY * sensitivity);
                 newVol = Math.max(0, Math.min(1, newVol));
                 
                 this.video.volume = newVol;
                 this.video.muted = false;
                 this.updateVolumeUI();
-                
-                // Only show toast occasionally or update it
-                // this.showToast(`Volume: ${Math.round(newVol * 100)}%`);
-                
-                // Update start point
-                // touchStartY = touchY; 
             }
         }, { passive: false });
         
-        // Volume toast on end
         container.addEventListener('touchend', (e) => {
              const touchY = e.changedTouches[0].clientY;
              if (Math.abs(touchY - touchStartY) > 20) {
@@ -597,14 +585,19 @@ class CustomPlayer {
     }
 
     setupSubtitles(tracks, referer) {
+        // Clear existing tracks to prevent duplication
+        Array.from(this.video.getElementsByTagName('track')).forEach(t => t.remove());
+
         const menu = document.getElementById('settings-subs-options');
         if(!menu) return;
         menu.innerHTML = `<div class="settings-item selected" onclick="player.setSubtitle('off')">Off <i data-lucide="check" class="check-icon"></i></div>`;
         
         (tracks || []).forEach(t => {
-            if(t.kind !== 'subtitles') return;
+            // Allow both 'subtitles' and 'captions'
+            if(t.kind !== 'subtitles' && t.kind !== 'captions') return;
+            
             const track = document.createElement('track');
-            track.kind = 'subtitles';
+            track.kind = 'subtitles'; // Standardize on 'subtitles' for the element
             track.label = t.label;
             track.src = `/proxy/subtitle?url=${encodeURIComponent(t.file)}&referer=${encodeURIComponent(referer)}`;
             this.video.appendChild(track);
@@ -624,6 +617,19 @@ class CustomPlayer {
         });
         const current = document.getElementById('current-subs');
         if(current) current.innerText = label;
+        
+        // Update menu selection visually
+        const menu = document.getElementById('settings-subs-options');
+        if(menu) {
+            Array.from(menu.children).forEach(item => {
+                if(item.innerText.includes(label)) {
+                    item.classList.add('selected');
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+        }
+        
         this.showSubmenu(null);
     }
     
