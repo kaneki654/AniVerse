@@ -1,6 +1,7 @@
 class CustomPlayer {
     constructor(elementId, episodeId, options = {}) {
         this.wrapper = document.getElementById(elementId);
+        if (!this.wrapper) return;
         this.container = this.wrapper.querySelector('.player-container');
         this.video = this.container.querySelector('video');
         this.episodeId = episodeId;
@@ -8,10 +9,9 @@ class CustomPlayer {
         this.options = options;
         this.nextEpId = options.nextEpId || null;
         
-        // Initial state
         this.state = {
             currentServer: null,
-            currentCategory: 'sub', // sub, dub, raw
+            currentCategory: 'sub',
             isPlaying: false,
             volume: 1,
             muted: false,
@@ -25,6 +25,15 @@ class CustomPlayer {
 
         this.initControls();
         this.initSettings();
+        
+        // Initial state logic to ensure UI matches state
+        this.updateVolumeUI(); 
+        this.updatePlayPauseUI();
+        
+        // Init Lucide
+        if (window.lucide) {
+            window.lucide.createIcons();
+        }
     }
 
     async init(initialCategory = 'sub') {
@@ -33,7 +42,6 @@ class CustomPlayer {
                 this.state.servers = this.options.servers;
             }
             
-            // Auto-select category
             if(this.state.servers[initialCategory] && this.state.servers[initialCategory].length > 0) {
                 this.state.currentCategory = initialCategory;
             } else {
@@ -45,46 +53,43 @@ class CustomPlayer {
                 }
             }
             
-            // Select first server
             if(this.state.servers[this.state.currentCategory] && this.state.servers[this.state.currentCategory].length > 0) {
                  this.state.currentServer = this.state.servers[this.state.currentCategory][0].serverName;
                  this.loadSource(this.state.currentServer, this.state.currentCategory);
             } else {
-                console.error("No servers found for any category");
+                this.showError("No servers available for this episode.");
             }
-
+            
             this.updateSettingsUI();
             this.initSpeedOptions();
         } catch(e) {
             console.error("Init error", e);
+            this.showError("Failed to initialize player.");
         }
     }
 
     async loadSource(serverName, category, startTime = 0) {
         this.showLoading(true);
-        console.log(`Loading source: ${serverName} (${category})`);
+        this.hideError();
         try {
             const url = `/api/source?episode_id=${this.episodeId}&server=${serverName}&category=${category}`;
             const resp = await fetch(url);
+            if (!resp.ok) throw new Error(`HTTP error! status: ${resp.status}`);
             const data = await resp.json();
             
-            if(!data.data || !data.data.sources) throw new Error("No sources found in API response");
+            if(!data.data || !data.data.sources) throw new Error("No sources found");
             
             const source = data.data.sources[0].url;
             const referer = data.data.headers ? data.data.headers.Referer : '';
             
-            // Store intro/outro
             this.state.intro = data.data.intro || null;
             this.state.outro = data.data.outro || null;
 
-            // Prepare Proxy URL
             let proxyUrl = `/proxy/m3u8?url=${encodeURIComponent(source)}`;
             if(referer) proxyUrl += `&referer=${encodeURIComponent(referer)}`;
 
-            // Handle Subtitles
             this.setupSubtitles(data.data.tracks || data.data.subtitles, referer);
 
-            // Load HLS
             if(Hls.isSupported()) {
                 if(this.hls) this.hls.destroy();
                 this.hls = new Hls();
@@ -93,206 +98,488 @@ class CustomPlayer {
                 
                 this.hls.on(Hls.Events.MANIFEST_PARSED, () => {
                     this.video.currentTime = startTime;
-                    this.video.play().catch(e => console.log("Autoplay blocked", e));
+                    this.video.play().catch(() => {
+                        this.state.isPlaying = false;
+                        this.updatePlayPauseUI();
+                    });
                     this.updateQualityOptions();
                     this.showLoading(false);
                 });
-                
-                this.hls.on(Hls.Events.LEVEL_SWITCHED, (e, data) => {
-                     // Could update UI here to show active auto quality
-                });
-                
+                // Error handling for 0:00 issue
                 this.hls.on(Hls.Events.ERROR, (event, data) => {
-                    console.error("HLS Error:", data);
                     if (data.fatal) {
                         switch (data.type) {
                             case Hls.ErrorTypes.NETWORK_ERROR:
+                                console.log("HLS Network error, trying to recover");
                                 this.hls.startLoad();
                                 break;
                             case Hls.ErrorTypes.MEDIA_ERROR:
+                                console.log("HLS Media error, trying to recover");
                                 this.hls.recoverMediaError();
                                 break;
                             default:
+                                console.error("HLS Fatal error", data);
                                 this.hls.destroy();
+                                this.showError("Video playback error. Please try another server.");
                                 break;
                         }
                     }
                 });
-                
             } else if (this.video.canPlayType('application/vnd.apple.mpegurl')) {
                 this.video.src = proxyUrl;
                 this.video.addEventListener('loadedmetadata', () => {
                     this.video.currentTime = startTime;
-                    this.video.play();
+                    this.video.play().catch(() => {});
                     this.showLoading(false);
+                });
+                this.video.addEventListener('error', (e) => {
+                     this.showError("Video playback error. Please try another server.");
                 });
             }
         } catch(e) {
-            console.error("Load source error", e);
+            console.error(e);
             this.showLoading(false);
+            this.showError("Failed to load video source. Please try another server.");
+        }
+    }
+
+    updatePlayPauseUI() {
+        // Toggle class on the container to control icon visibility via CSS
+        // See player.css: .player-container.paused .icon-play { display: block; }
+        if (this.video.paused) {
+            this.container.classList.add('paused');
+            this.container.classList.remove('playing');
+        } else {
+            this.container.classList.remove('paused');
+            this.container.classList.add('playing');
+        }
+    }
+
+    updateVolumeUI() {
+        const vol = this.video.volume;
+        const isMuted = this.video.muted;
+        
+        let state = 'high'; // Default
+        
+        if (isMuted || vol === 0) {
+            state = 'mute';
+        } else if (vol <= 0.5) {
+            state = 'low';
+        } else {
+            state = 'high';
+        }
+        
+        // Update container data attribute for CSS control
+        this.container.setAttribute('data-volume', state);
+    }
+
+    initControls() {
+        const togglePlay = () => {
+            if (this.video.paused) {
+                this.video.play().catch(() => {});
+                this.showFeedback('play');
+            } else {
+                this.video.pause();
+                this.showFeedback('pause');
+            }
+        };
+
+        const playBtn = document.getElementById('play-btn');
+        if(playBtn) playBtn.onclick = togglePlay;
+        
+        this.container.onclick = (e) => {
+            if (e.target.closest('.controls-overlay') || e.target.closest('.settings-menu') || e.target.closest('.shortcut-overlay')) return;
+            togglePlay();
+        };
+
+        this.video.addEventListener('play', () => this.updatePlayPauseUI());
+        this.video.addEventListener('pause', () => this.updatePlayPauseUI());
+
+        const seek = (sec) => {
+            this.video.currentTime += sec;
+            this.showRipple(sec > 0 ? 'right' : 'left', sec);
+        };
+        
+        const prev10 = document.getElementById('prev-10s-btn');
+        if(prev10) prev10.onclick = () => seek(-10);
+        
+        const next10 = document.getElementById('next-10s-btn');
+        if(next10) next10.onclick = () => seek(10);
+
+        const nextBtn = document.getElementById('next-ep-btn');
+        if(nextBtn) {
+            if(this.nextEpId) {
+                nextBtn.onclick = () => window.location.href = `/watch/${this.nextEpId}`;
+            } else {
+                nextBtn.classList.add('disabled');
+                nextBtn.style.opacity = '0.5';
+            }
+        }
+
+        const volSlider = document.getElementById('volume-slider');
+        const muteBtn = document.getElementById('mute-btn');
+        
+        if(volSlider) {
+            volSlider.oninput = (e) => {
+                this.video.volume = e.target.value;
+                this.video.muted = false;
+                this.updateVolumeUI();
+            };
+        }
+
+        if(muteBtn) {
+            muteBtn.onclick = () => {
+                this.video.muted = !this.video.muted;
+                this.updateVolumeUI();
+                this.showFeedback(this.video.muted ? 'vol-mute' : 'vol-up');
+            };
+        }
+
+        const fsBtn = document.getElementById('fullscreen-btn');
+        if(fsBtn) {
+            fsBtn.onclick = () => {
+                if (!document.fullscreenElement) {
+                    this.container.requestFullscreen();
+                    this.container.classList.add('fullscreen');
+                    // CSS handles icon swap via .fullscreen class
+                } else {
+                    document.exitFullscreen();
+                    this.container.classList.remove('fullscreen');
+                    // CSS handles icon swap via .fullscreen class
+                }
+            };
+        }
+
+        const setBtn = document.getElementById('settings-btn');
+        if(setBtn) {
+            setBtn.onclick = (e) => {
+                e.stopPropagation();
+                this.toggleSettingsMenu();
+            };
+        }
+
+        const checkSkip = () => {
+            const t = this.video.currentTime;
+            const intro = document.getElementById('skip-intro');
+            const outro = document.getElementById('skip-outro');
+            
+            if (this.state.intro && t >= this.state.intro.start && t <= this.state.intro.end) {
+                intro.classList.add('visible');
+                intro.onclick = () => this.video.currentTime = this.state.intro.end;
+            } else {
+                intro.classList.remove('visible');
+            }
+            
+            if (this.state.outro && t >= this.state.outro.start && t <= this.state.outro.end) {
+                outro.classList.add('visible');
+                outro.onclick = () => this.video.currentTime = this.state.outro.end;
+            } else {
+                outro.classList.remove('visible');
+            }
+        };
+
+        const bar = document.querySelector('.progress-bar');
+        const timeDisplay = document.querySelector('.time-display');
+        
+        this.video.ontimeupdate = () => {
+            const pct = (this.video.currentTime / this.video.duration) * 100 || 0;
+            if(bar) bar.style.width = `${pct}%`;
+            if(timeDisplay) timeDisplay.innerText = `${this.formatTime(this.video.currentTime)} / ${this.formatTime(this.video.duration)}`;
+            checkSkip();
+        };
+        
+        const progContainer = document.querySelector('.progress-container');
+        if(progContainer) {
+            progContainer.onclick = (e) => {
+                const rect = e.target.getBoundingClientRect();
+                const pos = (e.clientX - rect.left) / rect.width;
+                this.video.currentTime = pos * this.video.duration;
+            };
+        }
+
+        const fwdBtn = document.getElementById('next-10s-btn');
+        let pressTimer;
+        if(fwdBtn) {
+            fwdBtn.onmousedown = () => {
+                pressTimer = setTimeout(() => {
+                    this.video.playbackRate = 2.0;
+                    const fb = document.getElementById('fb-speed');
+                    if(fb) fb.classList.add('visible');
+                }, 500);
+            };
+            const releaseSpeed = () => {
+                clearTimeout(pressTimer);
+                this.video.playbackRate = this.state.speed;
+                const fb = document.getElementById('fb-speed');
+                if(fb) fb.classList.remove('visible');
+            };
+            fwdBtn.onmouseup = releaseSpeed;
+            fwdBtn.onmouseleave = releaseSpeed;
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+            if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+            switch(e.key.toLowerCase()) {
+                case ' ':
+                case 'k':
+                    e.preventDefault();
+                    togglePlay();
+                    break;
+                case 'arrowright':
+                case 'l':
+                    e.preventDefault();
+                    seek(10);
+                    break;
+                case 'arrowleft':
+                case 'j':
+                    e.preventDefault();
+                    seek(-10);
+                    break;
+                case 'f':
+                    e.preventDefault();
+                    if(fsBtn) fsBtn.click();
+                    break;
+                case 'm':
+                    e.preventDefault();
+                    if(muteBtn) muteBtn.click();
+                    break;
+                case 'arrowup':
+                    e.preventDefault();
+                    this.video.volume = Math.min(1, this.video.volume + 0.1);
+                    this.showToast(`Volume: ${Math.round(this.video.volume*100)}%`);
+                    this.updateVolumeUI();
+                    break;
+                case 'arrowdown':
+                    e.preventDefault();
+                    this.video.volume = Math.max(0, this.video.volume - 0.1);
+                    this.showToast(`Volume: ${Math.round(this.video.volume*100)}%`);
+                    this.updateVolumeUI();
+                    break;
+                case 'n':
+                    if (this.nextEpId) window.location.href = `/watch/${this.nextEpId}`;
+                    break;
+                case '?':
+                case '/':
+                    if (e.shiftKey || e.key === '?') {
+                        const overlay = document.getElementById('shortcut-overlay');
+                        if(overlay) overlay.classList.toggle('active');
+                    }
+                    break;
+                case 'escape':
+                    const overlay = document.getElementById('shortcut-overlay');
+                    if(overlay) overlay.classList.remove('active');
+                    const menu = document.getElementById('settings-menu');
+                    if(menu) menu.style.display = 'none';
+                    break;
+            }
+        });
+        
+        const closeShortcuts = document.querySelector('.close-shortcuts');
+        if(closeShortcuts) {
+            closeShortcuts.onclick = () => {
+                document.getElementById('shortcut-overlay').classList.remove('active');
+            };
+        }
+    }
+
+    showFeedback(type) {
+        const id = `fb-${type}`;
+        const el = document.getElementById(id);
+        if (el) {
+            el.classList.remove('animate');
+            void el.offsetWidth;
+            el.classList.add('animate');
+        }
+    }
+
+    showRipple(side, seconds) {
+        const ripple = document.getElementById(`ripple-${side}`);
+        if (ripple) {
+            ripple.classList.add('active');
+            setTimeout(() => ripple.classList.remove('active'), 500);
+        }
+    }
+
+    showToast(msg) {
+        const container = document.getElementById('toast-container');
+        if(!container) return;
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.innerText = msg;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 2000);
+    }
+    
+    showError(msg) {
+        // Simple error display - can be improved
+        this.showToast("Error: " + msg);
+        // Also log to console
+        console.error(msg);
+    }
+    
+    hideError() {
+        // Clear any persistent error state if needed
+    }
+
+    formatTime(s) {
+        if (!s || isNaN(s)) return '0:00';
+        const m = Math.floor(s / 60);
+        const sec = Math.floor(s % 60);
+        return `${m}:${sec < 10 ? '0' : ''}${sec}`;
+    }
+
+    showLoading(show) {
+        const spinner = document.querySelector('.loading-spinner');
+        if(spinner) {
+            if(show) spinner.classList.add('active');
+            else spinner.classList.remove('active');
+        }
+    }
+
+    initSettings() {
+        document.querySelectorAll('.settings-item').forEach(item => {
+            item.onclick = (e) => {
+                e.stopPropagation();
+                const target = item.dataset.target;
+                if(target) this.showSubmenu(target);
+            };
+        });
+        
+        document.querySelectorAll('.settings-header').forEach(h => {
+            h.onclick = (e) => {
+                e.stopPropagation();
+                this.showSubmenu(null);
+            }
+        });
+        
+        document.addEventListener('click', (e) => {
+            const menu = document.getElementById('settings-menu');
+            if(menu && menu.style.display === 'flex' && !menu.contains(e.target)) {
+                menu.style.display = 'none';
+            }
+        });
+    }
+
+    toggleSettingsMenu() {
+        const menu = document.getElementById('settings-menu');
+        if(!menu) return;
+        menu.style.display = menu.style.display === 'flex' ? 'none' : 'flex';
+        this.showSubmenu(null);
+    }
+
+    showSubmenu(id) {
+        document.querySelector('.settings-main').style.display = id ? 'none' : 'flex';
+        document.querySelectorAll('.settings-submenu').forEach(el => el.style.display = 'none');
+        if(id) {
+            const sub = document.getElementById(`submenu-${id}`);
+            if(sub) sub.style.display = 'flex';
         }
     }
 
     setupSubtitles(tracks, referer) {
-        // Clear old tracks from video
-        const old = this.video.querySelectorAll('track');
-        old.forEach(t => t.remove());
-
-        const subsMenu = document.getElementById('settings-subs-options');
-        // Reset menu to just "Off"
-        subsMenu.innerHTML = `<div class="settings-item selected" data-value="off"><span>Off</span> <span class="check-icon">✓</span></div>`;
-        subsMenu.children[0].onclick = () => this.setSubtitle('off');
+        const menu = document.getElementById('settings-subs-options');
+        if(!menu) return;
+        menu.innerHTML = `<div class="settings-item selected" onclick="player.setSubtitle('off')">Off <i data-lucide="check" class="check-icon"></i></div>`;
         
-        // Reset current selection text
-        document.getElementById('current-subs').innerText = 'Off';
-
-        // Check for tracks OR subtitles
-        const subtitleList = tracks || []; 
-
-        if(!subtitleList || subtitleList.length === 0) {
-            console.log("No subtitles found");
-            return;
-        }
-
-        subtitleList.forEach(track => {
-            // Filter out thumbnails
-            const label = track.label || track.lang;
-            const file = track.file || track.url;
-            const kind = track.kind || 'subtitles';
+        (tracks || []).forEach(t => {
+            if(t.kind !== 'subtitles') return;
+            const track = document.createElement('track');
+            track.kind = 'subtitles';
+            track.label = t.label;
+            track.src = `/proxy/subtitle?url=${encodeURIComponent(t.file)}&referer=${encodeURIComponent(referer)}`;
+            this.video.appendChild(track);
             
-            if(label === 'thumbnails' || kind === 'thumbnails') return;
-
-            // Create track element
-            const trackElem = document.createElement('track');
-            trackElem.kind = 'subtitles';
-            trackElem.label = label;
-            trackElem.srclang = label ? label.toLowerCase().slice(0, 2) : 'en';
-            
-            let trackUrl = `/proxy/subtitle?url=${encodeURIComponent(file)}`;
-            if(referer) trackUrl += `&referer=${encodeURIComponent(referer)}`;
-            trackElem.src = trackUrl;
-            
-            this.video.appendChild(trackElem);
-
-            // Add to settings menu
             const item = document.createElement('div');
             item.className = 'settings-item';
-            item.dataset.value = label;
-            item.innerHTML = `<span>${label}</span> <span class="check-icon">✓</span>`;
-            item.onclick = () => this.setSubtitle(label);
-            subsMenu.appendChild(item);
+            item.innerHTML = `${t.label} <i data-lucide="check" class="check-icon"></i>`;
+            item.onclick = () => this.setSubtitle(t.label);
+            menu.appendChild(item);
         });
+        if(window.lucide) window.lucide.createIcons();
     }
 
     setSubtitle(label) {
-        // Toggle tracks
-        for(let i=0; i<this.video.textTracks.length; i++) {
-            const track = this.video.textTracks[i];
-            if(label === 'off') {
-                track.mode = 'hidden';
-            } else if(track.label === label) {
-                track.mode = 'showing';
-            } else {
-                track.mode = 'hidden';
-            }
-        }
-        
-        // Update UI Selection
-        const menu = document.getElementById('settings-subs-options');
-        Array.from(menu.children).forEach(child => {
-             if(child.dataset.value === label) child.classList.add('selected');
-             else child.classList.remove('selected');
+        Array.from(this.video.textTracks).forEach(t => {
+            t.mode = t.label === label ? 'showing' : 'hidden';
         });
-        document.getElementById('current-subs').innerText = label === 'off' ? 'Off' : label;
-        
-        // Return to main menu
-        this.showSubmenu(null); 
-    }
-
-    updateQualityOptions() {
-        if(!this.hls || !this.hls.levels || this.hls.levels.length === 0) return;
-        
-        const qualityMenu = document.getElementById('settings-quality-options');
-        // Reset to Auto
-        qualityMenu.innerHTML = `<div class="settings-item selected" data-value="auto"><span>Auto</span> <span class="check-icon">✓</span></div>`;
-        qualityMenu.children[0].onclick = () => this.setQuality(-1);
-        
-        this.hls.levels.forEach((level, index) => {
-            const item = document.createElement('div');
-            item.className = 'settings-item';
-            item.dataset.value = index;
-            item.innerHTML = `<span>${level.height}p</span> <span class="check-icon">✓</span>`;
-            item.onclick = () => this.setQuality(index);
-            qualityMenu.appendChild(item);
-        });
-    }
-
-    setQuality(levelIndex) {
-        if(this.hls) {
-            this.hls.currentLevel = levelIndex;
-            
-            const menu = document.getElementById('settings-quality-options');
-            Array.from(menu.children).forEach(child => {
-                const val = child.dataset.value;
-                if(val == levelIndex || (levelIndex === -1 && val === 'auto')) {
-                    child.classList.add('selected');
-                    document.getElementById('current-quality').innerText = child.innerText.replace('✓', '').trim();
-                } else {
-                    child.classList.remove('selected');
-                }
-            });
-        }
+        const current = document.getElementById('current-subs');
+        if(current) current.innerText = label;
         this.showSubmenu(null);
     }
     
     initSpeedOptions() {
-        const speedMenu = document.getElementById('settings-speed-options');
-        speedMenu.innerHTML = '';
-        const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
-        
-        speeds.forEach(speed => {
+        const menu = document.getElementById('settings-speed-options');
+        if(!menu) return;
+        menu.innerHTML = '';
+        [0.5, 1, 1.5, 2].forEach(s => {
             const item = document.createElement('div');
             item.className = 'settings-item';
-            if(speed === 1) item.classList.add('selected');
-            item.innerHTML = `<span>${speed}x</span> <span class="check-icon">✓</span>`;
-            item.onclick = () => this.setSpeed(speed);
-            speedMenu.appendChild(item);
+            item.innerHTML = `${s}x <i data-lucide="check" class="check-icon"></i>`;
+            item.onclick = () => {
+                this.state.speed = s;
+                this.video.playbackRate = s;
+                document.getElementById('current-speed').innerText = s + 'x';
+                this.showSubmenu(null);
+            };
+            menu.appendChild(item);
         });
-    }
-
-    setSpeed(speed) {
-        this.video.playbackRate = speed;
-        
-        const menu = document.getElementById('settings-speed-options');
-        Array.from(menu.children).forEach(child => {
-            if(child.innerText.startsWith(speed + 'x')) child.classList.add('selected');
-            else child.classList.remove('selected');
-        });
-        
-        document.getElementById('current-speed').innerText = speed === 1 ? 'Normal' : speed + 'x';
-        this.showSubmenu(null);
+        if(window.lucide) window.lucide.createIcons();
     }
     
+    updateSettingsUI() {
+        const audioMenu = document.getElementById('settings-audio-options');
+        const sourceMenu = document.getElementById('settings-source-options');
+        
+        if(audioMenu) {
+            audioMenu.innerHTML = '';
+            let hasAudio = false;
+            ['sub', 'dub', 'raw'].forEach(cat => {
+                if(this.state.servers[cat] && this.state.servers[cat].length > 0) {
+                    hasAudio = true;
+                    const item = document.createElement('div');
+                    item.className = 'settings-item';
+                    if(cat === this.state.currentCategory) item.classList.add('selected');
+                    item.innerHTML = `<span>${cat.toUpperCase()}</span> <i data-lucide="check" class="check-icon"></i>`;
+                    item.onclick = () => this.setAudio(cat);
+                    audioMenu.appendChild(item);
+                }
+            });
+            if(!hasAudio) audioMenu.innerHTML = '<div class="settings-item"><span>No alternate audio</span></div>';
+        }
+
+        if(sourceMenu) {
+            sourceMenu.innerHTML = '';
+            const currentServers = this.state.servers[this.state.currentCategory] || [];
+            if(currentServers.length > 0) {
+                currentServers.forEach(server => {
+                    const item = document.createElement('div');
+                    item.className = 'settings-item';
+                    if(server.serverName === this.state.currentServer) item.classList.add('selected');
+                    item.innerHTML = `<span>${server.serverName}</span> <i data-lucide="check" class="check-icon"></i>`;
+                    item.onclick = () => this.setSource(server.serverName);
+                    sourceMenu.appendChild(item);
+                });
+                const currentSourceEl = document.getElementById('current-source');
+                if(currentSourceEl) currentSourceEl.innerText = this.state.currentServer || 'None';
+            } else {
+                sourceMenu.innerHTML = '<div class="settings-item"><span>No sources</span></div>';
+                const currentSourceEl = document.getElementById('current-source');
+                if(currentSourceEl) currentSourceEl.innerText = 'None';
+            }
+        }
+        if(window.lucide) window.lucide.createIcons();
+    }
+
     setAudio(category) {
         if(this.state.currentCategory === category) return;
-        
         const time = this.video.currentTime;
         this.state.currentCategory = category;
-        
         if(this.state.servers[category] && this.state.servers[category].length > 0) {
-            // Pick first server
             this.state.currentServer = this.state.servers[category][0].serverName;
             this.loadSource(this.state.currentServer, category, time);
-            
-            // Update UI
-            const menu = document.getElementById('settings-audio-options');
-            Array.from(menu.children).forEach(child => {
-                if(child.innerText.includes(category.toUpperCase())) child.classList.add('selected');
-                else child.classList.remove('selected');
-            });
             document.getElementById('current-audio').innerText = category.charAt(0).toUpperCase() + category.slice(1);
-            
-            // Update Source List
             this.updateSettingsUI();
         }
         this.showSubmenu(null);
@@ -300,235 +587,65 @@ class CustomPlayer {
 
     setSource(serverName) {
         if(this.state.currentServer === serverName) return;
-        
         const time = this.video.currentTime;
         this.state.currentServer = serverName;
         this.loadSource(this.state.currentServer, this.state.currentCategory, time);
-        
-        // Update UI
-        const menu = document.getElementById('settings-source-options');
-        Array.from(menu.children).forEach(child => {
-            if(child.innerText.includes(serverName)) child.classList.add('selected');
-            else child.classList.remove('selected');
-        });
         document.getElementById('current-source').innerText = serverName;
+        this.showSubmenu(null);
+        this.updateSettingsUI();
+    }
+    
+    updateQualityOptions() {
+        if(!this.hls || !this.hls.levels || this.hls.levels.length === 0) return;
+        const qualityMenu = document.getElementById('settings-quality-options');
+        if(!qualityMenu) return;
+        qualityMenu.innerHTML = `<div class="settings-item selected" data-value="auto"><span>Auto</span> <i data-lucide="check" class="check-icon"></i></div>`;
+        qualityMenu.children[0].onclick = () => this.setQuality(-1);
         
+        this.hls.levels.forEach((level, index) => {
+            const item = document.createElement('div');
+            item.className = 'settings-item';
+            item.dataset.value = index;
+            item.innerHTML = `<span>${level.height}p</span> <i data-lucide="check" class="check-icon"></i>`;
+            item.onclick = () => this.setQuality(index);
+            qualityMenu.appendChild(item);
+        });
+        if(window.lucide) window.lucide.createIcons();
+    }
+
+    setQuality(levelIndex) {
+        if(this.hls) {
+            this.hls.currentLevel = levelIndex;
+            const menu = document.getElementById('settings-quality-options');
+            if(menu) {
+                Array.from(menu.children).forEach(child => {
+                    const val = child.dataset.value;
+                    if(val == levelIndex || (levelIndex === -1 && val === 'auto')) {
+                        child.classList.add('selected');
+                        const qualEl = document.getElementById('current-quality');
+                        if(qualEl) qualEl.innerText = child.innerText.trim();
+                    } else {
+                        child.classList.remove('selected');
+                    }
+                });
+            }
+        }
         this.showSubmenu(null);
     }
-
-    initControls() {
-        // Play/Pause
-        const playBtn = document.getElementById('play-btn');
-        const playIcon = document.getElementById('play-icon');
-        
-        const iconPlay = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
-        const iconPause = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
-        
-        const togglePlay = () => {
-            if(this.video.paused) {
-                this.video.play();
-                playIcon.innerHTML = iconPause;
-            } else {
-                this.video.pause();
-                playIcon.innerHTML = iconPlay;
-            }
-        };
-        
-        playBtn.onclick = togglePlay;
-        this.video.addEventListener('click', togglePlay);
-        
-        this.video.addEventListener('play', () => { playIcon.innerHTML = iconPause; });
-        this.video.addEventListener('pause', () => { playIcon.innerHTML = iconPlay; });
-        
-        // Next Episode Button
-        const nextBtn = document.getElementById('next-ep-btn');
-        if (this.nextEpId) {
-            nextBtn.onclick = () => {
-                window.location.href = `/watch/${this.nextEpId}`;
-            };
-            nextBtn.title = "Next Episode";
-        } else {
-            nextBtn.style.opacity = '0.5';
-            nextBtn.style.cursor = 'not-allowed';
-            nextBtn.disabled = true;
-        }
-
-        // Progress Bar
-        const progressContainer = document.querySelector('.progress-container');
-        const progressBar = document.querySelector('.progress-bar');
-        const timeDisplay = document.querySelector('.time-display');
-        
-        this.video.addEventListener('timeupdate', () => {
-             if(!this.video.duration) return;
-             const percent = (this.video.currentTime / this.video.duration) * 100;
-             progressBar.style.width = `${percent}%`;
-             timeDisplay.innerText = `${this.formatTime(this.video.currentTime)} / ${this.formatTime(this.video.duration)}`;
-             
-             // Check Skip
-             this.checkSkip(this.state.intro, 'skip-intro');
-             this.checkSkip(this.state.outro, 'skip-outro');
-        });
-        
-        progressContainer.addEventListener('click', (e) => {
-            const rect = progressContainer.getBoundingClientRect();
-            const percent = (e.clientX - rect.left) / rect.width;
-            this.video.currentTime = percent * this.video.duration;
-        });
-
-        // Volume
-        const volSlider = document.getElementById('volume-slider');
-        const muteBtn = document.getElementById('mute-btn');
-        const iconVol = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>';
-        const iconMute = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>';
-        
-        volSlider.addEventListener('input', (e) => {
-            this.video.volume = e.target.value;
-            this.video.muted = false;
-            muteBtn.innerHTML = iconVol;
-        });
-        
-        muteBtn.onclick = () => {
-             this.video.muted = !this.video.muted;
-             muteBtn.innerHTML = this.video.muted ? iconMute : iconVol;
-        };
-        
-        // Fullscreen
-        document.getElementById('fullscreen-btn').onclick = () => {
-            if(!document.fullscreenElement) {
-                this.container.requestFullscreen();
-                this.container.classList.add('fullscreen');
-            } else {
-                document.exitFullscreen();
-                this.container.classList.remove('fullscreen');
-            }
-        };
-        
-        // Settings Toggle
-        document.getElementById('settings-btn').onclick = (e) => {
-             e.stopPropagation();
-             this.toggleSettingsMenu();
-        };
-
-        // Skip Buttons
-        document.getElementById('skip-intro').onclick = () => {
-             if(this.state.intro) this.video.currentTime = this.state.intro.end;
-        };
-        document.getElementById('skip-outro').onclick = () => {
-             if(this.state.outro) this.video.currentTime = this.state.outro.end;
-        };
-    }
-    
-    checkSkip(range, btnId) {
-        const btn = document.getElementById(btnId);
-        if(range && this.video.currentTime >= range.start && this.video.currentTime <= range.end) {
-            btn.classList.add('visible');
-        } else {
-            btn.classList.remove('visible');
-        }
-    }
-
-    formatTime(seconds) {
-        if(!seconds) return "0:00";
-        const m = Math.floor(seconds / 60);
-        const s = Math.floor(seconds % 60);
-        return `${m}:${s < 10 ? '0' : ''}${s}`;
-    }
-    
-    initSettings() {
-        // Main menu clicks
-        document.querySelectorAll('.settings-main .settings-item').forEach(item => {
-            item.onclick = (e) => {
-                e.stopPropagation();
-                this.showSubmenu(item.dataset.target);
-            };
-        });
-        
-        // Back buttons
-        document.querySelectorAll('.settings-header').forEach(header => {
-            header.onclick = (e) => {
-                e.stopPropagation();
-                this.showSubmenu(null); // Back to main
-            };
-        });
-        
-        // Close on click outside
-        document.addEventListener('click', (e) => {
-             const menu = document.getElementById('settings-menu');
-             const btn = document.getElementById('settings-btn');
-             if(menu && menu.style.display === 'flex' && !menu.contains(e.target) && e.target !== btn) {
-                 menu.style.display = 'none';
-             }
-        });
-    }
-
-    toggleSettingsMenu() {
-        const menu = document.getElementById('settings-menu');
-        if(menu.style.display === 'flex') {
-            menu.style.display = 'none';
-        } else {
-            menu.style.display = 'flex';
-            this.showSubmenu(null);
-        }
-    }
-    
-    showSubmenu(target) {
-        const main = document.querySelector('.settings-main');
-        const submenus = document.querySelectorAll('.settings-submenu');
-        
-        if(target) {
-            main.style.display = 'none';
-            submenus.forEach(el => el.style.display = 'none');
-            document.getElementById(`submenu-${target}`).style.display = 'flex';
-        } else {
-            main.style.display = 'flex';
-            submenus.forEach(el => el.style.display = 'none');
-        }
-    }
-    
-    updateSettingsUI() {
-        const audioMenu = document.getElementById('settings-audio-options');
-        audioMenu.innerHTML = '';
-        
-        let hasAudio = false;
-        ['sub', 'dub', 'raw'].forEach(cat => {
-            if(this.state.servers[cat] && this.state.servers[cat].length > 0) {
-                hasAudio = true;
-                const item = document.createElement('div');
-                item.className = 'settings-item';
-                if(cat === this.state.currentCategory) item.classList.add('selected');
-                item.innerHTML = `<span>${cat.toUpperCase()}</span> <span class="check-icon">✓</span>`;
-                item.onclick = () => this.setAudio(cat);
-                audioMenu.appendChild(item);
-            }
-        });
-        
-        if(!hasAudio) {
-             audioMenu.innerHTML = '<div class="settings-item"><span>No alternate audio</span></div>';
-        }
-
-        // Update Source List
-        const sourceMenu = document.getElementById('settings-source-options');
-        sourceMenu.innerHTML = '';
-        const currentServers = this.state.servers[this.state.currentCategory] || [];
-        if(currentServers.length > 0) {
-            currentServers.forEach(server => {
-                const item = document.createElement('div');
-                item.className = 'settings-item';
-                if(server.serverName === this.state.currentServer) item.classList.add('selected');
-                item.innerHTML = `<span>${server.serverName}</span> <span class="check-icon">✓</span>`;
-                item.onclick = () => this.setSource(server.serverName);
-                sourceMenu.appendChild(item);
-            });
-            document.getElementById('current-source').innerText = this.state.currentServer || 'None';
-        } else {
-            sourceMenu.innerHTML = '<div class="settings-item"><span>No sources</span></div>';
-            document.getElementById('current-source').innerText = 'None';
-        }
-    }
-    
-    showLoading(show) {
-        const spinner = document.querySelector('.loading-spinner');
-        if(show) spinner.classList.add('active');
-        else spinner.classList.remove('active');
-    }
 }
+
+// CRITICAL FIX: Ensure correct initial classes on load
+document.addEventListener('DOMContentLoaded', () => {
+    // Wait slightly for player to init
+    setTimeout(() => {
+        const container = document.querySelector('.player-container');
+        if (container) {
+            // Default to paused state
+            container.classList.add('paused');
+            container.classList.remove('playing');
+            
+            // Default to high volume state
+            container.setAttribute('data-volume', 'high');
+        }
+    }, 100);
+});
