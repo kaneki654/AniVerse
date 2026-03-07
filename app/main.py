@@ -203,10 +203,12 @@ async def watch(request: Request, episode_id: str, ep: str = None):
         name="watch.html", 
         context={
             "episode_id": full_episode_id,
+            "anime_id_from_url": anime_id,  # Guaranteed to exist
             "servers": servers_data,
             "anime": anime_info,
             "current_ep": current_ep,
-            "next_ep_id": next_ep_id, "episodes": episodes_data.get("episodes", [])
+            "next_ep_id": next_ep_id, 
+            "episodes": episodes_data.get("episodes", [])
         }
     )
 
