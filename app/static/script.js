@@ -49,3 +49,15 @@ document.addEventListener('click', (e) => {
         suggestionsList.style.display = 'none';
     }
 });
+
+// Allow pressing enter to go to full search page
+searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        const query = e.target.value.trim();
+        if (query) {
+            window.location.href = `/search?q=${encodeURIComponent(query)}`;
+        } else {
+            window.location.href = '/search';
+        }
+    }
+});

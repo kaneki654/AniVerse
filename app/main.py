@@ -42,6 +42,16 @@ async def home(request: Request):
         try:
             resp = await client.get(f"{API_BASE}/home")
             data = resp.json()
+            
+            # Deduplicate top airing animes
+            if data and "data" in data and "topAiringAnimes" in data["data"]:
+                seen = set()
+                deduped = []
+                for anime in data["data"]["topAiringAnimes"]:
+                    if anime["id"] not in seen:
+                        seen.add(anime["id"])
+                        deduped.append(anime)
+                data["data"]["topAiringAnimes"] = deduped
         except:
             data = {}
     return templates.TemplateResponse(
@@ -68,8 +78,8 @@ async def search_suggestion(q: str):
             return {"suggestions": []}
 
 
-@app.get("/anime/browse", response_class=HTMLResponse)
-async def browse(request: Request, genres: str = None, page: int = 1):
+@app.get("/search", response_class=HTMLResponse)
+async def search(request: Request, q: str = "", genres: str = None, page: int = 1):
     all_genres = [
         "Action", "Adventure", "Cars", "Comedy", "Dementia", "Demons", "Drama", "Ecchi",
         "Fantasy", "Game", "Harem", "Historical", "Horror", "Isekai", "Josei", "Kids", 
@@ -84,60 +94,44 @@ async def browse(request: Request, genres: str = None, page: int = 1):
     data = {}
     async with httpx.AsyncClient() as client:
         try:
-            # Construct API URL
-            # We try to use the search endpoint with genres.
-            # If no genres, we default to a generic search or empty query
-            
             url = f"{API_BASE}/search?page={page}"
             
-            if genres:
-                # User requested this format: ?genres=action,romance
-                url += f"&genres={genres}"
-                # If the API requires q, we might need to add it.
-                # Let's try adding a dummy q if this fails, but for now stick to user request.
-                # If API returns 400, we can't fix it from here without a working query.
-                # But maybe q="" works?
-                # url += "&q=" 
+            # Use query or fallback to empty string (which we found doesn't work well)
+            # Actually we can check if q exists
+            if q:
+                url += f"&q={q}"
             else:
-                # Fallback to show something if no genres selected
-                # searching "a" returns many results
-                url += "&q=a"
+                url += "&q="  # Or "a" if empty doesn't work, but let's try empty string with Hianime
+
+            if genres:
+                url += f"&genres={genres}"
 
             resp = await client.get(url)
+            
             if resp.status_code == 200:
                 data = resp.json()
-            else:
-                # If 400 bad request (likely missing q), try with q=""
-                if resp.status_code == 400 and genres:
-                     url += "&q="
-                     resp = await client.get(url)
-                     if resp.status_code == 200:
-                         data = resp.json()
-        except:
+            elif resp.status_code == 400 and not q:
+                # Fallback if empty query is rejected
+                fallback_url = f"{API_BASE}/search?page={page}&q=a"
+                if genres:
+                    fallback_url += f"&genres={genres}"
+                resp_fallback = await client.get(fallback_url)
+                if resp_fallback.status_code == 200:
+                    data = resp_fallback.json()
+        except Exception as e:
+            print("Search Error:", e)
             data = {}
-            
-    return templates.TemplateResponse(
-        request=request, 
-        name="browse.html", 
-        context={
-            "data": data,
-            "all_genres": all_genres, 
-            "selected_genres": selected_genres,
-            "page": page
-        }
-    )
-@app.get("/search", response_class=HTMLResponse)
-async def search(request: Request, q: str, page: int = 1):
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.get(f"{API_BASE}/search?q={q}&page={page}")
-            data = resp.json()
-        except:
-            data = {}
+
     return templates.TemplateResponse(
         request=request, 
         name="search.html", 
-        context={"data": data, "query": q, "page": page}
+        context={
+            "data": data, 
+            "query": q, 
+            "page": page,
+            "all_genres": all_genres,
+            "selected_genres": selected_genres
+        }
     )
 
 @app.get("/anime/{anime_id}", response_class=HTMLResponse)

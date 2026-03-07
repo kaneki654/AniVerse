@@ -1,11 +1,159 @@
 {% extends "base.html" %}
 
-{% block title %}Search: {{ query }} - AniVerse{% endblock %}
+{% block title %}Search & Browse Anime - AniVerse{% endblock %}
 
 {% block content %}
-<section class="search-results">
-    <h2>Search Results for "{{ query }}"</h2>
+<style>
+    .browse-results {
+        padding: 20px;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
     
+    .genre-filter {
+        margin-bottom: 30px;
+        padding: 20px;
+        background-color: #1a1a1a;
+        border-radius: 12px;
+        border: 1px solid #333;
+    }
+
+    .genre-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 15px;
+        max-height: 250px;
+        overflow-y: auto;
+    }
+
+    .genre-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 14px;
+        background-color: transparent;
+        color: #aaa;
+        border: 1px solid #444;
+        border-radius: 20px;
+        text-decoration: none;
+        font-size: 0.9em;
+        transition: all 0.2s ease;
+        cursor: pointer;
+    }
+
+    .genre-pill:hover {
+        border-color: #e50000;
+        color: #fff;
+    }
+
+    .genre-pill.selected {
+        background-color: #e50000;
+        border-color: #e50000;
+        color: #fff;
+        font-weight: 600;
+        transform: scale(1.0);
+    }
+    
+    .genre-pill.selected:active {
+        transform: scale(0.95);
+    }
+
+    .filter-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid #333;
+        padding-top: 15px;
+        margin-top: 15px;
+    }
+    
+    .selected-genres-text {
+        color: #888;
+        font-size: 0.9em;
+    }
+
+    .clear-btn {
+        display: inline-block;
+        padding: 6px 16px;
+        background-color: #333;
+        color: #ccc;
+        border-radius: 6px;
+        text-decoration: none;
+        font-size: 0.9em;
+        transition: background 0.2s;
+    }
+    
+    .clear-btn:hover {
+        background-color: #444;
+        color: #fff;
+    }
+    
+    /* Mobile styles */
+    @media (max-width: 768px) {
+        .genre-list {
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            padding-bottom: 10px;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .genre-pill {
+            flex: 0 0 auto;
+        }
+    }
+</style>
+
+<section class="browse-results">
+    <h2>{% if query %}Search Results for "{{ query }}"{% else %}Browse Anime{% endif %}</h2>
+    
+    <div class="genre-filter">
+        <div class="genre-list">
+            {% for genre in all_genres %}
+                {% set is_selected = genre in selected_genres %}
+                
+                {# Construct new query string for this genre #}
+                {% if is_selected %}
+                    {% set new_genres = selected_genres | reject("equalto", genre) | list %}
+                {% else %}
+                    {% set new_genres = selected_genres + [genre] %}
+                {% endif %}
+                
+                {% set query_string = new_genres|join(',') %}
+                
+                {# Keep query param if it exists #}
+                {% set search_param = '' %}
+                {% if query %}
+                    {% set search_param = '&q=' ~ query %}
+                {% endif %}
+
+                {% set link = '/search?genres=' ~ query_string|urlencode ~ search_param %}
+                {% if new_genres|length == 0 %}
+                    {% set link = '/search?q=' ~ query if query else '/search' %}
+                {% endif %}
+                
+                <a href="{{ link }}" 
+                   class="genre-pill {{ 'selected' if is_selected else '' }}">
+                    {{ genre }}
+                    {% if is_selected %}<span style="margin-left: 5px;">✓</span>{% endif %}
+                </a>
+            {% endfor %}
+        </div>
+        
+        <div class="filter-actions">
+            {% if selected_genres %}
+            <span class="selected-genres-text">
+                Showing results for: 
+                {% for g in selected_genres %}
+                    <span style="color: #e50000; font-weight: bold;">{{ g }}</span>{% if not loop.last %} + {% endif %}
+                {% endfor %}
+            </span>
+            <a href="/search{% if query %}?q={{ query }}{% endif %}" class="clear-btn">Clear All</a>
+            {% else %}
+            <span class="selected-genres-text">Select genres to filter results</span>
+            {% endif %}
+        </div>
+    </div>
+
     {% if data.data and data.data.animes %}
     <div class="grid">
         {% for anime in data.data.animes %}
@@ -21,18 +169,29 @@
         {% endfor %}
     </div>
 
-    <!-- Pagination (Simple) -->
+    <!-- Pagination -->
     <div class="pagination">
+        {% set genres_param = selected_genres|join(',') %}
+        {% set search_param = '&q=' ~ query if query else '' %}
+        {% set g_param = '&genres=' ~ genres_param if genres_param else '' %}
+        
         {% if data.data.currentPage > 1 %}
-        <a href="/search?q={{ query }}&page={{ data.data.currentPage - 1 }}" class="page-btn">Previous</a>
+        <a href="/search?page={{ data.data.currentPage - 1 }}{{ search_param }}{{ g_param }}" class="page-btn">Previous</a>
         {% endif %}
         
         {% if data.data.hasNextPage %}
-        <a href="/search?q={{ query }}&page={{ data.data.currentPage + 1 }}" class="page-btn">Next</a>
+        <a href="/search?page={{ data.data.currentPage + 1 }}{{ search_param }}{{ g_param }}" class="page-btn">Next</a>
         {% endif %}
     </div>
     {% else %}
-    <p>No results found.</p>
+    <div style="text-align: center; padding: 40px; color: #888;">
+        <h3>No anime found matching your selection</h3>
+        <p>Try clearing some filters or searching for something else.</p>
+        {% if selected_genres %}
+        <br>
+        <a href="/search{% if query %}?q={{ query }}{% endif %}" class="clear-btn">Clear All Filters</a>
+        {% endif %}
+    </div>
     {% endif %}
 </section>
 {% endblock %}
