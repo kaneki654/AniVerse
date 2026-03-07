@@ -108,14 +108,14 @@
     
     <div class="genre-filter">
         <div class="genre-list">
-            {% for genre in all_genres %}
-                {% set is_selected = genre in selected_genres %}
+            {% for slug, name in all_genres.items() %}
+                {% set is_selected = slug in selected_genres %}
                 
-                {# Construct new query string for this genre #}
+                {# Construct new query string for this genre using slugs #}
                 {% if is_selected %}
-                    {% set new_genres = selected_genres | reject("equalto", genre) | list %}
+                    {% set new_genres = selected_genres | reject("equalto", slug) | list %}
                 {% else %}
-                    {% set new_genres = selected_genres + [genre] %}
+                    {% set new_genres = selected_genres + [slug] %}
                 {% endif %}
                 
                 {% set query_string = new_genres|join(',') %}
@@ -133,7 +133,7 @@
                 
                 <a href="{{ link }}" 
                    class="genre-pill {{ 'selected' if is_selected else '' }}">
-                    {{ genre }}
+                    {{ name }}
                     {% if is_selected %}<span style="margin-left: 5px;">✓</span>{% endif %}
                 </a>
             {% endfor %}
@@ -142,9 +142,9 @@
         <div class="filter-actions">
             {% if selected_genres %}
             <span class="selected-genres-text">
-                Showing results for: 
+                Showing anime with ALL selected genres: 
                 {% for g in selected_genres %}
-                    <span style="color: #e50000; font-weight: bold;">{{ g }}</span>{% if not loop.last %} + {% endif %}
+                    <span style="color: #e50000; font-weight: bold;">{{ all_genres.get(g, g) }}</span>{% if not loop.last %} + {% endif %}
                 {% endfor %}
             </span>
             <a href="/search{% if query %}?q={{ query }}{% endif %}" class="clear-btn">Clear All</a>

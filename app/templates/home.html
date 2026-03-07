@@ -106,9 +106,12 @@
         
         let history = [];
         try {
-            history = JSON.parse(localStorage.getItem('aniverse_history') || '[]');
+            const raw = localStorage.getItem('aniverse_history');
+            history = raw ? JSON.parse(raw) : [];
+            if (!Array.isArray(history)) history = [];
         } catch (e) {
             console.error('Failed to parse history', e);
+            history = [];
         }
         
         // Sort by timestamp desc

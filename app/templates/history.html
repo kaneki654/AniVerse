@@ -293,8 +293,13 @@
         });
 
         function getHistory() {
-            const history = localStorage.getItem('aniverse_history');
-            return history ? JSON.parse(history) : [];
+            try {
+                const raw = localStorage.getItem('aniverse_history');
+                const history = raw ? JSON.parse(raw) : [];
+                return Array.isArray(history) ? history : [];
+            } catch (e) {
+                return [];
+            }
         }
 
         function saveHistory(history) {

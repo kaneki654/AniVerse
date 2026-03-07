@@ -80,16 +80,18 @@ async def search_suggestion(q: str):
 
 @app.get("/search", response_class=HTMLResponse)
 async def search(request: Request, q: str = "", genres: str = None, page: int = 1):
-    all_genres = [
+    all_genres_list = [
         "Action", "Adventure", "Cars", "Comedy", "Dementia", "Demons", "Drama", "Ecchi",
         "Fantasy", "Game", "Harem", "Historical", "Horror", "Isekai", "Josei", "Kids", 
         "Magic", "Martial Arts", "Mecha", "Military", "Music", "Mystery", "Parody", "Police",
         "Psychological", "Romance", "Samurai", "School", "Sci-Fi", "Seinen", "Shoujo",
         "Shounen", "Slice of Life", "Space", "Sports", "Super Power", "Supernatural", 
-        "Thriller", "Vampire"
+        "Thriller", "Vampire", "Yaoi", "Yuri", "Shoujo Ai", "Shounen Ai"
     ]
+    all_genres = {g.lower().replace(" ", "-"): g for g in all_genres_list}
     
-    selected_genres = [g.strip() for g in genres.split(',')] if genres else []
+    # genres will come in as 'action,slice-of-life'
+    selected_genres = [g.strip().lower() for g in genres.split(',')] if genres else []
     
     data = {}
     async with httpx.AsyncClient() as client:
