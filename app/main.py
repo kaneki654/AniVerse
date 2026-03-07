@@ -50,6 +50,14 @@ async def home(request: Request):
         context={"data": data}
     )
 
+@app.get("/history", response_class=HTMLResponse)
+async def history(request: Request):
+    return templates.TemplateResponse(
+        request=request, 
+        name="history.html", 
+        context={}
+    )
+
 @app.get("/search/suggestion")
 async def search_suggestion(q: str):
     async with httpx.AsyncClient() as client:
@@ -59,6 +67,65 @@ async def search_suggestion(q: str):
         except:
             return {"suggestions": []}
 
+
+@app.get("/anime/browse", response_class=HTMLResponse)
+async def browse(request: Request, genres: str = None, page: int = 1):
+    all_genres = [
+        "Action", "Adventure", "Cars", "Comedy", "Dementia", "Demons", "Drama", "Ecchi",
+        "Fantasy", "Game", "Harem", "Historical", "Horror", "Isekai", "Josei", "Kids", 
+        "Magic", "Martial Arts", "Mecha", "Military", "Music", "Mystery", "Parody", "Police",
+        "Psychological", "Romance", "Samurai", "School", "Sci-Fi", "Seinen", "Shoujo",
+        "Shounen", "Slice of Life", "Space", "Sports", "Super Power", "Supernatural", 
+        "Thriller", "Vampire"
+    ]
+    
+    selected_genres = [g.strip() for g in genres.split(',')] if genres else []
+    
+    data = {}
+    async with httpx.AsyncClient() as client:
+        try:
+            # Construct API URL
+            # We try to use the search endpoint with genres.
+            # If no genres, we default to a generic search or empty query
+            
+            url = f"{API_BASE}/search?page={page}"
+            
+            if genres:
+                # User requested this format: ?genres=action,romance
+                url += f"&genres={genres}"
+                # If the API requires q, we might need to add it.
+                # Let's try adding a dummy q if this fails, but for now stick to user request.
+                # If API returns 400, we can't fix it from here without a working query.
+                # But maybe q="" works?
+                # url += "&q=" 
+            else:
+                # Fallback to show something if no genres selected
+                # searching "a" returns many results
+                url += "&q=a"
+
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                data = resp.json()
+            else:
+                # If 400 bad request (likely missing q), try with q=""
+                if resp.status_code == 400 and genres:
+                     url += "&q="
+                     resp = await client.get(url)
+                     if resp.status_code == 200:
+                         data = resp.json()
+        except:
+            data = {}
+            
+    return templates.TemplateResponse(
+        request=request, 
+        name="browse.html", 
+        context={
+            "data": data,
+            "all_genres": all_genres, 
+            "selected_genres": selected_genres,
+            "page": page
+        }
+    )
 @app.get("/search", response_class=HTMLResponse)
 async def search(request: Request, q: str, page: int = 1):
     async with httpx.AsyncClient() as client:
@@ -200,6 +267,52 @@ async def genre(request: Request, name: str, page: int = 1):
         name="genre.html", 
         context={"data": data, "genre": name, "page": page}
     )
+
+@app.get("/anime/browse", response_class=HTMLResponse)
+async def browse(request: Request, genres: str = None, page: int = 1):
+    all_genres = [
+        "Action", "Adventure", "Cars", "Comedy", "Dementia", "Demons", "Drama", "Ecchi",
+        "Fantasy", "Game", "Harem", "Historical", "Horror", "Josei", "Kids", "Magic",
+        "Martial Arts", "Mecha", "Military", "Music", "Mystery", "Parody", "Police",
+        "Psychological", "Romance", "Samurai", "School", "Sci-Fi", "Seinen", "Shoujo",
+        "Shoujo Ai", "Shounen", "Shounen Ai", "Slice of Life", "Space", "Sports",
+        "Super Power", "Supernatural", "Thriller", "Vampire", "Yaoi", "Yuri"
+    ]
+    
+    selected_genres = [g.strip() for g in genres.split(',') if g.strip()] if genres else []
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            # Construct API URL
+            # If genres are selected, use them in search
+            # If no genres and no search query, we might want to default to something or just show empty/latest
+            
+            # The user suggested: f"{API_BASE}/search?genres={genres}&page={page}"
+            # We'll use q="" if no query is present, but here we don't have a 'q' param in the route.
+            # Assuming the API supports genres param directly on search endpoint.
+            
+            api_url = f"{API_BASE}/search?page={page}"
+            if genres:
+                api_url += f"&genres={genres}"
+            else:
+                # If no genres, maybe default to empty search or just list generic results
+                api_url += "&q=" 
+                
+            resp = await client.get(api_url)
+            data = resp.json()
+        except:
+            data = {}
+            
+    return templates.TemplateResponse(
+        request=request,
+        name="browse.html",
+        context={
+            "data": data,
+            "all_genres": all_genres,
+            "selected_genres": selected_genres
+        }
+    )
+
 
 # --- MANGA ROUTES ---
 

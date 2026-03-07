@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+
+{% block title %}Browse Anime - AniVerse{% endblock %}
+
+{% block content %}
+<style>
+    .browse-results {
+        padding: 20px;
+    }
+    
+    .genre-filter {
+        margin-bottom: 30px;
+        padding: 20px;
+        background-color: #1a1a1a;
+        border-radius: 12px;
+        border: 1px solid #333;
+    }
+
+    .genre-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 15px;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    .genre-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 14px;
+        background-color: transparent;
+        color: #aaa;
+        border: 1px solid #444;
+        border-radius: 20px;
+        text-decoration: none;
+        font-size: 0.9em;
+        transition: all 0.2s ease;
+        cursor: pointer;
+    }
+
+    .genre-pill:hover {
+        border-color: #e50000;
+        color: #fff;
+    }
+
+    .genre-pill.selected {
+        background-color: #e50000;
+        border-color: #e50000;
+        color: #fff;
+        font-weight: 600;
+        transform: scale(1.0);
+    }
+    
+    .genre-pill.selected:active {
+        transform: scale(0.95);
+    }
+
+    .filter-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid #333;
+        padding-top: 15px;
+        margin-top: 15px;
+    }
+    
+    .selected-genres-text {
+        color: #888;
+        font-size: 0.9em;
+    }
+
+    .clear-btn {
+        display: inline-block;
+        padding: 6px 16px;
+        background-color: #333;
+        color: #ccc;
+        border-radius: 6px;
+        text-decoration: none;
+        font-size: 0.9em;
+        transition: background 0.2s;
+    }
+    
+    .clear-btn:hover {
+        background-color: #444;
+        color: #fff;
+    }
+    
+    /* Mobile styles */
+    @media (max-width: 768px) {
+        .genre-list {
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            padding-bottom: 10px;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .genre-pill {
+            flex: 0 0 auto;
+        }
+    }
+</style>
+
+<section class="browse-results">
+    <h2>Browse Anime</h2>
+    
+    <div class="genre-filter">
+        <div class="genre-list">
+            {% for genre in all_genres %}
+                {% set is_selected = genre in selected_genres %}
+                
+                {# Construct new query string for this genre #}
+                {% if is_selected %}
+                    {% set new_genres = selected_genres | reject("equalto", genre) | list %}
+                {% else %}
+                    {% set new_genres = selected_genres + [genre] %}
+                {% endif %}
+                
+                {% set query_string = new_genres|join(',') %}
+                
+                <a href="/anime/browse?genres={{ query_string|urlencode }}" 
+                   class="genre-pill {{ 'selected' if is_selected else '' }}">
+                    {{ genre }}
+                    {% if is_selected %}<span style="margin-left: 5px;">✓</span>{% endif %}
+                </a>
+            {% endfor %}
+        </div>
+        
+        {% if selected_genres %}
+        <div class="filter-actions">
+            <span class="selected-genres-text">
+                Showing results for: 
+                {% for g in selected_genres %}
+                    <span style="color: #e50000; font-weight: bold;">{{ g }}</span>{% if not loop.last %} + {% endif %}
+                {% endfor %}
+            </span>
+            <a href="/anime/browse" class="clear-btn">Clear All</a>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if data.data and data.data.animes %}
+    <div class="grid">
+        {% for anime in data.data.animes %}
+        <div class="anime-card">
+            <a href="/anime/{{ anime.id }}">
+                <img src="{{ anime.poster }}" alt="{{ anime.name }}">
+                <div class="card-info">
+                    <h4>{{ anime.name }}</h4>
+                    <span class="type">{{ anime.type }}</span>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination">
+        {% set genres_param = selected_genres|join(',') %}
+        
+        {% if data.data.currentPage > 1 %}
+        <a href="/anime/browse?genres={{ genres_param }}&page={{ data.data.currentPage - 1 }}" class="page-btn">Previous</a>
+        {% endif %}
+        
+        {% if data.data.hasNextPage %}
+        <a href="/anime/browse?genres={{ genres_param }}&page={{ data.data.currentPage + 1 }}" class="page-btn">Next</a>
+        {% endif %}
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 40px; color: #888;">
+        <h3>No anime found matching your selection</h3>
+        <p>Try clearing some filters or selecting different genres.</p>
+        {% if selected_genres %}
+        <br>
+        <a href="/anime/browse" class="clear-btn">Clear All Filters</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

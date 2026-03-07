@@ -224,7 +224,12 @@
         
         const player = new CustomPlayer('player-wrapper', episodeId, {
             servers: serversData,
-            nextEpId: nextEpId
+            nextEpId: nextEpId,
+            animeId: {{ anime.id | tojson }},
+            animeTitle: {{ anime.name | tojson }},
+            animePoster: {{ anime.poster | tojson }},
+            episodeNum: {{ current_ep.number | tojson }}, 
+            episodeTitle: {{ current_ep.title | tojson }}
         });
         
         player.init('sub');

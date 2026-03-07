@@ -1,0 +1,455 @@
+{% extends "base.html" %}
+
+{% block title %}Watch History - AniVerse{% endblock %}
+
+{% block content %}
+<style>
+    #history-container {
+        padding: 20px;
+        max_width: 1200px;
+        margin: 0 auto;
+    }
+    
+    .history-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+    
+    .history-header h1 {
+        font-size: 2rem;
+        color: #fff;
+    }
+    
+    .clear-btn {
+        background-color: #e50914;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+        transition: background-color 0.2s;
+    }
+    
+    .clear-btn:hover {
+        background-color: #b20710;
+    }
+    
+    .date-group {
+        margin-bottom: 30px;
+    }
+    
+    .date-header {
+        color: #aaa;
+        font-size: 1.1rem;
+        margin-bottom: 15px;
+        border-bottom: 1px solid #333;
+        padding-bottom: 5px;
+    }
+    
+    .history-list {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    .history-item {
+        display: flex;
+        background-color: #1a1a1a;
+        border-radius: 8px;
+        overflow: hidden;
+        position: relative;
+        transition: transform 0.2s;
+    }
+    
+    .history-item:hover {
+        transform: translateY(-2px);
+        background-color: #252525;
+    }
+    
+    .history-poster {
+        width: 120px;
+        height: 180px;
+        flex-shrink: 0;
+    }
+    
+    .history-poster img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    
+    .history-info {
+        flex-grow: 1;
+        padding: 15px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    
+    .history-title {
+        font-size: 1.2rem;
+        margin: 0 0 5px 0;
+        color: #fff;
+        text-decoration: none;
+    }
+    
+    .history-title:hover {
+        text-decoration: underline;
+    }
+    
+    .history-episode {
+        color: #aaa;
+        font-size: 0.9rem;
+        margin-bottom: 10px;
+    }
+    
+    .progress-container {
+        width: 100%;
+        background-color: #333;
+        height: 4px;
+        border-radius: 2px;
+        margin-top: 10px;
+        overflow: hidden;
+    }
+    
+    .progress-bar {
+        background-color: #e50914;
+        height: 100%;
+        transition: width 0.3s ease;
+    }
+    
+    .delete-btn {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: rgba(0, 0, 0, 0.5);
+        color: #fff;
+        border: none;
+        border-radius: 50%;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.2s, background-color 0.2s;
+    }
+    
+    .history-item:hover .delete-btn {
+        opacity: 1;
+    }
+    
+    .delete-btn:hover {
+        background-color: #e50914;
+    }
+    
+    .empty-state {
+        text-align: center;
+        padding: 50px;
+        color: #aaa;
+    }
+    
+    /* Toast Notification */
+    .toast {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: #333;
+        color: #fff;
+        padding: 12px 24px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        z-index: 1000;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s;
+    }
+    
+    .toast.show {
+        opacity: 1;
+        pointer-events: auto;
+    }
+    
+    .undo-btn {
+        color: #e50914;
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-weight: bold;
+        text-transform: uppercase;
+        font-size: 0.9rem;
+    }
+
+    /* Privacy Notice */
+    .privacy-notice-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 2000;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s;
+    }
+
+    .privacy-notice-overlay.show {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .privacy-notice {
+        background: #1f1f1f;
+        padding: 30px;
+        border-radius: 8px;
+        max-width: 500px;
+        text-align: center;
+        color: #fff;
+    }
+
+    .privacy-notice h2 {
+        margin-top: 0;
+        color: #e50914;
+    }
+
+    .privacy-notice p {
+        color: #ccc;
+        line-height: 1.5;
+        margin-bottom: 20px;
+    }
+
+    .privacy-btn {
+        background-color: #e50914;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+</style>
+
+<div id="history-container">
+    <div class="history-header">
+        <h1>Watch History</h1>
+        <button id="clear-all-btn" class="clear-btn" style="display: none;">Clear All</button>
+    </div>
+    <div id="history-list-container">
+        <!-- History items will be injected here -->
+    </div>
+</div>
+
+<div id="toast" class="toast">
+    <span id="toast-message">Item removed</span>
+    <button id="undo-btn" class="undo-btn">UNDO</button>
+</div>
+
+<div id="privacy-notice" class="privacy-notice-overlay">
+    <div class="privacy-notice">
+        <h2>Privacy Notice</h2>
+        <p>
+            Your watch history is stored locally on your device (in your browser). 
+            AniVerse does not track your viewing habits or store this data on our servers.
+            Clearing your browser cache or local storage will remove your watch history.
+        </p>
+        <button id="privacy-dismiss" class="privacy-btn">Got it</button>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const historyContainer = document.getElementById('history-list-container');
+        const clearAllBtn = document.getElementById('clear-all-btn');
+        const toast = document.getElementById('toast');
+        const toastMessage = document.getElementById('toast-message');
+        const undoBtn = document.getElementById('undo-btn');
+        const privacyNotice = document.getElementById('privacy-notice');
+        const privacyDismiss = document.getElementById('privacy-dismiss');
+
+        let deletedItem = null;
+        let deleteTimeout = null;
+
+        // Privacy Notice Logic
+        const privacySeen = localStorage.getItem('aniverse_privacy_seen');
+        if (!privacySeen) {
+            privacyNotice.classList.add('show');
+        }
+
+        privacyDismiss.addEventListener('click', () => {
+            localStorage.setItem('aniverse_privacy_seen', 'true');
+            privacyNotice.classList.remove('show');
+        });
+
+        function getHistory() {
+            const history = localStorage.getItem('aniverse_history');
+            return history ? JSON.parse(history) : [];
+        }
+
+        function saveHistory(history) {
+            localStorage.setItem('aniverse_history', JSON.stringify(history));
+        }
+
+        function formatDateGroup(timestamp) {
+            const date = new Date(timestamp);
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+
+            if (date.toDateString() === today.toDateString()) {
+                return 'Today';
+            } else if (date.toDateString() === yesterday.toDateString()) {
+                return 'Yesterday';
+            } else {
+                return date.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            }
+        }
+
+        function renderHistory() {
+            const history = getHistory();
+            
+            if (history.length === 0) {
+                historyContainer.innerHTML = '<div class="empty-state"><h3>No watch history yet</h3><p>Start watching anime to see your history here.</p></div>';
+                clearAllBtn.style.display = 'none';
+                return;
+            }
+
+            clearAllBtn.style.display = 'block';
+            historyContainer.innerHTML = '';
+
+            // Sort by timestamp desc
+            history.sort((a, b) => b.timestamp - a.timestamp);
+
+            const groupedHistory = {};
+            history.forEach(item => {
+                const group = formatDateGroup(item.timestamp);
+                if (!groupedHistory[group]) {
+                    groupedHistory[group] = [];
+                }
+                groupedHistory[group].push(item);
+            });
+
+            for (const [group, items] of Object.entries(groupedHistory)) {
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'date-group';
+                
+                const groupHeader = document.createElement('div');
+                groupHeader.className = 'date-header';
+                groupHeader.textContent = group;
+                groupDiv.appendChild(groupHeader);
+
+                const listDiv = document.createElement('div');
+                listDiv.className = 'history-list';
+
+                items.forEach(item => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'history-item';
+                    
+                    // Default values if missing
+                    const poster = item.poster || '/static/placeholder.jpg';
+                    const title = item.animeTitle || 'Unknown Title';
+                    const epNum = item.episodeNumber || '?';
+                    const progress = item.progress || 0;
+                    const animeId = item.animeId || '#';
+                    const episodeId = item.episodeId || '#';
+
+                    // Construct watch URL
+                    const watchUrl = episodeId !== '#' ? `/watch/${episodeId}` : '#';
+
+                    itemDiv.innerHTML = `
+                        <div class="history-poster">
+                            <a href="${watchUrl}">
+                                <img src="${poster}" alt="${title}" loading="lazy">
+                            </a>
+                        </div>
+                        <div class="history-info">
+                            <div>
+                                <a href="${watchUrl}" class="history-title">${title}</a>
+                                <div class="history-episode">Episode ${epNum}</div>
+                            </div>
+                            <div class="progress-container">
+                                <div class="progress-bar" style="width: ${progress}%"></div>
+                            </div>
+                        </div>
+                        <button class="delete-btn" aria-label="Remove from history" data-id="${item.episodeId}">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                                <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                                <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+                            </svg>
+                        </button>
+                    `;
+                    listDiv.appendChild(itemDiv);
+                });
+
+                groupDiv.appendChild(listDiv);
+                historyContainer.appendChild(groupDiv);
+            }
+
+            // Attach event listeners to delete buttons
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const episodeId = e.currentTarget.getAttribute('data-id');
+                    deleteItem(episodeId);
+                });
+            });
+        }
+
+        function deleteItem(episodeId) {
+            const history = getHistory();
+            const index = history.findIndex(item => item.episodeId === episodeId);
+            
+            if (index !== -1) {
+                deletedItem = history[index];
+                history.splice(index, 1);
+                saveHistory(history);
+                renderHistory();
+                showToast("Item removed from history");
+            }
+        }
+
+        function showToast(message) {
+            toastMessage.textContent = message;
+            toast.classList.add('show');
+            
+            if (deleteTimeout) clearTimeout(deleteTimeout);
+            
+            deleteTimeout = setTimeout(() => {
+                toast.classList.remove('show');
+                deletedItem = null; // Clear deleted item references after timeout
+            }, 3000);
+        }
+
+        undoBtn.addEventListener('click', () => {
+            if (deletedItem) {
+                const history = getHistory();
+                history.push(deletedItem);
+                saveHistory(history);
+                renderHistory();
+                toast.classList.remove('show');
+                deletedItem = null;
+                if (deleteTimeout) clearTimeout(deleteTimeout);
+            }
+        });
+
+        clearAllBtn.addEventListener('click', () => {
+            if (confirm('Are you sure you want to clear your entire watch history?')) {
+                localStorage.removeItem('aniverse_history');
+                renderHistory();
+            }
+        });
+
+        renderHistory();
+    });
+</script>
+{% endblock %}

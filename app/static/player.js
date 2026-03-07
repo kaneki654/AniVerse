@@ -9,6 +9,15 @@ class CustomPlayer {
         this.options = options;
         this.nextEpId = options.nextEpId || null;
         
+        // History Metadata
+        this.animeId = options.animeId || null;
+        this.animeTitle = options.animeTitle || 'Unknown Anime';
+        this.animePoster = options.animePoster || null;
+        this.episodeNum = options.episodeNum || null;
+        this.episodeTitle = options.episodeTitle || '';
+        this.savedProgress = 0;
+        this.lastSaveTime = 0;
+
         this.state = {
             currentServer: null,
             currentCategory: 'sub',
@@ -48,6 +57,8 @@ class CustomPlayer {
 
     async init(initialCategory = 'sub') {
         try {
+            this.initHistory();
+            
             if(this.options.servers) {
                 this.state.servers = this.options.servers;
             }
@@ -65,7 +76,7 @@ class CustomPlayer {
             
             if(this.state.servers[this.state.currentCategory] && this.state.servers[this.state.currentCategory].length > 0) {
                  this.state.currentServer = this.state.servers[this.state.currentCategory][0].serverName;
-                 this.loadSource(this.state.currentServer, this.state.currentCategory);
+                 this.loadSource(this.state.currentServer, this.state.currentCategory, this.savedProgress);
             } else {
                 this.showError("No servers available for this episode.");
             }
@@ -151,6 +162,114 @@ class CustomPlayer {
             this.showLoading(false);
             this.showError("Failed to load video source. Please try another server.");
         }
+    }
+
+    initHistory() {
+        const history = JSON.parse(localStorage.getItem('aniverse_history') || '[]');
+        const entry = history.find(e => e.episodeId === this.episodeId);
+        
+        if (entry && entry.progress > 0) {
+            this.savedProgress = entry.progress;
+            
+            // Show toast when playback starts (once)
+            const showToastOnce = () => {
+                if(this.savedProgress > 0 && Math.abs(this.video.currentTime - this.savedProgress) < 5) {
+                     this.showResumeToast();
+                }
+                this.video.removeEventListener('canplay', showToastOnce);
+                this.video.removeEventListener('playing', showToastOnce);
+            };
+            
+            this.video.addEventListener('canplay', showToastOnce);
+            this.video.addEventListener('playing', showToastOnce);
+        }
+
+        // Save on timeupdate (throttled)
+        this.video.addEventListener('timeupdate', () => this.saveHistory());
+        
+        // Save on end
+        this.video.addEventListener('ended', () => {
+            this.forceSave = true;
+            this.saveHistory();
+        });
+        
+        // Save on leave
+        window.addEventListener('beforeunload', () => {
+             this.forceSave = true;
+             this.saveHistory();
+        });
+        
+        window.addEventListener('pagehide', () => {
+             this.forceSave = true;
+             this.saveHistory();
+        });
+    }
+
+    saveHistory() {
+        if (!this.episodeId || this.video.currentTime < 30) return;
+        
+        const now = Date.now();
+        // Throttle: save every 30s unless forced
+        if (now - this.lastSaveTime < 30000 && !this.video.ended && !this.forceSave) return;
+        
+        this.lastSaveTime = now;
+        this.forceSave = false;
+
+        let history = JSON.parse(localStorage.getItem('aniverse_history') || '[]');
+        
+        // Remove existing entry for this episode
+        history = history.filter(e => e.episodeId !== this.episodeId);
+        
+        const duration = this.video.duration || 0;
+        const progress = this.video.currentTime;
+        const completed = (duration > 0 && (progress / duration) > 0.95);
+        
+        const entry = {
+            animeId: this.animeId,
+            animeTitle: this.animeTitle,
+            animePoster: this.animePoster,
+            episodeId: this.episodeId,
+            episodeNum: this.episodeNum,
+            episodeTitle: this.episodeTitle,
+            timestamp: now,
+            progress: progress,
+            duration: duration,
+            completed: completed
+        };
+        
+        // Add to front
+        history.unshift(entry);
+        
+        // Trim to 200
+        if(history.length > 200) history = history.slice(0, 200);
+        
+        localStorage.setItem('aniverse_history', JSON.stringify(history));
+    }
+
+    showResumeToast() {
+         const timeStr = this.formatTime(this.savedProgress);
+         const container = document.getElementById('toast-container');
+         if(!container) return;
+         
+         const toast = document.createElement('div');
+         toast.className = 'toast resume-toast';
+         toast.innerHTML = `
+            <span>Resumed from ${timeStr}</span>
+            <button class="restart-btn" style="background:none; border:none; color:#FF3B30; margin-left:10px; cursor:pointer; font-weight:bold;">
+                <i data-lucide="rotate-ccw" style="width:14px; vertical-align:middle;"></i> Restart
+            </button>
+         `;
+         
+         toast.querySelector('.restart-btn').onclick = (e) => {
+             e.stopPropagation();
+             this.video.currentTime = 0;
+             this.video.play().catch(()=>{});
+             toast.remove();
+         };
+         
+         container.appendChild(toast);
+         setTimeout(() => toast.remove(), 5000);
+         if(window.lucide) window.lucide.createIcons();
     }
 
     updatePlayPauseUI() {
@@ -1434,4 +1553,161 @@ CustomPlayer.prototype.checkSkip = function() {
     } else {
         outro.classList.remove('visible');
     }
+};
+
+// --- Watch History Implementation ---
+
+CustomPlayer.prototype.initHistory = function() {
+    if (!this.options.animeId) return;
+
+    try {
+        const history = JSON.parse(localStorage.getItem('aniverse_history') || '[]');
+        const entry = history.find(item => item.episodeId === this.episodeId);
+
+        if (entry && entry.progress > 0 && !entry.completed) {
+            this.savedProgress = entry.progress;
+            
+            // Show resume toast when video is ready
+            const onCanPlay = () => {
+                if (this.savedProgress > 0) {
+                    this.video.currentTime = this.savedProgress;
+                    const mins = Math.floor(this.savedProgress / 60);
+                    const secs = Math.floor(this.savedProgress % 60);
+                    const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+                    this.showResumeToast(`Resumed from ${timeStr}`);
+                }
+                this.video.removeEventListener('canplay', onCanPlay);
+                // Also remove if playing happens
+                this.video.removeEventListener('playing', onCanPlay);
+            };
+            this.video.addEventListener('canplay', onCanPlay);
+            this.video.addEventListener('playing', onCanPlay);
+        }
+    } catch (e) {
+        console.error('Error initializing history:', e);
+    }
+
+    // Set up save triggers
+    // Throttle save to every 30s
+    this.lastSaveTime = 0;
+    this.video.addEventListener('timeupdate', () => {
+        const now = Date.now();
+        if (now - this.lastSaveTime > 30000) {
+            this.saveHistory();
+            this.lastSaveTime = now;
+        }
+    });
+
+    this.video.addEventListener('ended', () => {
+        this.saveHistory(true); // Force completed
+    });
+    
+    // Save on leave
+    window.addEventListener('beforeunload', () => this.saveHistory());
+    window.addEventListener('pagehide', () => this.saveHistory());
+};
+
+CustomPlayer.prototype.saveHistory = function(forceCompleted = false) {
+    if (!this.options.animeId || !this.video || this.video.currentTime < 30) return;
+
+    try {
+        const history = JSON.parse(localStorage.getItem('aniverse_history') || '[]');
+        
+        // Remove existing entry for this episode
+        const existingIndex = history.findIndex(item => item.episodeId === this.episodeId);
+        if (existingIndex !== -1) {
+            history.splice(existingIndex, 1);
+        }
+
+        const duration = this.video.duration || 0;
+        const progress = this.video.currentTime;
+        const isCompleted = forceCompleted || (duration > 0 && (progress / duration) > 0.95);
+
+        const entry = {
+            animeId: this.options.animeId,
+            animeTitle: this.options.animeTitle || 'Unknown Anime',
+            animePoster: this.options.animePoster || '',
+            episodeId: this.episodeId,
+            episodeNum: this.options.episodeNum || 0,
+            episodeTitle: this.options.episodeTitle || `Episode ${this.options.episodeNum}`,
+            timestamp: Date.now(),
+            progress: progress,
+            duration: duration,
+            completed: isCompleted
+        };
+
+        // Add to front
+        history.unshift(entry);
+
+        // Limit to 200
+        if (history.length > 200) {
+            history.length = 200;
+        }
+
+        localStorage.setItem('aniverse_history', JSON.stringify(history));
+    } catch (e) {
+        console.error('Error saving history:', e);
+    }
+};
+
+CustomPlayer.prototype.showResumeToast = function(message) {
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.className = 'resume-toast';
+    toast.innerHTML = `
+        <span>${message}</span>
+        <button class="restart-btn">Restart</button>
+    `;
+    
+    // Style it
+    Object.assign(toast.style, {
+        position: 'absolute',
+        bottom: '80px',
+        left: '20px',
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        color: 'white',
+        padding: '10px 20px',
+        borderRadius: '5px',
+        zIndex: '100',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        transition: 'opacity 0.5s',
+        opacity: '0'
+    });
+    
+    // Button style
+    const btn = toast.querySelector('.restart-btn');
+    Object.assign(btn.style, {
+        background: '#e50000',
+        border: 'none',
+        color: 'white',
+        padding: '5px 10px',
+        borderRadius: '3px',
+        cursor: 'pointer',
+        fontSize: '0.9em'
+    });
+    
+    this.container.appendChild(toast);
+    
+    // Animate in
+    requestAnimationFrame(() => toast.style.opacity = '1');
+    
+    // Restart action
+    btn.onclick = (e) => {
+        e.stopPropagation();
+        this.video.currentTime = 0;
+        this.savedProgress = 0;
+        this.saveHistory();
+        toast.style.opacity = '0';
+        setTimeout(() => toast.remove(), 500);
+    };
+    
+    // Auto hide
+    setTimeout(() => {
+        if (toast.parentElement) {
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 500);
+        }
+    }, 5000); 
 };
