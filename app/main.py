@@ -23,7 +23,8 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 API_BASE = "https://aniverseaniwatch.vercel.app/api/v2/hianime"
-MANGA_API_BASE = "https://api.mangadex.org"
+MANGA_API_BASE = "https://consumet-swart-nine.vercel.app/manga/mangadex"
+MANGA_PROXY = "https://consumet-swart-nine.vercel.app/manga/mangadex/proxy?url="
 DEFAULT_REFERER = "https://hianime.to/"
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
@@ -314,55 +315,28 @@ async def browse(request: Request, genres: str = None, page: int = 1):
 
 # --- MANGA ROUTES ---
 
-def process_manga_list(data):
-    """Helper to process MangaDex API response into a cleaner format."""
-    manga_list = []
-    for item in data:
-        manga_id = item.get('id')
-        attrs = item.get('attributes', {})
-        relationships = item.get('relationships', [])
-        
-        # Get title (prioritize en)
-        title = attrs.get('title', {}).get('en') or list(attrs.get('title', {}).values())[0]
-        
-        # Get cover filename
-        cover_filename = None
-        for rel in relationships:
-            if rel.get('type') == 'cover_art':
-                cover_filename = rel.get('attributes', {}).get('fileName')
-                break
-        
-        cover_url = f"https://uploads.mangadex.org/covers/{manga_id}/{cover_filename}.256.jpg" if cover_filename else "/static/placeholder.jpg"
-        
-        manga_list.append({
-            "id": manga_id,
-            "title": title,
-            "cover": cover_url,
-            "desc": attrs.get('description', {}).get('en', '')
-        })
-    return manga_list
-
 @app.get("/manga", response_class=HTMLResponse)
 async def manga_home(request: Request):
+    popular_data = []
+    latest_data = []
+    recent_data = []
+    
     async with httpx.AsyncClient() as client:
-        popular_data = []
-        latest_data = []
-        tags = []
         try:
-            # Popular Manga - ADDED availableTranslatedLanguage[]=en
-            pop_resp = await client.get(f"{MANGA_API_BASE}/manga?limit=20&order[followedCount]=desc&includes[]=cover_art&contentRating[]=safe&availableTranslatedLanguage[]=en")
+            # Featured / Popular
+            pop_resp = await client.get(f"{MANGA_API_BASE}/popular")
             if pop_resp.status_code == 200:
-                popular_data = process_manga_list(pop_resp.json().get('data', []))
+                popular_data = pop_resp.json().get('results', [])
 
-            # Latest Updates - ADDED availableTranslatedLanguage[]=en
-            latest_resp = await client.get(f"{MANGA_API_BASE}/manga?limit=20&order[latestUploadedChapter]=desc&includes[]=cover_art&contentRating[]=safe&availableTranslatedLanguage[]=en")
+            # Latest Updates
+            latest_resp = await client.get(f"{MANGA_API_BASE}/latest")
             if latest_resp.status_code == 200:
-                latest_data = process_manga_list(latest_resp.json().get('data', []))
+                latest_data = latest_resp.json().get('results', [])
                 
-            # Tags
-            tags_resp = await client.get(f"{MANGA_API_BASE}/manga/tag")
-            if tags_resp.status_code == 200:
-                tags = sorted(tags_resp.json().get('data', []), key=lambda x: x['attributes']['name']['en'])
+            # Recent Additions
+            recent_resp = await client.get(f"{MANGA_API_BASE}/recent")
+            if recent_resp.status_code == 200:
+                recent_data = recent_resp.json().get('results', [])
 
         except Exception as e:
             print(f"Manga Home Error: {e}")
@@ -373,32 +347,40 @@ async def manga_home(request: Request):
         context={
             "popular": popular_data,
             "latest": latest_data,
-            "tags": tags
+            "recent": recent_data,
+            "proxy_base": MANGA_PROXY
         }
     )
 
-@app.get("/manga/search", response_class=HTMLResponse)
-async def manga_search(request: Request, title: str = "", tag: str = None, page: int = 1):
-    limit = 20
-    offset = (page - 1) * limit
+@app.get("/manga/search/suggestion")
+async def manga_search_suggestion(q: str):
     async with httpx.AsyncClient() as client:
-        results = []
         try:
-            params = {
-                "limit": limit,
-                "offset": offset,
-                "includes[]": "cover_art",
-                "contentRating[]": "safe",
-                "availableTranslatedLanguage[]": "en" # ADDED FILTER
-            }
-            if title:
-                params["title"] = title
-            if tag:
-                params["includedTags[]"] = tag
-            
-            resp = await client.get(f"{MANGA_API_BASE}/manga", params=params)
+            url = f"{MANGA_API_BASE}/{q}"
+            resp = await client.get(url)
             if resp.status_code == 200:
-                results = process_manga_list(resp.json().get('data', []))
+                # We can just return the raw results from Consumet
+                return resp.json()
+        except:
+            return {"results": []}
+    return {"results": []}
+
+@app.get("/manga/proxy")
+async def basic_manga_proxy(url: str):
+    from fastapi.responses import RedirectResponse
+    # Quick proxy for JS suggestions
+    proxy_url = MANGA_PROXY + url
+    return RedirectResponse(proxy_url)
+
+@app.get("/manga/search", response_class=HTMLResponse)
+async def manga_search(request: Request, q: str = "", page: int = 1):
+    results = []
+    async with httpx.AsyncClient() as client:
+        try:
+            url = f"{MANGA_API_BASE}/{q}?page={page}"
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                results = resp.json().get('results', [])
         except Exception as e:
             print(f"Manga Search Error: {e}")
 
@@ -407,94 +389,20 @@ async def manga_search(request: Request, title: str = "", tag: str = None, page:
         name="manga_search.html",
         context={
             "results": results,
-            "query": title,
+            "query": q,
             "page": page,
-            "tag": tag
+            "proxy_base": MANGA_PROXY
         }
     )
 
 @app.get("/manga/{manga_id}", response_class=HTMLResponse)
 async def manga_detail(request: Request, manga_id: str):
+    manga_info = {}
     async with httpx.AsyncClient() as client:
-        manga_info = {}
-        chapters = []
-        has_english = False
-        
         try:
-            # Add delay to prevent rate limits
-            await asyncio.sleep(0.2)
-            
-            # Manga Info
-            resp = await client.get(f"{MANGA_API_BASE}/manga/{manga_id}?includes[]=author&includes[]=artist&includes[]=cover_art")
+            resp = await client.get(f"{MANGA_API_BASE}/info?id={manga_id}")
             if resp.status_code == 200:
-                data = resp.json().get('data', {})
-                attrs = data.get('attributes', {})
-                rels = data.get('relationships', [])
-                
-                cover = next((r for r in rels if r['type'] == 'cover_art'), {})
-                cover_file = cover.get('attributes', {}).get('fileName')
-                cover_url = f"https://uploads.mangadex.org/covers/{manga_id}/{cover_file}" if cover_file else ""
-                
-                author = next((r for r in rels if r['type'] == 'author'), {})
-                author_name = author.get('attributes', {}).get('name', 'Unknown')
-
-                manga_info = {
-                    "id": data.get('id'),
-                    "title": attrs.get('title', {}).get('en') or list(attrs.get('title', {}).values())[0],
-                    "desc": attrs.get('description', {}).get('en', ''),
-                    "cover": cover_url,
-                    "author": author_name,
-                    "status": attrs.get('status'),
-                    "year": attrs.get('year'),
-                    "tags": [t['attributes']['name']['en'] for t in attrs.get('tags', [])]
-                }
-
-            # Chapters - Fetch English feed
-            await asyncio.sleep(0.3) # Increased delay slightly
-            feed_resp = await client.get(f"{MANGA_API_BASE}/manga/{manga_id}/feed?translatedLanguage[]=en&order[chapter]=desc&limit=500&includes[]=scanlation_group")
-            
-            if feed_resp.status_code == 200:
-                feed_data = feed_resp.json().get('data', [])
-                
-                processed_chapters = []
-                seen_chapters = set()
-                
-                if feed_data:
-                    has_english = True
-                    for ch in feed_data:
-                        attrs = ch.get('attributes', {})
-                        ch_num = attrs.get('chapter')
-                        
-                        # Handle oneshots or nulls
-                        if ch_num is None:
-                            ch_num_key = "oneshot_" + ch['id']
-                        else:
-                            ch_num_key = ch_num
-                            
-                        # Deduplication
-                        if ch_num_key in seen_chapters and ch_num is not None:
-                            continue
-                        
-                        if ch_num is not None:
-                            seen_chapters.add(ch_num_key)
-                            
-                        group_name = "Unknown Group"
-                        for rel in ch.get('relationships', []):
-                            if rel['type'] == 'scanlation_group':
-                                group_name = rel.get('attributes', {}).get('name')
-                                break
-
-                        processed_chapters.append({
-                            "id": ch.get('id'),
-                            "chapter": ch_num,
-                            "volume": attrs.get('volume'),
-                            "title": attrs.get('title'),
-                            "group": group_name,
-                            "date": attrs.get('publishAt', '').split('T')[0]
-                        })
-                    
-                    chapters = processed_chapters
-
+                manga_info = resp.json()
         except Exception as e:
             print(f"Manga Detail Error: {e}")
 
@@ -503,70 +411,42 @@ async def manga_detail(request: Request, manga_id: str):
         name="manga_detail.html",
         context={
             "manga": manga_info,
-            "chapters": chapters,
-            "has_english": has_english
+            "chapters": manga_info.get('chapters', []),
+            "has_english": len(manga_info.get('chapters', [])) > 0,
+            "proxy_base": MANGA_PROXY
         }
     )
 
-@app.get("/manga/read/{chapter_id}", response_class=HTMLResponse)
-async def manga_read(request: Request, chapter_id: str):
+@app.get("/manga/read/{manga_id}/{chapter_id}", response_class=HTMLResponse)
+async def manga_read(request: Request, manga_id: str, chapter_id: str):
     pages = []
-    chapter_info = {}
+    manga_info = {}
+    current_chapter = None
     next_chapter = None
     prev_chapter = None
     
     async with httpx.AsyncClient() as client:
         try:
-            # 1. Get Chapter Pages (At-Home Server)
-            resp = await client.get(f"{MANGA_API_BASE}/at-home/server/{chapter_id}")
-            if resp.status_code == 200:
-                data = resp.json()
-                base_url = data.get('baseUrl')
-                chapter_hash = data.get('chapter', {}).get('hash')
-                filenames = data.get('chapter', {}).get('data', [])
+            # Get pages
+            read_resp = await client.get(f"{MANGA_API_BASE}/read?chapterId={chapter_id}")
+            if read_resp.status_code == 200:
+                pages = read_resp.json()
                 
-                # Use proxy URL for images
-                pages = [f"/proxy/manga-page?url={quote(f'{base_url}/data/{chapter_hash}/{fn}')}" for fn in filenames]
-
-            # 2. Get Chapter Info
-            ch_resp = await client.get(f"{MANGA_API_BASE}/chapter/{chapter_id}?includes[]=manga")
-            if ch_resp.status_code == 200:
-                ch_data = ch_resp.json().get('data', {})
-                attrs = ch_data.get('attributes', {})
-                chapter_info = {
-                    "title": attrs.get('title'),
-                    "chapter": attrs.get('chapter'),
-                    "manga_id": next((r['id'] for r in ch_data.get('relationships', []) if r['type'] == 'manga'), None)
-                }
+            # Get info for navigation
+            info_resp = await client.get(f"{MANGA_API_BASE}/info?id={manga_id}")
+            if info_resp.status_code == 200:
+                manga_info = info_resp.json()
+                chapters = manga_info.get('chapters', [])
                 
-                # 3. Find Neighbors
-                if chapter_info["manga_id"]:
-                    await asyncio.sleep(0.2) # Small delay
-                    feed_resp = await client.get(f"{MANGA_API_BASE}/manga/{chapter_info['manga_id']}/feed?translatedLanguage[]=en&order[chapter]=asc&limit=500")
-                    if feed_resp.status_code == 200:
-                        all_chapters = feed_resp.json().get('data', [])
-                        
-                        unique_chapters = []
-                        seen = set()
-                        for ch in all_chapters:
-                            num = ch['attributes']['chapter']
-                            if num and num not in seen:
-                                seen.add(num)
-                                unique_chapters.append(ch)
-                            elif num is None:
-                                unique_chapters.append(ch)
-
-                        curr_idx = -1
-                        for i, ch in enumerate(unique_chapters):
-                            if ch['id'] == chapter_id or (ch['attributes']['chapter'] == chapter_info['chapter'] and chapter_info['chapter'] is not None):
-                                curr_idx = i
-                                break
-                        
-                        if curr_idx != -1:
-                            if curr_idx > 0:
-                                prev_chapter = unique_chapters[curr_idx - 1]['id']
-                            if curr_idx < len(unique_chapters) - 1:
-                                next_chapter = unique_chapters[curr_idx + 1]['id']
+                # Consumet returns chapters usually in descending order
+                for i, ch in enumerate(chapters):
+                    if ch.get('id') == chapter_id:
+                        current_chapter = ch
+                        if i > 0:
+                            next_chapter = chapters[i-1].get('id')  # Newer chapter is before it in desc order
+                        if i < len(chapters) - 1:
+                            prev_chapter = chapters[i+1].get('id')  # Older chapter is after it
+                        break
 
         except Exception as e:
             print(f"Manga Read Error: {e}")
@@ -575,181 +455,13 @@ async def manga_read(request: Request, chapter_id: str):
         request=request,
         name="manga_read.html",
         context={
+            "manga_id": manga_id,
+            "chapter_id": chapter_id,
             "pages": pages,
-            "info": chapter_info,
-            "next_id": next_chapter,
-            "prev_id": prev_chapter
+            "manga_info": manga_info,
+            "chapter_info": current_chapter or {},
+            "next_chapter": next_chapter,
+            "prev_chapter": prev_chapter,
+            "proxy_base": MANGA_PROXY
         }
     )
-
-@app.get("/manga/search/suggestion")
-async def manga_search_suggestion_proxy(q: str):
-    async with httpx.AsyncClient() as client:
-        try:
-            params = {
-                "title": q,
-                "limit": 6,
-                "includes[]": "cover_art",
-                "contentRating[]": "safe",
-                "availableTranslatedLanguage[]": "en" # ADDED FILTER
-            }
-            resp = await client.get(f"{MANGA_API_BASE}/manga", params=params)
-            if resp.status_code == 200:
-                raw_data = resp.json().get('data', [])
-                results = []
-                for item in raw_data:
-                    manga_id = item.get('id')
-                    attrs = item.get('attributes', {})
-                    relationships = item.get('relationships', [])
-                    
-                    title = attrs.get('title', {}).get('en') or list(attrs.get('title', {}).values())[0]
-                    
-                    cover_filename = None
-                    for rel in relationships:
-                        if rel.get('type') == 'cover_art':
-                            cover_filename = rel.get('attributes', {}).get('fileName')
-                            break
-                    
-                    cover_url = f"https://uploads.mangadex.org/covers/{manga_id}/{cover_filename}.256.jpg" if cover_filename else "/static/placeholder.jpg"
-                    
-                    tags = [t['attributes']['name']['en'] for t in attrs.get('tags', [])]
-                    
-                    results.append({
-                        "id": manga_id,
-                        "title": title,
-                        "cover": cover_url,
-                        "status": attrs.get('status'),
-                        "tags": tags
-                    })
-                return {"results": results}
-        except Exception as e:
-            print(f"Manga Suggestion Error: {e}")
-            return {"results": []}
-
-# --- PROXY ENDPOINTS ---
-
-@app.get("/proxy/manga-page")
-async def proxy_manga_page(url: str):
-    if not url: return Response(status_code=400)
-    
-    clean_url = unquote(url)
-    headers = {
-        "User-Agent": USER_AGENT,
-        "Referer": "https://mangadex.org/",
-        "Origin": "https://mangadex.org/"
-    }
-
-    async with httpx.AsyncClient(verify=False, follow_redirects=True) as client:
-        try:
-            resp = await client.get(clean_url, headers=headers)
-            if resp.status_code != 200:
-                return Response(status_code=resp.status_code)
-            
-            return Response(content=resp.content, media_type="image/jpeg")
-        except:
-            return Response(status_code=500)
-
-@app.get("/proxy/m3u8")
-async def proxy_m3u8(url: str, referer: str = None):
-    if not url: return Response(status_code=400)
-    
-    clean_url = unquote(url)
-    headers = get_proxy_headers(referer)
-
-    async with httpx.AsyncClient(verify=False, follow_redirects=True) as client:
-        try:
-            resp = await client.get(clean_url, headers=headers)
-            if resp.status_code != 200:
-                # print(f"Proxy M3U8 Error {resp.status_code}: {clean_url}")
-                return Response(status_code=resp.status_code)
-
-            content = resp.text
-            base_url = str(resp.url)
-            
-            def resolve_url(relative_url):
-                return urljoin(base_url, relative_url)
-
-            # Rewrite Key URIs
-            def replace_key(match):
-                original_key_url = match.group(1)
-                full_key_url = resolve_url(original_key_url)
-                encoded_key = quote(full_key_url)
-                proxy_url = f'/proxy/key?url={encoded_key}'
-                if referer:
-                    proxy_url += f'&referer={quote(referer)}'
-                return f'URI="{proxy_url}"'
-            
-            content = re.sub(r'URI="([^"]+)"', replace_key, content)
-            
-            # Rewrite Segment URLs
-            new_lines = []
-            for line in content.splitlines():
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                if stripped.startswith('#'):
-                    new_lines.append(line)
-                else:
-                    full_segment_url = resolve_url(stripped)
-                    encoded_segment = quote(full_segment_url)
-                    
-                    if '.m3u8' in full_segment_url or 'm3u8' in full_segment_url.split('?')[0]:
-                         proxy_url = f"/proxy/m3u8?url={encoded_segment}"
-                    else:
-                         proxy_url = f"/proxy/segment?url={encoded_segment}"
-                    
-                    if referer:
-                        proxy_url += f"&referer={quote(referer)}"
-                    new_lines.append(proxy_url)
-            
-            modified_content = "\n".join(new_lines)
-            return Response(content=modified_content, media_type="application/vnd.apple.mpegurl")
-            
-        except Exception as e:
-            print(f"Proxy M3U8 Exception: {e}")
-            return Response(status_code=500, content=str(e))
-
-@app.get("/proxy/segment")
-async def proxy_segment(url: str, referer: str = None):
-    if not url: return Response(status_code=400)
-    
-    clean_url = unquote(url)
-    headers = get_proxy_headers(referer)
-    
-    async def iter_file():
-        async with httpx.AsyncClient(verify=False, follow_redirects=True) as client:
-            try:
-                async with client.stream("GET", clean_url, headers=headers) as resp:
-                    async for chunk in resp.aiter_bytes():
-                        yield chunk
-            except Exception as e:
-                pass
-                # print(f"Proxy Segment Exception: {e}")
-
-    return StreamingResponse(iter_file(), media_type="video/mp2t")
-
-@app.get("/proxy/key")
-async def proxy_key(url: str, referer: str = None):
-    if not url: return Response(status_code=400)
-    clean_url = unquote(url)
-    headers = get_proxy_headers(referer)
-
-    async with httpx.AsyncClient(verify=False, follow_redirects=True) as client:
-        try:
-            resp = await client.get(clean_url, headers=headers)
-            return Response(content=resp.content, media_type="application/octet-stream")
-        except:
-            return Response(status_code=500)
-
-@app.get("/proxy/subtitle")
-async def proxy_subtitle(url: str, referer: str = None):
-    if not url: return Response(status_code=400)
-    clean_url = unquote(url)
-    headers = get_proxy_headers(referer)
-
-    async with httpx.AsyncClient(verify=False, follow_redirects=True) as client:
-        try:
-            resp = await client.get(clean_url, headers=headers)
-            return Response(content=resp.content, media_type="text/vtt")
-        except:
-            return Response(status_code=500)

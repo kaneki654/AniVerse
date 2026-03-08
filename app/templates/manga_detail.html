@@ -6,21 +6,21 @@
 <div class="anime-detail-container">
     <div class="anime-header">
         <div class="poster">
-            <img src="{{ manga.cover }}" alt="{{ manga.title }}" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
+            <img src="{{ proxy_base }}{{ manga.image|urlencode }}" alt="{{ manga.title }}" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
         </div>
         <div class="info">
             <h1>{{ manga.title }}</h1>
             <div class="stats">
                 <span class="quality">{{ manga.status | upper }}</span>
-                <span>{{ manga.year }}</span>
-                <span>{{ manga.author }}</span>
+                <span>{{ manga.releaseDate }}</span>
+                <span>{% for author in manga.authors %}{{ author }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
             </div>
             <div class="genres">
                 {% for tag in manga.tags %}
                 <a href="#">{{ tag }}</a>
                 {% endfor %}
             </div>
-            <p class="description">{{ manga.desc }}</p>
+            <p class="description">{{ manga.description }}</p>
         </div>
     </div>
 

@@ -5,7 +5,7 @@
 {% block content %}
 <div class="manga-search-container">
     <form action="/manga/search" method="get" class="manga-search-form" autocomplete="off">
-        <input type="text" id="manga-search-input" name="title" placeholder="Search for manga..." required>
+        <input type="text" id="manga-search-input" name="q" placeholder="Search for manga..." required>
         <button type="submit">Search</button>
     </form>
     <div id="manga-suggestions" class="manga-suggestions-dropdown"></div>
@@ -17,10 +17,10 @@
         {% for item in popular[:5] %}
         <div class="carousel-item">
             <a href="/manga/{{ item.id }}">
-                <img src="{{ item.cover }}" alt="{{ item.title }}" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
+                <img src="{{ proxy_base }}{{ item.image|urlencode }}" alt="{{ item.title }}" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
                 <div class="carousel-content">
                     <h3>{{ item.title }}</h3>
-                    <p>{{ item.desc | truncate(100) }}</p>
+                    <p>{{ item.description | truncate(100) }}</p>
                 </div>
             </a>
         </div>
@@ -34,7 +34,7 @@
         {% for item in latest %}
         <div class="anime-card">
             <a href="/manga/{{ item.id }}">
-                <img src="{{ item.cover }}" alt="{{ item.title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
+                <img src="{{ proxy_base }}{{ item.image|urlencode }}" alt="{{ item.title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
                 <div class="card-info">
                     <h4>{{ item.title }}</h4>
                 </div>
@@ -51,7 +51,7 @@
         <div class="anime-card">
             <a href="/manga/{{ item.id }}">
                 <div class="rank">#{{ loop.index }}</div>
-                <img src="{{ item.cover }}" alt="{{ item.title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
+                <img src="{{ proxy_base }}{{ item.image|urlencode }}" alt="{{ item.title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
                 <div class="card-info">
                     <h4>{{ item.title }}</h4>
                 </div>
@@ -62,10 +62,17 @@
 </section>
 
 <section>
-    <h2>Browse by Genre</h2>
-    <div class="genres">
-        {% for tag in tags %}
-        <a href="/manga/search?tag={{ tag.id }}">{{ tag.attributes.name.en }}</a>
+    <h2>Recent Additions</h2>
+    <div class="grid">
+        {% for item in recent %}
+        <div class="anime-card">
+            <a href="/manga/{{ item.id }}">
+                <img src="{{ proxy_base }}{{ item.image|urlencode }}" alt="{{ item.title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
+                <div class="card-info">
+                    <h4>{{ item.title }}</h4>
+                </div>
+            </a>
+        </div>
         {% endfor %}
     </div>
 </section>

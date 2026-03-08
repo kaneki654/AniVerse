@@ -51,12 +51,12 @@ if (mangaSearchInput && mangaSuggestions) {
 
 function renderMangaSuggestions(results, query) {
     let html = results.map(manga => {
-        const tags = manga.tags ? manga.tags.slice(0, 2).join(' · ') : '';
+        const tags = manga.genres ? manga.genres.slice(0, 2).join(' · ') : '';
         const statusClass = (manga.status || '').toLowerCase();
         
         return `
         <a href="/manga/${manga.id}" class="manga-suggestion-item">
-            <img src="${manga.cover}" alt="${manga.title}" class="manga-suggestion-img" onerror="this.src='/static/placeholder.jpg'">
+            <img src="${`/manga/proxy?url=${encodeURIComponent(manga.image)}`}" alt="${manga.title}" class="manga-suggestion-img" onerror="this.src='/static/placeholder.jpg'">
             <div class="manga-suggestion-info">
                 <h5>${manga.title}</h5>
                 <div class="manga-suggestion-meta">
@@ -70,7 +70,7 @@ function renderMangaSuggestions(results, query) {
 
     // Add "See all results" link
     html += `
-    <a href="/manga/search?title=${encodeURIComponent(query)}" class="manga-suggestion-item" style="justify-content: center; color: #e50914; font-weight: bold;">
+    <a href="/manga/search?q=${encodeURIComponent(query)}" class="manga-suggestion-item" style="justify-content: center; color: #e50914; font-weight: bold;">
         🔍 See all results for "${query}"
     </a>
     `;
@@ -86,7 +86,7 @@ function renderNoResults(query) {
             No manga found for "${query}"
         </div>
     </div>
-    <a href="/manga/search?title=${encodeURIComponent(query)}" class="manga-suggestion-item" style="justify-content: center; color: #e50914; font-weight: bold;">
+    <a href="/manga/search?q=${encodeURIComponent(query)}" class="manga-suggestion-item" style="justify-content: center; color: #e50914; font-weight: bold;">
         🔍 Search anyway
     </a>
     `;
