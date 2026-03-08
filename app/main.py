@@ -36,10 +36,19 @@ def get_proxy_headers(referer: str = None):
     }
 
 def fix_cover(url: str):
+    import sys
     if not url:
         return url
-    url = url.replace("https://mangadex.org/covers", "https://uploads.mangadex.org/covers")
-    return MANGA_PROXY + quote(url, safe='')
+    
+    # Only fix the domain
+    fixed_url = url.replace("https://mangadex.org/covers", "https://uploads.mangadex.org/covers")
+    
+    # Add logging as requested
+    print(f"fix_cover INPUT: {url} | OUTPUT: {fixed_url}")
+    sys.stdout.flush()
+    
+    # Return direct URL without prepending MANGA_PROXY and without quote()
+    return fixed_url
 
 # --- ANIME ROUTES ---
 
@@ -388,9 +397,9 @@ async def manga_search_suggestion(q: str):
 @app.get("/manga/proxy")
 async def basic_manga_proxy(url: str):
     from fastapi.responses import RedirectResponse
-    # Quick proxy for JS suggestions
-    proxy_url = MANGA_PROXY + url
-    return RedirectResponse(proxy_url)
+    # Since proxy is broken, just redirect to the fixed URL
+    fixed_url = url.replace("https://mangadex.org", "https://uploads.mangadex.org")
+    return RedirectResponse(fixed_url)
 
 @app.get("/manga/search", response_class=HTMLResponse)
 async def manga_search(request: Request, q: str = "", page: int = 1):
@@ -458,7 +467,9 @@ async def manga_read(request: Request, manga_id: str, chapter_id: str):
                 pages = read_resp.json()
                 for page in pages:
                     if "img" in page:
-                        page["img"] = MANGA_PROXY + quote(page["img"], safe='')
+                        # Consumet pages usually don't need proxy if we use no-referrer
+                        # Just ensure domain is correct if it's mangadex
+                        page["img"] = page["img"].replace("https://mangadex.org", "https://uploads.mangadex.org")
                 
             # Get info for navigation
             info_resp = await client.get(f"{MANGA_API_BASE}/info?id={manga_id}")
