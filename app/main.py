@@ -499,15 +499,28 @@ async def manga_read(request: Request, manga_id: str, chapter_id: str):
                 pages = read_resp.json()
                 for page in pages:
                     if "img" in page:
-                        # Consumet pages usually don't need proxy if we use no-referrer
-                        # Just ensure domain is correct if it's mangadex
-                        page["img"] = page["img"].replace("https://mangadex.org", "https://uploads.mangadex.org")
+                        safe_url = quote(page["img"], safe='')
+                        page["img"] = f"https://consumet-swart-nine.vercel.app/manga/mangadex/proxy?url={safe_url}"
                 
             # Get info for navigation
             info_resp = await client.get(f"{MANGA_API_BASE}/info/{manga_id.strip('/')}", timeout=30)
             if info_resp.status_code == 200:
                 manga_info = info_resp.json()
+                
+                if not manga_info.get("title"):
+                    alt_titles = manga_info.get("altTitles", [])
+                    fallback = "Unknown Title"
+                    for alt in alt_titles:
+                        if isinstance(alt, dict):
+                            if "en" in alt:
+                                fallback = alt["en"]
+                                break
+                            elif alt:
+                                fallback = list(alt.values())[0]
+                    manga_info["title"] = fallback
+                    
                 chapters = manga_info.get('chapters', [])
+                print(f"Read Info API Status: {info_resp.status_code}, Chapters found: {len(chapters)}")
                 
                 # Consumet returns chapters usually in descending order
                 for i, ch in enumerate(chapters):

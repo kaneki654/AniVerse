@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Reading {{ chapter_info.title }} - AniVerse{% endblock %}
+{% block title %}Reading {{ chapter_info.title or manga_info.title or "Chapter" }} - AniVerse{% endblock %}
 
 {% block head %}
 <style>
@@ -63,8 +63,8 @@
         
         <div class="chapter-info">
             <div class="chapter-title">
-                {% if chapter_info.chapterNumber != 'none' %}Ch. {{ chapter_info.chapterNumber }}{% endif %}
-                {% if chapter_info.title %} - {{ chapter_info.title }}{% endif %}
+                {% if chapter_info.chapterNumber and chapter_info.chapterNumber != 'None' %}Ch. {{ chapter_info.chapterNumber }}{% else %}Oneshot{% endif %}
+                {% if chapter_info.title and chapter_info.title != 'None' %} - {{ chapter_info.title }}{% endif %}
             </div>
             <a href="/manga/{{ manga_id }}" style="font-size: 0.9rem; color: #aaa;">Back to Manga</a>
         </div>
