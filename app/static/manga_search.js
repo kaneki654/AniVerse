@@ -56,7 +56,7 @@ function renderMangaSuggestions(results, query) {
         
         return `
         <a href="/manga/${manga.id}" class="manga-suggestion-item">
-            <img src="${`/manga/proxy?url=${encodeURIComponent(manga.image)}`}" alt="${manga.title}" class="manga-suggestion-img" onerror="this.src='/static/placeholder.jpg'">
+            <img src="${manga.image}" alt="${manga.title}" class="manga-suggestion-img" onerror="this.src='/static/placeholder.jpg'">
             <div class="manga-suggestion-info">
                 <h5>${manga.title}</h5>
                 <div class="manga-suggestion-meta">

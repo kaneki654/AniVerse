@@ -23,7 +23,7 @@
         {% for item in results %}
         <div class="anime-card">
             <a href="/manga/{{ item.id }}">
-                <img src="{{ item.cover }}" alt="{{ item.title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
+                <img src="{{ item.image }}" alt="{{ item.title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
                 <div class="card-info">
                     <h4>{{ item.title }}</h4>
                 </div>

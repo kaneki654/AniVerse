@@ -35,6 +35,12 @@ def get_proxy_headers(referer: str = None):
         "Origin": referer if referer else DEFAULT_REFERER
     }
 
+def fix_cover(url: str):
+    if not url:
+        return url
+    url = url.replace("https://mangadex.org/covers", "https://uploads.mangadex.org/covers")
+    return MANGA_PROXY + quote(url, safe='')
+
 # --- ANIME ROUTES ---
 
 @app.get("/", response_class=HTMLResponse)
@@ -327,16 +333,25 @@ async def manga_home(request: Request):
             pop_resp = await client.get(f"{MANGA_API_BASE}/popular")
             if pop_resp.status_code == 200:
                 popular_data = pop_resp.json().get('results', [])
+                for item in popular_data:
+                    if "image" in item:
+                        item["image"] = fix_cover(item["image"])
 
             # Latest Updates
             latest_resp = await client.get(f"{MANGA_API_BASE}/latest")
             if latest_resp.status_code == 200:
                 latest_data = latest_resp.json().get('results', [])
+                for item in latest_data:
+                    if "image" in item:
+                        item["image"] = fix_cover(item["image"])
                 
             # Recent Additions
             recent_resp = await client.get(f"{MANGA_API_BASE}/recent")
             if recent_resp.status_code == 200:
                 recent_data = recent_resp.json().get('results', [])
+                for item in recent_data:
+                    if "image" in item:
+                        item["image"] = fix_cover(item["image"])
 
         except Exception as e:
             print(f"Manga Home Error: {e}")
@@ -360,7 +375,12 @@ async def manga_search_suggestion(q: str):
             resp = await client.get(url)
             if resp.status_code == 200:
                 # We can just return the raw results from Consumet
-                return resp.json()
+                data = resp.json()
+                results = data.get('results', [])
+                for item in results:
+                    if "image" in item:
+                        item["image"] = fix_cover(item["image"])
+                return data
         except:
             return {"results": []}
     return {"results": []}
@@ -381,6 +401,9 @@ async def manga_search(request: Request, q: str = "", page: int = 1):
             resp = await client.get(url)
             if resp.status_code == 200:
                 results = resp.json().get('results', [])
+                for item in results:
+                    if "image" in item:
+                        item["image"] = fix_cover(item["image"])
         except Exception as e:
             print(f"Manga Search Error: {e}")
 
@@ -403,6 +426,8 @@ async def manga_detail(request: Request, manga_id: str):
             resp = await client.get(f"{MANGA_API_BASE}/info?id={manga_id}")
             if resp.status_code == 200:
                 manga_info = resp.json()
+                if "image" in manga_info:
+                    manga_info["image"] = fix_cover(manga_info["image"])
         except Exception as e:
             print(f"Manga Detail Error: {e}")
 
@@ -431,6 +456,9 @@ async def manga_read(request: Request, manga_id: str, chapter_id: str):
             read_resp = await client.get(f"{MANGA_API_BASE}/read?chapterId={chapter_id}")
             if read_resp.status_code == 200:
                 pages = read_resp.json()
+                for page in pages:
+                    if "img" in page:
+                        page["img"] = MANGA_PROXY + quote(page["img"], safe='')
                 
             # Get info for navigation
             info_resp = await client.get(f"{MANGA_API_BASE}/info?id={manga_id}")

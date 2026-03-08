@@ -78,7 +78,7 @@
 
     <div class="reader-pages">
         {% for page in pages %}
-        <img src="{{ proxy_base }}{{ page.img|urlencode }}" loading="lazy" alt="Page {{ page.page }}">
+        <img src="{{ page.img }}" loading="lazy" alt="Page {{ page.page }}">
         {% endfor %}
     </div>
     

@@ -17,7 +17,7 @@
         {% for item in popular[:5] %}
         <div class="carousel-item">
             <a href="/manga/{{ item.id }}">
-                <img src="{{ proxy_base }}{{ item.image|urlencode }}" alt="{{ item.title }}" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
+                <img src="{{ item.image }}" alt="{{ item.title }}" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
                 <div class="carousel-content">
                     <h3>{{ item.title }}</h3>
                     <p>{{ item.description | truncate(100) }}</p>
@@ -34,7 +34,7 @@
         {% for item in latest %}
         <div class="anime-card">
             <a href="/manga/{{ item.id }}">
-                <img src="{{ proxy_base }}{{ item.image|urlencode }}" alt="{{ item.title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
+                <img src="{{ item.image }}" alt="{{ item.title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
                 <div class="card-info">
                     <h4>{{ item.title }}</h4>
                 </div>
@@ -51,7 +51,7 @@
         <div class="anime-card">
             <a href="/manga/{{ item.id }}">
                 <div class="rank">#{{ loop.index }}</div>
-                <img src="{{ proxy_base }}{{ item.image|urlencode }}" alt="{{ item.title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
+                <img src="{{ item.image }}" alt="{{ item.title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
                 <div class="card-info">
                     <h4>{{ item.title }}</h4>
                 </div>
@@ -67,7 +67,7 @@
         {% for item in recent %}
         <div class="anime-card">
             <a href="/manga/{{ item.id }}">
-                <img src="{{ proxy_base }}{{ item.image|urlencode }}" alt="{{ item.title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
+                <img src="{{ item.image }}" alt="{{ item.title }}" loading="lazy" referrerpolicy="no-referrer" onerror="this.src='/static/placeholder.jpg'">
                 <div class="card-info">
                     <h4>{{ item.title }}</h4>
                 </div>
