@@ -432,11 +432,26 @@ async def manga_detail(request: Request, manga_id: str):
     manga_info = {}
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.get(f"{MANGA_API_BASE}/info?id={manga_id}")
+            resp = await client.get(f"{MANGA_API_BASE}/info/{manga_id}", timeout=15)
+            print(f"Detail API Status: {resp.status_code}")
+            print(f"Detail API Response (first 500 chars): {resp.text[:500]}")
+            import sys; sys.stdout.flush()
             if resp.status_code == 200:
+                print(f"Detail API Keys: {list(resp.json().keys())}")
+                sys.stdout.flush()
                 manga_info = resp.json()
                 if "image" in manga_info:
                     manga_info["image"] = fix_cover(manga_info["image"])
+                
+                # Sanitize description
+                desc = manga_info.get("description")
+                if isinstance(desc, dict):
+                    manga_info["description"] = desc.get("en", list(desc.values())[0] if desc else "No description available.")
+                
+                # Ensure fields exist for template
+                manga_info["authors"] = manga_info.get("authors") or []
+                manga_info["genres"] = (manga_info.get("genres") or []) + (manga_info.get("themes") or [])
+                manga_info["rating"] = manga_info.get("rating") or "N/A"
         except Exception as e:
             print(f"Manga Detail Error: {e}")
 
@@ -447,7 +462,8 @@ async def manga_detail(request: Request, manga_id: str):
             "manga": manga_info,
             "chapters": manga_info.get('chapters', []),
             "has_english": len(manga_info.get('chapters', [])) > 0,
-            "proxy_base": MANGA_PROXY
+            "proxy_base": MANGA_PROXY,
+            "error": not bool(manga_info.get('title'))
         }
     )
 
@@ -462,7 +478,7 @@ async def manga_read(request: Request, manga_id: str, chapter_id: str):
     async with httpx.AsyncClient() as client:
         try:
             # Get pages
-            read_resp = await client.get(f"{MANGA_API_BASE}/read?chapterId={chapter_id}")
+            read_resp = await client.get(f"{MANGA_API_BASE}/read/{chapter_id}", timeout=15)
             if read_resp.status_code == 200:
                 pages = read_resp.json()
                 for page in pages:
@@ -472,7 +488,7 @@ async def manga_read(request: Request, manga_id: str, chapter_id: str):
                         page["img"] = page["img"].replace("https://mangadex.org", "https://uploads.mangadex.org")
                 
             # Get info for navigation
-            info_resp = await client.get(f"{MANGA_API_BASE}/info?id={manga_id}")
+            info_resp = await client.get(f"{MANGA_API_BASE}/info/{manga_id}", timeout=15)
             if info_resp.status_code == 200:
                 manga_info = info_resp.json()
                 chapters = manga_info.get('chapters', [])

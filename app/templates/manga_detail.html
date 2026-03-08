@@ -3,6 +3,13 @@
 {% block title %}{{ manga.title }} - AniVerse{% endblock %}
 
 {% block content %}
+{% if error %}
+<div class="anime-detail-container" style="text-align: center; padding: 50px;">
+    <h2>Error Loading Manga</h2>
+    <p>Could not retrieve manga details. It might have been removed or the ID is incorrect.</p>
+    <a href="/manga" class="btn">Return to Manga Home</a>
+</div>
+{% else %}
 <div class="anime-detail-container">
     <div class="anime-header">
         <div class="poster">
@@ -11,13 +18,14 @@
         <div class="info">
             <h1>{{ manga.title }}</h1>
             <div class="stats">
+                <span class="quality">★ {{ manga.rating }}</span>
                 <span class="quality">{{ manga.status | upper }}</span>
                 <span>{{ manga.releaseDate }}</span>
                 <span>{% for author in manga.authors %}{{ author }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
             </div>
             <div class="genres">
-                {% for tag in manga.tags %}
-                <a href="#">{{ tag }}</a>
+                {% for genre in manga.genres %}
+                <a href="#">{{ genre }}</a>
                 {% endfor %}
             </div>
             <p class="description">{{ manga.description }}</p>
@@ -29,12 +37,12 @@
         {% if chapters %}
         <div class="episodes-grid">
             {% for ch in chapters %}
-            <a href="/manga/read/{{ manga.id }}/{{ ch.id }}" class="episode-card" title="{{ ch.group }}">
+            <a href="/manga/read/{{ manga.id }}/{{ ch.id }}" class="episode-card" title="Vol. {{ ch.volumeNumber or '?' }} - Pages: {{ ch.pages or '?' }}">
                 <div class="ep-number">
-                    {% if ch.chapter %}Ch. {{ ch.chapter }}{% else %}Oneshot{% endif %}
+                    {% if ch.chapterNumber and ch.chapterNumber != 'none' %}Ch. {{ ch.chapterNumber }}{% else %}Oneshot{% endif %}
                 </div>
                 <div class="ep-title">{{ ch.title or 'No Title' }}</div>
-                <div style="font-size: 0.7rem; color: #666; margin-top: 2px;">{{ ch.group }}</div>
+                <div style="font-size: 0.7rem; color: #666; margin-top: 2px;">Vol. {{ ch.volumeNumber or '?' }}</div>
             </a>
             {% endfor %}
         </div>
@@ -45,4 +53,5 @@
         {% endif %}
     </div>
 </div>
+{% endif %}
 {% endblock %}
