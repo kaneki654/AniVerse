@@ -498,12 +498,11 @@ async def manga_read(request: Request, manga_id: str, chapter_id: str):
             if read_resp.status_code == 200:
                 pages = read_resp.json()
                 for page in pages:
-                    if "img" in page:
-                        safe_url = quote(page["img"], safe='')
-                        page["img"] = f"https://consumet-swart-nine.vercel.app/manga/mangadex/proxy?url={safe_url}"
+                    if page.get("img"):
+                        page["img"] = f"https://consumet-swart-nine.vercel.app/manga/mangadex/proxy?url={quote(page['img'], safe='')}"
                 
             # Get info for navigation
-            info_resp = await client.get(f"{MANGA_API_BASE}/info/{manga_id.strip('/')}", timeout=30)
+            info_resp = await client.get(f"{MANGA_API_BASE}/info/{manga_id}", timeout=30)
             if info_resp.status_code == 200:
                 manga_info = info_resp.json()
                 
