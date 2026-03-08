@@ -432,14 +432,29 @@ async def manga_detail(request: Request, manga_id: str):
     manga_info = {}
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.get(f"{MANGA_API_BASE}/info/{manga_id}", timeout=15)
-            print(f"Detail API Status: {resp.status_code}")
-            print(f"Detail API Response (first 500 chars): {resp.text[:500]}")
+            url = f"{MANGA_API_BASE}/info/{manga_id.strip('/')}"
+            print(f"CALLING: {url}")
             import sys; sys.stdout.flush()
+            resp = await client.get(url, timeout=30)
+            print(f"STATUS: {resp.status_code}")
+            print(f"BODY: {resp.text[:200]}")
+            sys.stdout.flush()
             if resp.status_code == 200:
                 print(f"Detail API Keys: {list(resp.json().keys())}")
                 sys.stdout.flush()
                 manga_info = resp.json()
+                if not manga_info.get("title"):
+                    alt_titles = manga_info.get("altTitles", [])
+                    fallback = "Unknown Title"
+                    for alt in alt_titles:
+                        if isinstance(alt, dict):
+                            if "en" in alt:
+                                fallback = alt["en"]
+                                break
+                            elif alt:
+                                fallback = list(alt.values())[0]
+                    manga_info["title"] = fallback
+
                 if "image" in manga_info:
                     manga_info["image"] = fix_cover(manga_info["image"])
                 
@@ -453,7 +468,8 @@ async def manga_detail(request: Request, manga_id: str):
                 manga_info["genres"] = (manga_info.get("genres") or []) + (manga_info.get("themes") or [])
                 manga_info["rating"] = manga_info.get("rating") or "N/A"
         except Exception as e:
-            print(f"Manga Detail Error: {e}")
+            print(f"Manga Detail ERROR: {str(e)}")
+            import sys; sys.stdout.flush()
 
     return templates.TemplateResponse(
         request=request,
@@ -478,7 +494,7 @@ async def manga_read(request: Request, manga_id: str, chapter_id: str):
     async with httpx.AsyncClient() as client:
         try:
             # Get pages
-            read_resp = await client.get(f"{MANGA_API_BASE}/read/{chapter_id}", timeout=15)
+            read_resp = await client.get(f"{MANGA_API_BASE}/read/{chapter_id.strip('/')}", timeout=30)
             if read_resp.status_code == 200:
                 pages = read_resp.json()
                 for page in pages:
@@ -488,7 +504,7 @@ async def manga_read(request: Request, manga_id: str, chapter_id: str):
                         page["img"] = page["img"].replace("https://mangadex.org", "https://uploads.mangadex.org")
                 
             # Get info for navigation
-            info_resp = await client.get(f"{MANGA_API_BASE}/info/{manga_id}", timeout=15)
+            info_resp = await client.get(f"{MANGA_API_BASE}/info/{manga_id.strip('/')}", timeout=30)
             if info_resp.status_code == 200:
                 manga_info = info_resp.json()
                 chapters = manga_info.get('chapters', [])
