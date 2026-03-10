@@ -746,14 +746,14 @@ class CustomPlayer {
             
             const track = document.createElement('track');
             track.kind = 'subtitles'; // Standardize on 'subtitles' for the element
-            track.label = t.label;
-            track.src = `/proxy/subtitle?url=${encodeURIComponent(t.file)}&referer=${encodeURIComponent(referer)}`;
+            track.label = t.label || t.lang || 'Unknown';
+            track.src = `/proxy/subtitle?url=${encodeURIComponent(t.file || t.url)}&referer=${encodeURIComponent(referer)}`;
             this.video.appendChild(track);
             
             const item = document.createElement('div');
             item.className = 'settings-item';
             item.innerHTML = `${t.label} <i data-lucide="check" class="check-icon"></i>`;
-            item.onclick = () => this.setSubtitle(t.label);
+            item.onclick = () => this.setSubtitle(t.label || t.lang);
             menu.appendChild(item);
         });
         if(window.lucide) window.lucide.createIcons();
@@ -937,7 +937,7 @@ CustomPlayer.prototype.setupSubtitles = function(tracks, referer) {
     let addedCount = 0;
     tracks.forEach(t => {
         // Skip thumbnails
-        if (t.kind === 'thumbnails' || t.label === 'Thumbnails') return;
+        if (t.kind === 'thumbnails' || (t.label || t.lang) === 'Thumbnails' || (t.label || t.lang) === 'thumbnails') return;
         
         // Debug each track
         console.log("DEBUG: Processing track:", t.label, t.kind);
@@ -947,16 +947,16 @@ CustomPlayer.prototype.setupSubtitles = function(tracks, referer) {
         
         const track = document.createElement('track');
         track.kind = kind;
-        track.label = t.label;
-        track.srclang = t.label.substring(0, 2).toLowerCase(); // basic language code guess
-        track.src = `/proxy/subtitle?url=${encodeURIComponent(t.file)}&referer=${encodeURIComponent(referer)}`;
+        track.label = t.label || t.lang || 'Unknown';
+        track.srclang = (t.label || t.lang || "en").substring(0, 2).toLowerCase(); // basic language code guess
+        track.src = `/proxy/subtitle?url=${encodeURIComponent(t.file || t.url)}&referer=${encodeURIComponent(referer)}`;
         this.video.appendChild(track);
         
         const item = document.createElement('div');
         item.className = 'settings-item';
-        item.onclick = () => this.setSubtitle(t.label);
+        item.onclick = () => this.setSubtitle(t.label || t.lang);
         // Ensure white text, red check
-        item.innerHTML = `<span>${t.label}</span> <i data-lucide="check" class="check-icon"></i>`;
+        item.innerHTML = `<span>${t.label || t.lang}</span> <i data-lucide="check" class="check-icon"></i>`;
         menu.appendChild(item);
         addedCount++;
     });
@@ -1033,8 +1033,8 @@ CustomPlayer.prototype.setupSubtitles = function(tracks, referer) {
         if (!t) return;
 
         // Map properties (API uses 'lang' and 'url', some might use 'label' and 'file')
-        const label = t.label || t.label || "Unknown";
-        const url = t.file || t.file;
+        const label = t.label || t.lang || "Unknown";
+        const url = t.file || t.url;
         
         // Safety Check 2: Skip Thumbnails
         if (label === 'Thumbnails' || (t.kind && t.kind === 'thumbnails')) return;
