@@ -22,7 +22,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 # Setup templates
 templates = Jinja2Templates(directory="app/templates")
 
-API_BASE = "https://aniverseaniwatch.vercel.app/api/v2/hianime"
+API_BASE = "https://aniwatch-api-production-7717.up.railway.app"
 MANGA_API_BASE = "https://consumet-swart-nine.vercel.app/manga/mangadex"
 MANGA_PROXY = "https://consumet-swart-nine.vercel.app/manga/mangadex/proxy?url="
 DEFAULT_REFERER = "https://hianime.to/"
@@ -56,7 +56,7 @@ def fix_cover(url: str):
 async def home(request: Request):
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.get(f"{API_BASE}/home")
+            resp = await client.get(f"{API_BASE}/api/v2/hianime/home")
             data = resp.json()
             
             # Deduplicate top airing animes
@@ -88,7 +88,7 @@ async def history(request: Request):
 async def search_suggestion(q: str):
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.get(f"{API_BASE}/search/suggestion?q={q}")
+            resp = await client.get(f"{API_BASE}/api/v2/hianime/search/suggest?q={q}")
             return resp.json()
         except:
             return {"suggestions": []}
@@ -112,7 +112,7 @@ async def search(request: Request, q: str = "", genres: str = None, page: int = 
     data = {}
     async with httpx.AsyncClient() as client:
         try:
-            url = f"{API_BASE}/search?page={page}"
+            url = f"{API_BASE}/api/v2/hianime/search?page={page}"
             
             # Use query or fallback to empty string (which we found doesn't work well)
             # Actually we can check if q exists
@@ -130,7 +130,7 @@ async def search(request: Request, q: str = "", genres: str = None, page: int = 
                 data = resp.json()
             elif resp.status_code == 400 and not q:
                 # Fallback if empty query is rejected
-                fallback_url = f"{API_BASE}/search?page={page}&q=a"
+                fallback_url = f"{API_BASE}/api/v2/hianime/search?page={page}&q=a"
                 if genres:
                     fallback_url += f"&genres={genres}"
                 resp_fallback = await client.get(fallback_url)
@@ -156,9 +156,9 @@ async def search(request: Request, q: str = "", genres: str = None, page: int = 
 async def anime_detail(request: Request, anime_id: str):
     async with httpx.AsyncClient() as client:
         try:
-            detail_resp = await client.get(f"{API_BASE}/anime/{anime_id}")
+            detail_resp = await client.get(f"{API_BASE}/api/v2/hianime/anime/{anime_id}")
             detail_data = detail_resp.json()
-            episodes_resp = await client.get(f"{API_BASE}/anime/{anime_id}/episodes")
+            episodes_resp = await client.get(f"{API_BASE}/api/v2/hianime/anime/{anime_id}/episodes")
             episodes_data = episodes_resp.json()
         except:
             detail_data = {}
@@ -189,12 +189,12 @@ async def watch(request: Request, episode_id: str, ep: str = None):
     async with httpx.AsyncClient() as client:
         try:
             # 1. Get Servers
-            servers_resp = await client.get(f"{API_BASE}/episode/servers?animeEpisodeId={full_episode_id}")
+            servers_resp = await client.get(f"{API_BASE}/api/v2/hianime/episode/servers?animeEpisodeId={full_episode_id}")
             if servers_resp.status_code == 200:
                 servers_data = servers_resp.json().get('data', {})
             
             # 2. Get Episode Info (for title and next episode)
-            episodes_resp = await client.get(f"{API_BASE}/anime/{anime_id}/episodes")
+            episodes_resp = await client.get(f"{API_BASE}/api/v2/hianime/anime/{anime_id}/episodes")
             if episodes_resp.status_code == 200:
                 episodes_data = episodes_resp.json().get('data', {})
                 if episodes_data and 'episodes' in episodes_data:
@@ -207,7 +207,7 @@ async def watch(request: Request, episode_id: str, ep: str = None):
                             break
             
             # 3. Get Anime Info (for series title)
-            detail_resp = await client.get(f"{API_BASE}/anime/{anime_id}")
+            detail_resp = await client.get(f"{API_BASE}/api/v2/hianime/anime/{anime_id}")
             if detail_resp.status_code == 200:
                 anime_info = detail_resp.json().get('data', {}).get('anime', {}).get('info', {})
 
@@ -232,7 +232,7 @@ async def watch(request: Request, episode_id: str, ep: str = None):
 async def get_source(episode_id: str, server: str = "vidstreaming", category: str = "sub"):
     async with httpx.AsyncClient() as client:
         try:
-            url = f"{API_BASE}/episode/sources?animeEpisodeId={episode_id}&server={server}&category={category}"
+            url = f"{API_BASE}/api/v2/hianime/episode/sources?animeEpisodeId={episode_id}&server={server}&category={category}"
             resp = await client.get(url)
             return resp.json()
         except:
@@ -242,7 +242,7 @@ async def get_source(episode_id: str, server: str = "vidstreaming", category: st
 async def azlist(request: Request, sort_option: str, page: int = 1):
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.get(f"{API_BASE}/azlist/{sort_option}?page={page}")
+            resp = await client.get(f"{API_BASE}/api/v2/hianime/azlist/{sort_option}?page={page}")
             data = resp.json()
         except:
             data = {}
@@ -258,7 +258,7 @@ async def schedule(request: Request, date: str = None):
         date = dt.today().strftime("%Y-%m-%d")
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.get(f"{API_BASE}/schedule?date={date}")
+            resp = await client.get(f"{API_BASE}/api/v2/hianime/schedule?date={date}")
             data = resp.json()
         except:
             data = {}
@@ -272,7 +272,7 @@ async def schedule(request: Request, date: str = None):
 async def genre(request: Request, name: str, page: int = 1):
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.get(f"{API_BASE}/genre/{name}?page={page}")
+            resp = await client.get(f"{API_BASE}/api/v2/hianime/genre/{name}?page={page}")
             data = resp.json()
         except:
             data = {}
@@ -301,11 +301,11 @@ async def browse(request: Request, genres: str = None, page: int = 1):
             # If genres are selected, use them in search
             # If no genres and no search query, we might want to default to something or just show empty/latest
             
-            # The user suggested: f"{API_BASE}/search?genres={genres}&page={page}"
+            # The user suggested: f"{API_BASE}/api/v2/hianime/search?genres={genres}&page={page}"
             # We'll use q="" if no query is present, but here we don't have a 'q' param in the route.
             # Assuming the API supports genres param directly on search endpoint.
             
-            api_url = f"{API_BASE}/search?page={page}"
+            api_url = f"{API_BASE}/api/v2/hianime/search?page={page}"
             if genres:
                 api_url += f"&genres={genres}"
             else:

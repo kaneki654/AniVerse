@@ -1033,8 +1033,8 @@ CustomPlayer.prototype.setupSubtitles = function(tracks, referer) {
         if (!t) return;
 
         // Map properties (API uses 'lang' and 'url', some might use 'label' and 'file')
-        const label = t.lang || t.label || "Unknown";
-        const url = t.url || t.file;
+        const label = t.label || t.label || "Unknown";
+        const url = t.file || t.file;
         
         // Safety Check 2: Skip Thumbnails
         if (label === 'Thumbnails' || (t.kind && t.kind === 'thumbnails')) return;
