@@ -22,7 +22,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 # Setup templates
 templates = Jinja2Templates(directory="app/templates")
 
-API_BASE = "https://aniwatch-api-production-7717.up.railway.app"
+API_BASE = "https://aniverseaniwatch.onrender.com/"
 MANGA_API_BASE = "https://consumet-swart-nine.vercel.app/manga/mangadex"
 MANGA_PROXY = "https://consumet-swart-nine.vercel.app/manga/mangadex/proxy?url="
 DEFAULT_REFERER = "https://hianime.to/"
