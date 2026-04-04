@@ -28,6 +28,9 @@ class AniListService:
               id
               title { romaji english }
               coverImage { large }
+              status
+              episodes
+              nextAiringEpisode { episode }
             }
           }
         }
@@ -46,6 +49,9 @@ class AniListService:
               id
               title { romaji english }
               coverImage { large }
+              status
+              episodes
+              nextAiringEpisode { episode }
             }
           }
         }
@@ -64,6 +70,9 @@ class AniListService:
               id
               title { romaji english }
               coverImage { large }
+              status
+              episodes
+              nextAiringEpisode { episode }
             }
           }
         }
@@ -122,7 +131,9 @@ class AniListService:
               id
               title { romaji english }
               coverImage { large }
+              status
               episodes
+              nextAiringEpisode { episode }
             }
           }
         }
@@ -141,7 +152,9 @@ class AniListService:
               id
               title { romaji english }
               coverImage { large }
+              status
               episodes
+              nextAiringEpisode { episode }
             }
           }
         }
@@ -160,7 +173,9 @@ class AniListService:
               id
               title { romaji english }
               coverImage { large }
+              status
               episodes
+              nextAiringEpisode { episode }
             }
           }
         }

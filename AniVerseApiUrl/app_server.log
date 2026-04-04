@@ -1,15 +1,22 @@
 INFO:     Will watch for changes in these directories: ['/home/kerby0818/app/AniVerse/AniVerseApiUrl']
 INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
-INFO:     Started reloader process [26638] using StatReload
+INFO:     Started reloader process [24275] using StatReload
 /etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.
-INFO:     Started server process [26646]
+INFO:     Started server process [24284]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     127.0.0.1:37116 - "GET /anime/popular?per_page=12 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37116 - "GET /anime/trending?per_page=12 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37116 - "GET /anime/latest?per_page=12 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:37116 - "GET /anime/upcoming?per_page=12 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54224 - "GET /anime/popular?per_page=12 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54224 - "GET /anime/trending?per_page=12 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54224 - "GET /anime/latest?per_page=12 HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54224 - "GET /anime/upcoming?per_page=12 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59212 - "GET /anime/latest?per_page=12 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42432 - "GET /anime/trending?per_page=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48368 - "GET /anime/trending?per_page=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54892 - "GET /anime/trending?per_page=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54660 - "GET /anime/popular?per_page=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59128 - "GET /anime/resolve/113415/1?category=sub HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46908 - "GET /anime/resolve/113415/1?category=dub HTTP/1.1" 200 OK
+INFO:     127.0.0.1:32956 - "GET /anime/resolve/113415/1?category=dub HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40296 - "GET /anime/trending?per_page=15 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34884 - "GET /anime/resolve/180745/1?category=dub HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [24284]
+INFO:     Stopping reloader process [24275]
