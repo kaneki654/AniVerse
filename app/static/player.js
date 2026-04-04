@@ -76,6 +76,7 @@ class CustomPlayer {
             
             if(this.state.servers[this.state.currentCategory] && this.state.servers[this.state.currentCategory].length > 0) {
                  this.state.currentServer = this.state.servers[this.state.currentCategory][0].serverName;
+                 this._cachedCategory = null; // Force initial fetch
                  this.loadSource(this.state.currentServer, this.state.currentCategory, this.savedProgress);
             } else {
                 this.showError("No servers available for this episode.");
@@ -93,25 +94,66 @@ class CustomPlayer {
         this.showLoading(true);
         this.hideError();
         try {
-            const url = `/api/source?episode_id=${this.episodeId}&server=${serverName}&category=${category}`;
-            const resp = await fetch(url);
-            if (!resp.ok) throw new Error(`HTTP error! status: ${resp.status}`);
-            const data = await resp.json();
+            // Only fetch if we haven't cached sources for this category, or if we are explicitly fetching "Auto"
+            let sourceObj = null;
+            let referer = '';
             
-            if(!data.data || !data.data.sources) throw new Error("No sources found");
+            // We want to force a fetch if the API previously threw an error
+            if (!this._cachedSources || this._cachedSources.length === 0 || this._cachedCategory !== category) {
+                const url = `/api/source?episode_id=${this.episodeId}&server=Auto&category=${category}`;
+                const resp = await fetch(url);
+                if (!resp.ok) throw new Error(`HTTP error! status: ${resp.status}`);
+                const data = await resp.json();
+                
+                if(!data.data || !data.data.sources || data.data.sources.length === 0) throw new Error("No sources found");
+                
+                // Cache them so we can switch quickly
+                this._cachedSources = data.data.sources;
+                this._cachedCategory = category;
+                this._cachedHeaders = data.data.headers || {};
+                this._cachedSubtitles = data.data.tracks || data.data.subtitles || [];
+                this.state.intro = data.data.intro || null;
+                this.state.outro = data.data.outro || null;
+                
+                // Update the UI Servers list dynamically with names!
+                this.state.servers[category] = this._cachedSources.map((s, idx) => ({
+                    serverName: s.serverName || `Server ${idx + 1}`,
+                    category: category
+                }));
+                // Select the first one natively
+                if (serverName === 'Auto') {
+                    this.state.currentServer = this.state.servers[category][0].serverName;
+                    serverName = this.state.currentServer;
+                    const qualEl = document.getElementById('current-source');
+                    if(qualEl) qualEl.innerText = serverName;
+                }
+                this.updateSettingsUI();
+            }
             
-            const source = data.data.sources[0].url;
-            const referer = data.data.headers ? data.data.headers.Referer : '';
+            // Find the requested server from cache
+            if (!this._cachedSources || this._cachedSources.length === 0) {
+                throw new Error("Cached sources empty.");
+            }
             
-            this.state.intro = data.data.intro || null;
-            this.state.outro = data.data.outro || null;
+            sourceObj = this._cachedSources.find(s => s.serverName === serverName || serverName === 'Auto') || this._cachedSources[0];
+            if (!sourceObj || !sourceObj.url) {
+                throw new Error("Invalid source object.");
+            }
+            
+            referer = this._cachedHeaders.Referer || '';
+            const source = sourceObj.url;
+            const isM3U8 = sourceObj.isM3U8 !== false; // true by default
 
-            let proxyUrl = `/proxy/m3u8?url=${encodeURIComponent(source)}`;
-            if(referer) proxyUrl += `&referer=${encodeURIComponent(referer)}`;
+            // Don't proxy if it's already a proxy URL
+            let proxyUrl = source;
+            if (isM3U8 && !source.startsWith('/proxy/')) {
+                proxyUrl = `/proxy/m3u8?url=${encodeURIComponent(source)}`;
+                if(referer) proxyUrl += `&referer=${encodeURIComponent(referer)}`;
+            }
 
-            this.setupSubtitles(data.data.tracks || data.data.subtitles, referer);
+            this.setupSubtitles(this._cachedSubtitles, referer);
 
-            if(Hls.isSupported()) {
+            if (isM3U8 && Hls.isSupported()) {
                 if(this.hls) this.hls.destroy();
                 this.hls = new Hls();
                 this.hls.loadSource(proxyUrl);

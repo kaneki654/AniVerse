@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html"/>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/font-awesome/5.12.0-2/css/all.min.css" integrity="" crossorigin="anonymous"/>
+<link rel="stylesheet" href="/style_rcp-e600e6.css?t=1744906951"/>
+
+<style>
+    body {
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    }
+    .hidden {
+        display:none;
+    }
+    
+    #asdf {
+        width: 0px;
+        height: 0px;
+    }
+    
+    #iframe_title {
+        position: absolute;
+        top: calc(50% + 45px);
+        font-size: 1.1em;
+        text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+        width: calc(100% - 30px);
+        text-align: center;
+        padding: 0px 15px;
+    }
+</style>
+</head>
+<body data-i="9054364_1x1"  >
+    
+    
+        <!--<div id="pop_asdf" style="position:absolute; width:100%; height:100%; z-index:2147483650; pointer-events: none;"></div>-->
+        
+    <!--<div id="loading_overlay"></div>-->
+    <div id="the_frame" style="background-image: none;">
+                <div id="pl_but_background" style="background-image: url('//image.tmdb.org/t/p/w780/eJOy7YWAHgOS3V477sdTsq4v9jp.jpg');">
+            <div id="iframe_title">
+                That Time I Got Reincarnated as a Slime (2018) S01E01            </div>
+            <i id="pl_but" class="fas fa-play"></i>
+        </div>
+            </div>
+    
+    <div id="hidden" style="display:hidden;"></div>
+    
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js" integrity="sha256-1A78rJEdiWTzco6qdn3igTBv9VupN3Q1ozZNTR4WE/Y=" crossorigin="anonymous"></script>
+    <script src="/base64.js?t="></script>
+    
+    <script src="/sbx.js?t=1751380596"></script>
+
+    
+    <script>
+    
+    /*
+    $(document).ready(function(){
+        
+        
+        if($.cookie('pop_asdf')){
+            $("#pop_asdf").addClass("hidden");
+        }
+        
+        $("#pop_asdf").click(function(){
+            if(!$.cookie('pop_asdf')){
+                if($.cookie('pop_asdf_tmp') >= 3){
+                    var date = new Date();
+                    date.setTime(date.getTime() + (10800 * 1000));
+                    $.cookie('pop_asdf', 1, { expires: date });
+                    $("#pop_asdf").addClass("hidden");
+                }else{
+                    var cookie_value = 1;
+                    if($.cookie('pop_asdf_tmp'))
+                        cookie_value = $.cookie('pop_asdf_tmp');
+                        
+                    cookie_value++;
+                    
+                    $.cookie('pop_asdf_tmp', cookie_value);
+                    $(this).addClass("hidden");
+                    setTimeout(function(){
+                        $("#pop_asdf").removeClass("hidden");
+                    }, 59000);
+                }
+            }
+        });
+    });
+    */
+    
+        
+    $("#pl_but_background , #pl_but").click(function(){
+        loadIframe();
+    });
+    
+        
+    function loadIframe(data = 1){
+        if(data == 1){
+            $("#the_frame").removeAttr("style");
+            $("#the_frame").html("");
+            $('<iframe>', {
+               id: 'player_iframe',
+               src: '/prorcp/NDQ3NDNiMmFlZThiY2U2NTU3MjVmMmExMDQ2Zjk1MmE6YVRkWlVIUXhhR3BWVGpkSE1sZFhXRWg0Y0hCSGFIZFhObTh5V2xJeVNUUlBkRGN5VmpORGNXdENRamN2U1hKSFNuZFRUekIwVm5GeWRVMW1XVkZWZVZBNGJteFBkV1prVVhOd01UQnVXamRpTDFjemN6UkhSVXRFT0ZJelVWZHpja2xwWkcxRGNVeGxUMGRCVVZCNVpHWlpkREZ3UldKSWRVaG9UeTlWSzJrMlVHTm5SVkZrY0hBemJXWk9SRlpIWWxkTGJESkVla2NyTjJseFQwWlRhMHBsUTNGNWFXZFhUbXhHVEZCNllVcEtURE5sVjBvM1ZTOW5SRXRHSzNscU0xTlJXV0ZzVGtKbE1XcHBSSE5QVm1rNVNEQkxhVmhZZFc1UE0wUk9Ualo0VTA5Q01rODJVVEp1WlN0elUweFJNUzlhWmpkclNXOXRiMFJpTjJORWNrZDNNMlJpWTJJd1RtbDBVazgzYlRselMyeHJNMFF4Vld4aE1FeElhMkZ5VDNKa2R6RmpTRk5hTTBVek1Ya3dSazV6TTBwRE9Fb3JaV2RIUm1KRmRUbDZhRU0yTjNwMWMzQmtlVFJDWTNaQlVEaFZXbVZCVVdacmNqbFBZekp6UWxFclQwWmFWR1JvTDJsQ1puZ3ZLMU54U0VsMkwyeFFWVkp6SzNCTGFtUm5aWEl4YVRoUmRGQlpTVkZNZUVwcVVsZE1abUp1Wmtvd05VUmlSa2d3ZEhGMGF6WkZaM2wzYkhSUVNHdG5Wbmt5TkdoQ2VtbDRhbG94T1RadVVUTnhOSEYxY1haMGJHVjBlbEUyVDFwUFlXbzFWRTFsWkhsTFJXWkhiVFpwVVhCaFRqTTVXQ3QzY2lzMlpsSkNka3R0VFZadWNDODNOa3cxVFU1eGMxZEhlV281ZFZWVlNYRjFOa3RPVTFjNFRuQmxPSGxHV0dSdFRVMDNZMWw2VVU1WE1YQnlORzVrVTNVM2FXbDVhMGd5U0dkcVJFNUdOR1k0V2xSaFlrTk5WSFJUUm10MmFHcDZXbXAyU3prM1ZrSkNVR2hDUVhOa1RGRkpRMGxqTTJ0UVJYWllSVGtyYjBScmRteE5LMmwxZGpCelQweHplR3hUY21rMFZYbHBXbkJDZWxjd09ISk9SbE0yVlN0Q2NXMTRTbWR1TWtKbVdEbDVXR1V3TDNWbGNVcEVaamx4TjNneGRraHdaRkp5U205elRVTmxUbWROUXpCMFpuSmFia3R6VGxNMlNtSlZXVWR6THpoMmFsTTFZblJHV2xOUFJsWkRlbWRhVkdGNFYzVlVaREJQYlRkNFNta3JhM1ZNSzJaSU1HZENRbWd3U1ZWRVozQXhVV2hRVGt0NlNtUk5OWHA2T0ZCYU5uQTNlVlZhV1d0VlJIbHBNbmxHYlZOdFlYYzJUME5qU0VKMVRrbHVWREZsTjI4clYySmpWVEV3U3pZNVZqRlZSWHBtY1dzcmRHNXNNSEJVS3poM1RrMVpWV05DZDBwc1lubEVRaTlEYkZKdWRFTlhNMGQ2UTJwVmEzSlpaVE5VVUZOamExQk5kU3MwUVdRNWNreGxVSFF2UldwcFRrbERabGw1VW0xVGEyOHJXV0V2ZVdGNllWaExNWEZzUW5aWUx6RXZjM0ZOTVVvdmNURTJURFpsWkdzMk1reGlWbTUzVEhCVWEzVkJOalJoY1doSmVrNXJlVEl2VjJrMFMzZzVXRXRuV0VOTVowUnJZVkZpV0ZaR1dWSldkM0I1WkRCMmMxcGtSRVZqYjBOTWVHTmtLemx1TUhsVVZWRkVhMFZoVVhWU2IzWkdWazltZEVKS1JWWnhlWFJvUldaS1pVdHdSRmtyUTB4UFdWSTNjV1JhUzBKSVF6VmpkMHAxTTBRellUaHlSRlpRVTFSTWRIVllhemROUjFabU9XMHdNMDVQVkV4NmRXaG5aRE4xWlRKVlJWaE9jWGRJVXpaNloyUjNabmQzVEVSTVRVdFVlbU5aY2psalNscFZhR1l5TWpWUVdrYzNZa054VDJwdmNUZEtkVWRGTVZWWVdERnNkSHBNTmxkMWNuSmxMMUp3YzJzeFZGSmxURmt5UzNOcmMxTXpTbE51TjNWWFFsZDJSVzFtU0U0d01YSXhiVm92YkdONVdFeE1NakF5YjJObGRVUTBhMmhhVmxoQ1ZURndXak13ZWtwT2JHSlhjME5PUWxwR1lUbHFlR2QyVnpCcWFrcEVaV005',
+               frameborder: 0,
+               scrolling: 'no',
+               allowfullscreen: 'yes',
+               allow: "autoplay",
+               style: 'height: 100%; width: 100%;'
+            }).appendTo('#the_frame');
+            $("#player_iframe").on("load", function () {
+                $("#the_frame").attr("style","background-image: none;");
+            });
+        }
+    }
+    
+    // pm redirector
+    window.addEventListener('message', message => {
+        if (message.source == window) {
+            return; // Skip message in this event listener
+        }
+        
+        var the_iframe = document.getElementById('player_iframe');
+        
+        if(message.source == window.parent){
+            the_iframe.contentWindow.postMessage(message.data,'*');
+        }else{
+            window.parent.postMessage(message.data , '*');
+        }
+        
+        
+        
+    });
+        
+        
+        
+    </script>
+    
+    
+    
+    
+    
+    
+   
+</body>
+</html>

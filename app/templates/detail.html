@@ -26,11 +26,16 @@
                 {% endfor %}
             </div>
             <div class="actions">
+                {% if anime.info.stats.status == "NOT_YET_RELEASED" %}
+                <div class="btn-watch" style="background: #555; cursor: not-allowed;">This Anime Hasn't been release yet</div>
+                {% else %}
                 <a href="#episodes" class="btn-watch">Watch Now</a>
+                {% endif %}
             </div>
         </div>
     </div>
 
+    {% if anime.info.stats.status != "NOT_YET_RELEASED" %}
     <div id="episodes" class="episodes-section">
         <h2>Episodes</h2>
         <div class="episodes-grid">
@@ -42,5 +47,6 @@
             {% endfor %}
         </div>
     </div>
+    {% endif %}
 </div>
 {% endblock %}

@@ -52,23 +52,60 @@ def fix_cover(url: str):
 
 # --- ANIME ROUTES ---
 
+import httpx
+
+NEW_API_BASE = "http://localhost:8001"
+
+def map_anilist_list(items):
+    mapped = []
+    for idx, item in enumerate(items):
+        mapped.append({
+            "id": item.get("id"),
+            "name": item.get("title", {}).get("english") or item.get("title", {}).get("romaji"),
+            "poster": item.get("coverImage", {}).get("large"),
+            "rank": str(idx + 1)
+        })
+    return mapped
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.get(f"{API_BASE}/api/v2/hianime/home")
-            data = resp.json()
+            popular = await client.get(f"{NEW_API_BASE}/anime/popular?per_page=12", timeout=10)
+            trending = await client.get(f"{NEW_API_BASE}/anime/trending?per_page=12", timeout=10)
+            latest = await client.get(f"{NEW_API_BASE}/anime/latest?per_page=12", timeout=10)
+            upcoming = await client.get(f"{NEW_API_BASE}/anime/upcoming?per_page=12", timeout=10)
             
-            # Deduplicate top airing animes
-            if data and "data" in data and "topAiringAnimes" in data["data"]:
-                seen = set()
-                deduped = []
-                for anime in data["data"]["topAiringAnimes"]:
-                    if anime["id"] not in seen:
-                        seen.add(anime["id"])
-                        deduped.append(anime)
-                data["data"]["topAiringAnimes"] = deduped
-        except:
+            latest_list = latest.json() if isinstance(latest.json(), list) else []
+            for item in latest_list:
+                ep_count = "?"
+                # We specifically injected exact_latest_episode from the AiringSchedule backend
+                if item.get("exact_latest_episode"):
+                    ep_count = str(item["exact_latest_episode"])
+                elif item.get("nextAiringEpisode"):
+                    ep = item["nextAiringEpisode"]["episode"]
+                    ep_count = str(ep - 1) if ep > 1 else "1"
+                elif item.get("episodes"):
+                    ep_count = str(item["episodes"])
+                    
+                item["episodes"] = {"sub": ep_count}
+
+            data = {
+                "data": {
+                    "spotlightAnimes": map_anilist_list(popular.json()[:6]),
+                    "trendingAnimes": map_anilist_list(trending.json()),
+                    "topAiringAnimes": map_anilist_list(popular.json()),
+                    "latestEpisodeAnimes": map_anilist_list(latest_list),
+                    "topUpcomingAnimes": map_anilist_list(upcoming.json())
+                }
+            }
+            # Add sub badges back for latest
+            for idx, item in enumerate(latest_list):
+                if idx < len(data["data"]["latestEpisodeAnimes"]):
+                    data["data"]["latestEpisodeAnimes"][idx]["episodes"] = item.get("episodes")
+                    
+        except Exception as e:
+            print("Home Error:", e)
             data = {}
     return templates.TemplateResponse(
         request=request, 
@@ -88,54 +125,76 @@ async def history(request: Request):
 async def search_suggestion(q: str):
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.get(f"{API_BASE}/api/v2/hianime/search/suggest?q={q}")
-            return resp.json()
+            resp = await client.get(f"{NEW_API_BASE}/anime/search/{quote(q)}")
+            data = resp.json()
+            if isinstance(data, list):
+                suggestions = [{"id": item["id"], "name": item["title"].get("english") or item["title"].get("romaji"), "poster": item["coverImage"]["large"], "moreInfo": ["Anime"]} for item in data[:5]]
+                return {"data": {"suggestions": suggestions}}
+            return {"data": {"suggestions": []}}
         except:
-            return {"suggestions": []}
-
+            return {"data": {"suggestions": []}}
 
 @app.get("/search", response_class=HTMLResponse)
 async def search(request: Request, q: str = "", genres: str = None, page: int = 1):
     all_genres_list = [
-        "Action", "Adventure", "Cars", "Comedy", "Dementia", "Demons", "Drama", "Ecchi",
-        "Fantasy", "Game", "Harem", "Historical", "Horror", "Isekai", "Josei", "Kids", 
-        "Magic", "Martial Arts", "Mecha", "Military", "Music", "Mystery", "Parody", "Police",
-        "Psychological", "Romance", "Samurai", "School", "Sci-Fi", "Seinen", "Shoujo",
-        "Shounen", "Slice of Life", "Space", "Sports", "Super Power", "Supernatural", 
-        "Thriller", "Vampire", "Yaoi", "Yuri", "Shoujo Ai", "Shounen Ai"
+        "Action", "Adventure", "Comedy", "Drama", "Ecchi", "Fantasy", 
+        "Horror", "Mahou Shoujo", "Mecha", "Music", "Mystery", 
+        "Psychological", "Romance", "Sci-Fi", "Slice of Life", "Sports", 
+        "Supernatural", "Thriller"
     ]
     all_genres = {g.lower().replace(" ", "-"): g for g in all_genres_list}
     
-    # genres will come in as 'action,slice-of-life'
     selected_genres = [g.strip().lower() for g in genres.split(',')] if genres else []
     
+    # Map selected slugs back to Anilist Proper Case names
+    mapped_genres = []
+    for g in selected_genres:
+        if g in all_genres:
+            mapped_genres.append(all_genres[g])
+            
+    query = '''
+    query ($search: String, $genres: [String], $page: Int, $sort: [MediaSort]) {
+      Page (page: $page, perPage: 24) {
+        pageInfo {
+          total
+          currentPage
+          lastPage
+          hasNextPage
+          perPage
+        }
+        media (type: ANIME, search: $search, genre_in: $genres, sort: $sort) {
+          id
+          title { romaji english }
+          coverImage { large }
+        }
+      }
+    }
+    '''
+    
+    variables = {"page": page}
+    if q:
+        variables["search"] = q
+        variables["sort"] = ["SEARCH_MATCH", "POPULARITY_DESC"]
+    else:
+        variables["sort"] = ["TRENDING_DESC"]
+        
+    if mapped_genres:
+        variables["genres"] = mapped_genres
+        
     data = {}
     async with httpx.AsyncClient() as client:
         try:
-            url = f"{API_BASE}/api/v2/hianime/search?page={page}"
-            
-            # Use query or fallback to empty string (which we found doesn't work well)
-            # Actually we can check if q exists
-            if q:
-                url += f"&q={q}"
-            else:
-                url += "&q="  # Or "a" if empty doesn't work, but let's try empty string with Hianime
-
-            if genres:
-                url += f"&genres={genres}"
-
-            resp = await client.get(url)
-            
-            if resp.status_code == 200:
-                data = resp.json()
-            elif resp.status_code == 400 and not q:
-                # Fallback if empty query is rejected
-                fallback_url = f"{API_BASE}/api/v2/hianime/search?page={page}&q=a"
-                if genres:
-                    fallback_url += f"&genres={genres}"
-                resp_fallback = await client.get(fallback_url)
-                if resp_fallback.status_code == 200:
-                    data = resp_fallback.json()
+            resp = await client.post("https://graphql.anilist.co", json={"query": query, "variables": variables})
+            res_data = resp.json().get("data", {}).get("Page", {})
+            if res_data:
+                data = {
+                    "data": {
+                        "animes": map_anilist_list(res_data.get("media", [])),
+                        "totalPages": res_data.get("pageInfo", {}).get("lastPage", 1),
+                        "hasNextPage": res_data.get("pageInfo", {}).get("hasNextPage", False),
+                        "currentPage": res_data.get("pageInfo", {}).get("currentPage", 1)
+                    }
+                }
         except Exception as e:
             print("Search Error:", e)
             data = {}
@@ -147,185 +206,227 @@ async def search(request: Request, q: str = "", genres: str = None, page: int = 
             "data": data, 
             "query": q, 
             "page": page,
-            "all_genres": all_genres,
-            "selected_genres": selected_genres
+            "genres": genres or "",
+            "selected_genres": selected_genres,
+            "all_genres": all_genres
         }
     )
+
+@app.get("/anime/browse", response_class=HTMLResponse)
+async def browse(request: Request, page: int = 1, genres: str = None):
+    # Just redirect browse to search without query, it does the exact same thing but correctly filters
+    from fastapi.responses import RedirectResponse
+    url = f"/search?page={page}"
+    if genres:
+        url += f"&genres={genres}"
+    return RedirectResponse(url)
 
 @app.get("/anime/{anime_id}", response_class=HTMLResponse)
+
 async def anime_detail(request: Request, anime_id: str):
+    query = '''
+    query ($id: Int) {
+      Media (id: $id, type: ANIME) {
+        id
+        title { romaji english }
+        description
+        coverImage { large }
+        episodes
+        genres
+        averageScore
+        status
+      }
+    }
+    '''
     async with httpx.AsyncClient() as client:
         try:
-            detail_resp = await client.get(f"{API_BASE}/api/v2/hianime/anime/{anime_id}")
-            detail_data = detail_resp.json()
-            episodes_resp = await client.get(f"{API_BASE}/api/v2/hianime/anime/{anime_id}/episodes")
-            episodes_data = episodes_resp.json()
-        except:
-            detail_data = {}
-            episodes_data = {}
-    return templates.TemplateResponse(
-        request=request, 
-        name="detail.html", 
-        context={
-            "anime": detail_data.get('data', {}).get('anime', {}),
-            "more_info": detail_data.get('data', {}).get('moreInfo', {}),
-            "episodes": episodes_data.get('data', {}).get('episodes', [])
-        }
-    )
-
-@app.get("/watch/{episode_id}", response_class=HTMLResponse)
-async def watch(request: Request, episode_id: str, ep: str = None):
-    full_episode_id = episode_id
-    if ep:
-        full_episode_id = f"{episode_id}?ep={ep}"
-    
-    anime_id = episode_id.split('?')[0]
-    
-    servers_data = {}
-    anime_info = {}
-    current_ep = {}
-    next_ep_id = None
-
-    async with httpx.AsyncClient() as client:
-        try:
-            # 1. Get Servers
-            servers_resp = await client.get(f"{API_BASE}/api/v2/hianime/episode/servers?animeEpisodeId={full_episode_id}")
-            if servers_resp.status_code == 200:
-                servers_data = servers_resp.json().get('data', {})
+            resp = await client.post("https://graphql.anilist.co", json={'query': query, 'variables': {'id': int(anime_id)}})
+            media = resp.json().get("data", {}).get("Media", {})
+            if not media:
+                raise Exception("Not found")
             
-            # 2. Get Episode Info (for title and next episode)
-            episodes_resp = await client.get(f"{API_BASE}/api/v2/hianime/anime/{anime_id}/episodes")
-            if episodes_resp.status_code == 200:
-                episodes_data = episodes_resp.json().get('data', {})
-                if episodes_data and 'episodes' in episodes_data:
-                    ep_list = episodes_data['episodes']
-                    for i, ep_obj in enumerate(ep_list):
-                        if ep_obj.get('episodeId') == full_episode_id:
-                            current_ep = ep_obj
-                            if i + 1 < len(ep_list):
-                                next_ep_id = ep_list[i+1].get('episodeId')
-                            break
+            title = media["title"].get("english") or media["title"].get("romaji")
+            ep_count = media.get("episodes") or 12
             
-            # 3. Get Anime Info (for series title)
-            detail_resp = await client.get(f"{API_BASE}/api/v2/hianime/anime/{anime_id}")
-            if detail_resp.status_code == 200:
-                anime_info = detail_resp.json().get('data', {}).get('anime', {}).get('info', {})
-
+            anime_info = {
+                "name": title,
+                "poster": media["coverImage"]["large"],
+                "description": media.get("description", "No description available."),
+                "stats": {
+                    "rating": f"{media.get('averageScore', 'N/A')}/100",
+                    "quality": "HD",
+                    "episodes": {"sub": ep_count, "dub": 0},
+                    "type": "TV",
+                    "status": media.get("status", "FINISHED")
+                }
+            }
+            
+            episodes = []
+            for i in range(1, ep_count + 1):
+                episodes.append({
+                    "episodeId": f"{anime_id}/{i}",
+                    "number": i,
+                    "title": f"Episode {i}",
+                    "isFiller": False
+                })
+                
+            return templates.TemplateResponse(
+                request=request, 
+                name="detail.html", 
+                context={
+                    "anime": {"info": anime_info, "moreInfo": {"genres": media.get("genres", [])}}, 
+                    "episodes": episodes
+                }
+            )
         except Exception as e:
-            print(f"Watch Route Error: {e}")
-            
+            print("Detail Error:", e)
+            return HTMLResponse("Anime not found or error occurred", status_code=404)
+
+@app.get("/watch/{anime_id}/{ep_num}", response_class=HTMLResponse)
+async def watch_episode(request: Request, anime_id: str, ep_num: int):
+    # This replaces the old /watch/{episode_id} route
+    episode_id = f"{anime_id}/{ep_num}"
+    
+    query = '''
+    query ($id: Int) {
+      Media (id: $id, type: ANIME) {
+        id
+        title { romaji english }
+        coverImage { large }
+        episodes
+        status
+      }
+    }
+    '''
+    anime_info = {"name": f"Anime {anime_id}", "poster": ""}
+    episodes = []
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.post("https://graphql.anilist.co", json={'query': query, 'variables': {'id': int(anime_id)}})
+            media = resp.json().get("data", {}).get("Media", {})
+            if media:
+                anime_info["name"] = media["title"].get("english") or media["title"].get("romaji")
+                anime_info["poster"] = media["coverImage"]["large"]
+                anime_info["status"] = media.get("status")
+                
+                if anime_info["status"] == "NOT_YET_RELEASED":
+                    return HTMLResponse("<div style='color:white; text-align:center; padding:50px; font-family:sans-serif;'><h2>This Anime Hasn't been release yet</h2><a href='/' style='color:#e50914;'>Go Home</a></div>", status_code=403)
+                    
+                ep_count = media.get("episodes") or 12
+                for i in range(1, ep_count + 1):
+                    episodes.append({
+                        "episodeId": f"{anime_id}/{i}",
+                        "number": i,
+                        "title": f"Episode {i}"
+                    })
+        except:
+            pass
+
+    next_ep_id = f"{anime_id}/{ep_num + 1}" if any(e["number"] == ep_num + 1 for e in episodes) else None
+
     return templates.TemplateResponse(
         request=request, 
         name="watch.html", 
         context={
-            "episode_id": full_episode_id,
-            "anime_id_from_url": anime_id,  # Guaranteed to exist
-            "servers": servers_data,
+            "episode_id": episode_id,
+            "anime_id_from_url": anime_id,
             "anime": anime_info,
-            "current_ep": current_ep,
-            "next_ep_id": next_ep_id, 
-            "episodes": episodes_data.get("episodes", [])
+            "current_ep": {"number": ep_num, "title": f"Episode {ep_num}"},
+            "next_ep_id": next_ep_id,
+            "servers": {
+                "sub": [{"serverName": "Auto", "category": "sub"}],
+                "dub": [{"serverName": "Auto", "category": "dub"}]
+            },
+            "episodes": episodes
         }
     )
 
 @app.get("/api/source")
-async def get_source(episode_id: str, server: str = "vidstreaming", category: str = "sub"):
-    async with httpx.AsyncClient() as client:
-        try:
-            url = f"{API_BASE}/api/v2/hianime/episode/sources?animeEpisodeId={episode_id}&server={server}&category={category}"
-            resp = await client.get(url)
-            return resp.json()
-        except:
-            return {}
+async def get_source(episode_id: str, server: str = "Auto", category: str = "sub"):
+    try:
+        anilist_id, ep_num = episode_id.split("/")
+        url = f"{NEW_API_BASE}/anime/resolve/{anilist_id}/{ep_num}?category={category}"
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, timeout=30)
+            data = resp.json()
+            
+            sources = []
+            for stream in data.get("streams", []):
+                # Always proxy the master m3u8 to bypass IP-locked streams like premilkyway.com
+                abs_url = stream["url"]
+                referer = data.get("headers", {}).get("Referer", "https://cloudnestra.com/")
+                
+                # Fix Referer specifically for StreamHG / premilkyway streams
+                if "premilkyway.com" in abs_url:
+                    referer = "https://otakuhg.site/"
+                elif "vibeplayer.site" in abs_url:
+                    referer = "https://vibeplayer.site/"
+                elif "cloudatacdn" in abs_url or "dood" in abs_url:
+                    referer = "https://myvidplay.com/"
+                    
+                # Do NOT proxy premilkyway.com streams because they use tokenized IPs/Cookies
+                if "premilkyway.com" in abs_url:
+                    proxy_url = abs_url
+                elif "m3u8" in abs_url:
+                    proxy_url = f"/proxy/m3u8?url={quote(abs_url, safe='')}&referer={quote(referer, safe='')}"
+                else:
+                    # It's an mp4 like Doodstream, proxy it using our stream endpoint!
+                    proxy_url = f"/proxy/stream?url={quote(abs_url, safe='')}&referer={quote(referer, safe='')}"
 
+                    
+                sources.append({
+                    "url": proxy_url,
+                    "isM3U8": "m3u8" in abs_url,
+                    "quality": stream.get("quality", "auto"),
+                    "serverName": stream.get("server", "Auto")
+                })
+                
+            return {
+                "data": {
+                    "sources": sources,
+                    "subtitles": data.get("subtitles", []),
+                    "headers": data.get("headers", {})
+                }
+            }
+    except Exception as e:
+        print("Source Error:", e)
+        return {}
+
+# Rewritten routes
 @app.get("/azlist/{sort_option}", response_class=HTMLResponse)
 async def azlist(request: Request, sort_option: str, page: int = 1):
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.get(f"{API_BASE}/api/v2/hianime/azlist/{sort_option}?page={page}")
-            data = resp.json()
+            resp = await client.get(f"{NEW_API_BASE}/anime/browse?sort=TITLE_ROMAJI&page={page}&per_page=24")
+            data = {"data": {"animes": map_anilist_list(resp.json()), "totalPages": 10, "hasNextPage": True, "currentPage": page}}
         except:
             data = {}
-    return templates.TemplateResponse(
-        request=request, 
-        name="azlist.html", 
-        context={"data": data, "sort_option": sort_option, "page": page}
-    )
+    return templates.TemplateResponse(request=request, name="azlist.html", context={"data": data})
 
 @app.get("/schedule", response_class=HTMLResponse)
-async def schedule(request: Request, date: str = None):
-    if not date:
-        date = dt.today().strftime("%Y-%m-%d")
+async def schedule(request: Request, date: str = dt.today().strftime('%Y-%m-%d')):
+    # Anilist upcoming proxy for schedule
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.get(f"{API_BASE}/api/v2/hianime/schedule?date={date}")
-            data = resp.json()
+            resp = await client.get(f"{NEW_API_BASE}/anime/upcoming?page=1&per_page=24")
+            data = {"data": {"scheduledAnimes": map_anilist_list(resp.json())}}
         except:
             data = {}
-    return templates.TemplateResponse(
-        request=request, 
-        name="schedule.html", 
-        context={"data": data, "date": date}
-    )
+    return templates.TemplateResponse(request=request, name="schedule.html", context={"data": data, "date": date})
 
 @app.get("/genre/{name}", response_class=HTMLResponse)
 async def genre(request: Request, name: str, page: int = 1):
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.get(f"{API_BASE}/api/v2/hianime/genre/{name}?page={page}")
-            data = resp.json()
+            # Capitalize properly for Anilist (e.g. Action)
+            resp = await client.get(f"{NEW_API_BASE}/anime/genre/{name.capitalize()}?page={page}&per_page=24")
+            data = {"data": {"animes": map_anilist_list(resp.json()), "totalPages": 10, "hasNextPage": True, "currentPage": page, "genreName": name}}
         except:
             data = {}
-    return templates.TemplateResponse(
-        request=request, 
-        name="genre.html", 
-        context={"data": data, "genre": name, "page": page}
-    )
+    return templates.TemplateResponse(request=request, name="genre.html", context={"data": data})
 
-@app.get("/anime/browse", response_class=HTMLResponse)
-async def browse(request: Request, genres: str = None, page: int = 1):
-    all_genres = [
-        "Action", "Adventure", "Cars", "Comedy", "Dementia", "Demons", "Drama", "Ecchi",
-        "Fantasy", "Game", "Harem", "Historical", "Horror", "Josei", "Kids", "Magic",
-        "Martial Arts", "Mecha", "Military", "Music", "Mystery", "Parody", "Police",
-        "Psychological", "Romance", "Samurai", "School", "Sci-Fi", "Seinen", "Shoujo",
-        "Shoujo Ai", "Shounen", "Shounen Ai", "Slice of Life", "Space", "Sports",
-        "Super Power", "Supernatural", "Thriller", "Vampire", "Yaoi", "Yuri"
-    ]
-    
-    selected_genres = [g.strip() for g in genres.split(',') if g.strip()] if genres else []
-    
-    async with httpx.AsyncClient() as client:
-        try:
-            # Construct API URL
-            # If genres are selected, use them in search
-            # If no genres and no search query, we might want to default to something or just show empty/latest
-            
-            # The user suggested: f"{API_BASE}/api/v2/hianime/search?genres={genres}&page={page}"
-            # We'll use q="" if no query is present, but here we don't have a 'q' param in the route.
-            # Assuming the API supports genres param directly on search endpoint.
-            
-            api_url = f"{API_BASE}/api/v2/hianime/search?page={page}"
-            if genres:
-                api_url += f"&genres={genres}"
-            else:
-                # If no genres, maybe default to empty search or just list generic results
-                api_url += "&q=" 
-                
-            resp = await client.get(api_url)
-            data = resp.json()
-        except:
-            data = {}
-            
-    return templates.TemplateResponse(
-        request=request,
-        name="browse.html",
-        context={
-            "data": data,
-            "all_genres": all_genres,
-            "selected_genres": selected_genres
-        }
-    )
+
 
 
 # --- MANGA ROUTES ---
@@ -549,6 +650,53 @@ async def manga_read(request: Request, manga_id: str, chapter_id: str):
         }
     )
 
+
+@app.api_route("/proxy/stream", methods=["GET", "HEAD"])
+async def proxy_stream(request: Request, url: str, referer: str = None):
+    headers = {"User-Agent": USER_AGENT}
+    if referer:
+        headers["Referer"] = referer
+        headers["Origin"] = referer.rstrip("/")
+        
+    # Forward the Range header from the client
+    range_header = request.headers.get("Range")
+    if range_header:
+        headers["Range"] = range_header
+
+    async def stream_generator():
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            async with client.stream("GET", url, headers=headers) as response:
+                async for chunk in response.aiter_bytes(chunk_size=8192):
+                    yield chunk
+
+    # We need to make a HEAD request first to get the content length and type, unless we fetch it immediately
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            head_resp = await client.head(url, headers=headers)
+            
+        resp_headers = {}
+        for key in ["Accept-Ranges", "Content-Length", "Content-Type", "Content-Range"]:
+            if key in head_resp.headers:
+                resp_headers[key] = head_resp.headers[key]
+                
+        status_code = head_resp.status_code
+        if status_code not in [200, 206]:
+            # fallback to 200 if head fails weirdly
+            status_code = 206 if range_header else 200
+
+        if request.method == "HEAD":
+            return Response(content="", status_code=status_code, headers=resp_headers, media_type=head_resp.headers.get("Content-Type", "video/mp4"))
+
+        return StreamingResponse(
+            stream_generator(),
+            status_code=status_code,
+            headers=resp_headers,
+            media_type=head_resp.headers.get("Content-Type", "video/mp4")
+        )
+    except Exception as e:
+        print(f"Proxy Stream Error: {e}")
+        return Response(status_code=500, content="Proxy Stream Error")
+
 @app.get("/proxy/m3u8")
 async def proxy_m3u8(url: str, referer: str = None):
     headers = {"User-Agent": USER_AGENT}
@@ -556,7 +704,7 @@ async def proxy_m3u8(url: str, referer: str = None):
         headers["Referer"] = referer
         headers["Origin"] = referer.rstrip("/")
     
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=8.0) as client:
         try:
             resp = await client.get(url, headers=headers)
             content = resp.text
@@ -600,7 +748,7 @@ async def proxy_ts(url: str, referer: str = None):
         headers["Origin"] = referer.rstrip("/")
     
     async def stream_ts():
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=8.0) as client:
             try:
                 async with client.stream("GET", url, headers=headers) as response:
                     async for chunk in response.aiter_bytes():
@@ -619,7 +767,7 @@ async def proxy_subtitle(url: str, referer: str = None):
         headers["Origin"] = referer.rstrip("/")
     
     async def stream_subtitle():
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=8.0) as client:
             try:
                 async with client.stream("GET", url, headers=headers) as response:
                     async for chunk in response.aiter_bytes():

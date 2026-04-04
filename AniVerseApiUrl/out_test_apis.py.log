@@ -1,0 +1,4 @@
+https://api-aniwatch.onrender.com/anime/search?q=jujutsu: 503
+https://anime-api-v2.vercel.app/anime/gogoanime/naruto: 404
+https://anify.anify.tv/search/anime/jujutsu: Error 
+https://api.amvstr.me/api/v2/search?q=jujutsu: Error [Errno -2] Name or service not known

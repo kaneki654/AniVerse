@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <title>AniVerse - Home</title>
+    
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <a href="/" data-text="ANIVERSE">ANIVERSE</a>
+        </div>
+        <nav>
+            <a href="/" class="nav-item" aria-label="Home">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/><path d="M0 0h24v24H0z" fill="none"/></svg>
+            </a>
+            <a href="/search" class="nav-item" aria-label="Browse">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            </a>
+            <a href="/manga" class="nav-item" aria-label="Manga">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M18 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 4h5v8l-2.5-1.5L6 12V4z"/><path d="M0 0h24v24H0z" fill="none"/></svg>
+            </a>
+            <a href="/azlist/all" class="nav-item" aria-label="A-Z List">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M0 0h24v24H0z" fill="none"/><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+            </a>
+            <a href="/schedule" class="nav-item" aria-label="Schedule">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/><path d="M0 0h24v24H0z" fill="none"/></svg>
+            </a>
+            <a href="/history" class="nav-item" aria-label="History">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 12"/><path d="M3 5v7h7"/><polyline points="12 7 12 12 16 14"/></svg>
+            </a>
+        </nav>
+        <div class="search-bar">
+            <input type="text" id="search-input" placeholder="Search anime...">
+            <div id="search-suggestions" class="suggestions-dropdown"></div>
+        </div>
+    </header>
+
+    <main>
+        
+
+    
+    
+    <section class="hero-carousel">
+        <h2>Spotlight</h2>
+        <div class="carousel-container">
+            
+            
+            <div class="carousel-item">
+                <a href="/anime/16498">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx16498-buvcRTBx4NSm.jpg" alt="Attack on Titan" referrerpolicy="no-referrer">
+                    <div class="carousel-content">
+                        <h3>Attack on Titan</h3>
+                        <p>Trending Anime</p>
+                        <div class="meta" style="display: flex; gap: 10px; font-size: 0.8rem; color: #ddd; margin-top: 5px;">
+                            <span class="rating">HD</span>
+                            <span class="type">TV</span>
+                            <span class="duration">24m</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="carousel-item">
+                <a href="/anime/101922">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx101922-WBsBl0ClmgYL.jpg" alt="Demon Slayer: Kimetsu no Yaiba" referrerpolicy="no-referrer">
+                    <div class="carousel-content">
+                        <h3>Demon Slayer: Kimetsu no Yaiba</h3>
+                        <p>Trending Anime</p>
+                        <div class="meta" style="display: flex; gap: 10px; font-size: 0.8rem; color: #ddd; margin-top: 5px;">
+                            <span class="rating">HD</span>
+                            <span class="type">TV</span>
+                            <span class="duration">24m</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="carousel-item">
+                <a href="/anime/1535">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx1535-kUgkcrfOrkUM.jpg" alt="Death Note" referrerpolicy="no-referrer">
+                    <div class="carousel-content">
+                        <h3>Death Note</h3>
+                        <p>Trending Anime</p>
+                        <div class="meta" style="display: flex; gap: 10px; font-size: 0.8rem; color: #ddd; margin-top: 5px;">
+                            <span class="rating">HD</span>
+                            <span class="type">TV</span>
+                            <span class="duration">24m</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="carousel-item">
+                <a href="/anime/113415">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx113415-LHBAeoZDIsnF.jpg" alt="JUJUTSU KAISEN" referrerpolicy="no-referrer">
+                    <div class="carousel-content">
+                        <h3>JUJUTSU KAISEN</h3>
+                        <p>Trending Anime</p>
+                        <div class="meta" style="display: flex; gap: 10px; font-size: 0.8rem; color: #ddd; margin-top: 5px;">
+                            <span class="rating">HD</span>
+                            <span class="type">TV</span>
+                            <span class="duration">24m</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="carousel-item">
+                <a href="/anime/21459">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21459-nYh85uj2Fuwr.jpg" alt="My Hero Academia" referrerpolicy="no-referrer">
+                    <div class="carousel-content">
+                        <h3>My Hero Academia</h3>
+                        <p>Trending Anime</p>
+                        <div class="meta" style="display: flex; gap: 10px; font-size: 0.8rem; color: #ddd; margin-top: 5px;">
+                            <span class="rating">HD</span>
+                            <span class="type">TV</span>
+                            <span class="duration">24m</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="carousel-item">
+                <a href="/anime/11061">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx11061-y5gsT1hoHuHw.png" alt="Hunter x Hunter (2011)" referrerpolicy="no-referrer">
+                    <div class="carousel-content">
+                        <h3>Hunter x Hunter (2011)</h3>
+                        <p>Trending Anime</p>
+                        <div class="meta" style="display: flex; gap: 10px; font-size: 0.8rem; color: #ddd; margin-top: 5px;">
+                            <span class="rating">HD</span>
+                            <span class="type">TV</span>
+                            <span class="duration">24m</span>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            
+            
+        </div>
+    </section>
+
+    <section id="continue-watching" class="trending" style="display: none;">
+        <h2>Continue Watching</h2>
+        <div id="continue-watching-list" class="scroll-row"></div>
+    </section>
+
+    <section class="trending">
+        <h2>Trending Now</h2>
+        <div class="scroll-row">
+            
+            
+            <div class="anime-card">
+                <a href="/anime/180745">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx180745-OEZaBeEdWozn.png" alt="Classroom of the Elite 4th Season: Second Year, First Semester" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Classroom of the Elite 4th Season: Second Year, First Semester</h4>
+                        <span class="rank">#?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/166613">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx166613-uHB8q3D4qbon.jpg" alt="Hell’s Paradise Season 2" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Hell’s Paradise Season 2</h4>
+                        <span class="rank">#?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/182255">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx182255-butzrqd4I0aC.jpg" alt="Frieren: Beyond Journey’s End Season 2" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Frieren: Beyond Journey’s End Season 2</h4>
+                        <span class="rank">#?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/172463">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx172463-LnXqHzt74SJL.jpg" alt="JUJUTSU KAISEN Season 3: The Culling Game Part 1" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>JUJUTSU KAISEN Season 3: The Culling Game Part 1</h4>
+                        <span class="rank">#?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/21">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21-ELSYx3yMPcKM.jpg" alt="ONE PIECE" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>ONE PIECE</h4>
+                        <span class="rank">#?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/184951">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx184951-s8Lg2muPBhdX.jpg" alt="You and I Are Polar Opposites" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>You and I Are Polar Opposites</h4>
+                        <span class="rank">#?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/167152">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx167152-O1pm6DWwifBD.jpg" alt="Sentenced to Be a Hero" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Sentenced to Be a Hero</h4>
+                        <span class="rank">#?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/195515">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx195515-p1nD71Hmr4ly.jpg" alt="There was a Cute Girl in the Hero’s Party, so I Tried Confessing to Her" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>There was a Cute Girl in the Hero’s Party, so I Tried Confessing to Her</h4>
+                        <span class="rank">#?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/173172">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx173172-404XnuOS0DhR.jpg" alt="Dorohedoro Season 2" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Dorohedoro Season 2</h4>
+                        <span class="rank">#?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/200769">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx200769-8WkFkoFxc2fw.jpg" alt="The strongest job is apparently not a hero or a sage, but an appraiser (provisional)!" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>The strongest job is apparently not a hero or a sage, but an appraiser (provisional)!</h4>
+                        <span class="rank">#?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/180082">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx180082-IZAlf06G2VVm.png" alt="Chitose Is in the Ramune Bottle" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Chitose Is in the Ramune Bottle</h4>
+                        <span class="rank">#?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/166617">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx166617-34fpC9y47tTx.png" alt="Fate/strange Fake" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Fate/strange Fake</h4>
+                        <span class="rank">#?</span>
+                    </div>
+                </a>
+            </div>
+            
+            
+        </div>
+    </section>
+
+    <section class="latest-episodes">
+        <h2>Latest Episodes</h2>
+        <div class="grid">
+            
+            
+            <div class="anime-card">
+                <a href="/anime/207141">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx207141-qaJCCdx1DWtK.jpg" alt="Yani Neko" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Yani Neko</h4>
+                        <span class="episode-badge" style="background: #e50914; padding: 2px 5px; border-radius: 3px; font-size: 0.7rem; position: absolute; top: 10px; left: 10px;">Ep ?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/210234">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx210234-MZaMjdbBzEHz.jpg" alt="Mamonogurai no Boukensha: Ore Dake Mamono wo Kuratte Tsuyoku Naru" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Mamonogurai no Boukensha: Ore Dake Mamono wo Kuratte Tsuyoku Naru</h4>
+                        <span class="episode-badge" style="background: #e50914; padding: 2px 5px; border-radius: 3px; font-size: 0.7rem; position: absolute; top: 10px; left: 10px;">Ep ?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/209662">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx209662-wAUXstbADqu7.png" alt="Prima Donna" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Prima Donna</h4>
+                        <span class="episode-badge" style="background: #e50914; padding: 2px 5px; border-radius: 3px; font-size: 0.7rem; position: absolute; top: 10px; left: 10px;">Ep 1</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/110693">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b110693-m73u7DVIJdcT.png" alt="Poputepipikku Kinen" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Poputepipikku Kinen</h4>
+                        <span class="episode-badge" style="background: #e50914; padding: 2px 5px; border-radius: 3px; font-size: 0.7rem; position: absolute; top: 10px; left: 10px;">Ep 1</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/199413">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx199413-w9b6PTV1IO19.jpg" alt="World of Sphira" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>World of Sphira</h4>
+                        <span class="episode-badge" style="background: #e50914; padding: 2px 5px; border-radius: 3px; font-size: 0.7rem; position: absolute; top: 10px; left: 10px;">Ep ?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/135580">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b135580-lXd6OlnQowQG.png" alt="Ling Long 2" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Ling Long 2</h4>
+                        <span class="episode-badge" style="background: #e50914; padding: 2px 5px; border-radius: 3px; font-size: 0.7rem; position: absolute; top: 10px; left: 10px;">Ep 12</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/210157">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx210157-TsOt9K0ADCmK.jpg" alt="Love Live! Hasu no Sora Jogakuin School Idol Club" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Love Live! Hasu no Sora Jogakuin School Idol Club</h4>
+                        <span class="episode-badge" style="background: #e50914; padding: 2px 5px; border-radius: 3px; font-size: 0.7rem; position: absolute; top: 10px; left: 10px;">Ep ?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/210199">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx210199-v4uZBMW9nYGa.jpg" alt="The Fable 2nd Season" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>The Fable 2nd Season</h4>
+                        <span class="episode-badge" style="background: #e50914; padding: 2px 5px; border-radius: 3px; font-size: 0.7rem; position: absolute; top: 10px; left: 10px;">Ep ?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/209980">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx209980-ilH3QHcKPw7t.jpg" alt="Isekai de Cheat Skill wo Te ni Shita Ore wa, Genjitsu Sekai wo mo Musou Suru: Level Up wa Jinsei wo Kaeta 2nd Season" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Isekai de Cheat Skill wo Te ni Shita Ore wa, Genjitsu Sekai wo mo Musou Suru: Level Up wa Jinsei wo Kaeta 2nd Season</h4>
+                        <span class="episode-badge" style="background: #e50914; padding: 2px 5px; border-radius: 3px; font-size: 0.7rem; position: absolute; top: 10px; left: 10px;">Ep ?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/209940">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx209940-wV4VrfO2c5dE.jpg" alt="Komekami! Girls" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Komekami! Girls</h4>
+                        <span class="episode-badge" style="background: #e50914; padding: 2px 5px; border-radius: 3px; font-size: 0.7rem; position: absolute; top: 10px; left: 10px;">Ep ?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/209963">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx209963-LjQB2OV2jJMd.jpg" alt="Sentenced to Be a Hero Season 2" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Sentenced to Be a Hero Season 2</h4>
+                        <span class="episode-badge" style="background: #e50914; padding: 2px 5px; border-radius: 3px; font-size: 0.7rem; position: absolute; top: 10px; left: 10px;">Ep ?</span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/209961">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx209961-A9TJo4dMRXAi.jpg" alt="Shibou Yuugi de Meshi wo Kuu. 44:CLOUDY BEACH" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Shibou Yuugi de Meshi wo Kuu. 44:CLOUDY BEACH</h4>
+                        <span class="episode-badge" style="background: #e50914; padding: 2px 5px; border-radius: 3px; font-size: 0.7rem; position: absolute; top: 10px; left: 10px;">Ep 1</span>
+                    </div>
+                </a>
+            </div>
+            
+            
+        </div>
+    </section>
+
+    <section class="top-airing">
+        <h2>Top Airing</h2>
+        <div class="grid">
+            
+            
+            <div class="anime-card">
+                <a href="/anime/16498">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx16498-buvcRTBx4NSm.jpg" alt="Attack on Titan" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Attack on Titan</h4>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/101922">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx101922-WBsBl0ClmgYL.jpg" alt="Demon Slayer: Kimetsu no Yaiba" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Demon Slayer: Kimetsu no Yaiba</h4>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/1535">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx1535-kUgkcrfOrkUM.jpg" alt="Death Note" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Death Note</h4>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/113415">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx113415-LHBAeoZDIsnF.jpg" alt="JUJUTSU KAISEN" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>JUJUTSU KAISEN</h4>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/21459">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21459-nYh85uj2Fuwr.jpg" alt="My Hero Academia" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>My Hero Academia</h4>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/11061">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx11061-y5gsT1hoHuHw.png" alt="Hunter x Hunter (2011)" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Hunter x Hunter (2011)</h4>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/21087">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21087-B5DHjqZ3kW4b.jpg" alt="One-Punch Man" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>One-Punch Man</h4>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/20605">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b20605-k665mVkSug8D.jpg" alt="Tokyo Ghoul" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Tokyo Ghoul</h4>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/20958">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20958-HuFJyr54Mmir.jpg" alt="Attack on Titan Season 2" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Attack on Titan Season 2</h4>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/21">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21-ELSYx3yMPcKM.jpg" alt="ONE PIECE" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>ONE PIECE</h4>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/5114">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx5114-nSWCgQlmOMtj.jpg" alt="Fullmetal Alchemist: Brotherhood" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Fullmetal Alchemist: Brotherhood</h4>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="anime-card">
+                <a href="/anime/20">
+                    <img src="https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20-dE6UHbFFg1A5.jpg" alt="Naruto" referrerpolicy="no-referrer">
+                    <div class="card-info">
+                        <h4>Naruto</h4>
+                    </div>
+                </a>
+            </div>
+            
+            
+        </div>
+    </section>
+
+
+    </main>
+
+    <footer>
+        <p>&copy; 2024 AniVerse. All rights reserved.</p>
+    </footer>
+
+    <script src="/static/script.js"></script>
+    
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const continueWatchingSection = document.getElementById('continue-watching');
+        const continueWatchingList = document.getElementById('continue-watching-list');
+        
+        let history = [];
+        try {
+            const raw = localStorage.getItem('aniverse_history');
+            history = raw ? JSON.parse(raw) : [];
+            if (!Array.isArray(history)) history = [];
+        } catch (e) {
+            console.error('Failed to parse history', e);
+            history = [];
+        }
+        
+        // Sort by timestamp desc
+        history.sort((a, b) => b.timestamp - a.timestamp);
+        
+        // Filter uncompleted episodes
+        const uncompleted = history.filter(item => !item.completed);
+        
+        // Take the last 10
+        const last10 = uncompleted.slice(0, 10);
+        
+        if (last10.length > 0) {
+            continueWatchingSection.style.display = 'block';
+            
+            last10.forEach(item => {
+                const poster = item.animePoster || item.poster || '/static/placeholder.jpg';
+                const title = item.animeTitle || item.title || 'Unknown Title';
+                const epNum = item.episodeNum || item.episodeNumber || '?';
+                const episodeId = item.episodeId || '#';
+                
+                // Calculate progress percentage
+                const current = parseFloat(item.progress) || 0;
+                const duration = parseFloat(item.duration) || 1;
+                const percentage = Math.min(100, Math.max(0, (current / duration) * 100));
+                
+                const card = document.createElement('div');
+                card.className = 'anime-card';
+                card.style.minWidth = '160px'; // Ensure consistent width in scroll row
+                
+                card.innerHTML = `
+                    <a href="/watch/${episodeId}">
+                        <div style="position: relative;">
+                            <img src="${poster}" alt="${title}" referrerpolicy="no-referrer" style="width: 100%; height: auto; border-radius: 8px;">
+                            <div style="position: absolute; bottom: 0; left: 0; width: 100%; height: 4px; background: rgba(0,0,0,0.5); border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; overflow: hidden;">
+                                <div style="width: ${percentage}%; height: 100%; background: #e50914;"></div>
+                            </div>
+                            <span class="episode-badge" style="background: #e50914; padding: 2px 5px; border-radius: 3px; font-size: 0.7rem; position: absolute; top: 10px; left: 10px; color: white;">Ep ${epNum}</span>
+                        </div>
+                        <div class="card-info">
+                            <h4 style="font-size: 0.9rem; margin-top: 5px;">${title}</h4>
+                            <span style="font-size: 0.8rem; color: #aaa;">${Math.floor(percentage)}% watched</span>
+                        </div>
+                    </a>
+                `;
+                continueWatchingList.appendChild(card);
+            });
+        }
+    });
+</script>
+
+</body>
+</html>

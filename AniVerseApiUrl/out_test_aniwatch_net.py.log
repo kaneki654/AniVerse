@@ -1,0 +1,2 @@
+Status: 200
+{'status': 200, 'data': {'animes': [], 'mostPopularAnimes': [], 'searchQuery': 'jujutsu', 'searchFilters': {}, 'totalPages': 0, 'hasNextPage': False, 'currentPage': 1}}

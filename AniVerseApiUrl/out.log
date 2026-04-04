@@ -1,0 +1,4 @@
+INFO:     Will watch for changes in these directories: ['/home/kerby0818/app/AniVerseApiUrl']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [4336] using StatReload
+INFO:     Stopping reloader process [4336]

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html"/>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/font-awesome/5.12.0-2/css/all.min.css" integrity="" crossorigin="anonymous"/>
+<link rel="stylesheet" href="/style_rcp-e600e6.css?t=1744906951"/>
+
+<style>
+    body {
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    }
+    .hidden {
+        display:none;
+    }
+    
+    #asdf {
+        width: 0px;
+        height: 0px;
+    }
+    
+    #iframe_title {
+        position: absolute;
+        top: calc(50% + 45px);
+        font-size: 1.1em;
+        text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+        width: calc(100% - 30px);
+        text-align: center;
+        padding: 0px 15px;
+    }
+</style>
+</head>
+<body data-i="12343534_1x1"  >
+    
+    
+        <!--<div id="pop_asdf" style="position:absolute; width:100%; height:100%; z-index:2147483650; pointer-events: none;"></div>-->
+        
+    <!--<div id="loading_overlay"></div>-->
+    <div id="the_frame" style="background-image: none;">
+                <div id="pl_but_background" style="background-image: url('//image.tmdb.org/t/p/w780/gmECX1DvFgdUPjtio2zaL8BPYPu.jpg');">
+            <div id="iframe_title">
+                JUJUTSU KAISEN (2020) S01E01            </div>
+            <i id="pl_but" class="fas fa-play"></i>
+        </div>
+            </div>
+    
+    <div id="hidden" style="display:hidden;"></div>
+    
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-cookie/1.4.1/jquery.cookie.min.js" integrity="sha256-1A78rJEdiWTzco6qdn3igTBv9VupN3Q1ozZNTR4WE/Y=" crossorigin="anonymous"></script>
+    <script src="/base64.js?t="></script>
+    
+    <script src="/sbx.js?t=1751380596"></script>
+
+    
+    <script>
+    
+    /*
+    $(document).ready(function(){
+        
+        
+        if($.cookie('pop_asdf')){
+            $("#pop_asdf").addClass("hidden");
+        }
+        
+        $("#pop_asdf").click(function(){
+            if(!$.cookie('pop_asdf')){
+                if($.cookie('pop_asdf_tmp') >= 3){
+                    var date = new Date();
+                    date.setTime(date.getTime() + (10800 * 1000));
+                    $.cookie('pop_asdf', 1, { expires: date });
+                    $("#pop_asdf").addClass("hidden");
+                }else{
+                    var cookie_value = 1;
+                    if($.cookie('pop_asdf_tmp'))
+                        cookie_value = $.cookie('pop_asdf_tmp');
+                        
+                    cookie_value++;
+                    
+                    $.cookie('pop_asdf_tmp', cookie_value);
+                    $(this).addClass("hidden");
+                    setTimeout(function(){
+                        $("#pop_asdf").removeClass("hidden");
+                    }, 59000);
+                }
+            }
+        });
+    });
+    */
+    
+        
+    $("#pl_but_background , #pl_but").click(function(){
+        loadIframe();
+    });
+    
+        
+    function loadIframe(data = 1){
+        if(data == 1){
+            $("#the_frame").removeAttr("style");
+            $("#the_frame").html("");
+            $('<iframe>', {
+               id: 'player_iframe',
+               src: '/prorcp/NGVkOGZiN2QyNGM5YWI1YmYwZWJjMmI2YjcwYTg0YWM6WVZwVE1tWXJUemt4VWtOU1RXMVJjREUyVUZkSU1XVmxSVzVGZHpCSVFWSjNWVkJDT1hCdGJWZGFhM2x3YzAwdmFYUTVOMlUyVlZGNFJEZFljV3d4VDJoR2VYTm9OVVE0Y214WFp5OUlWVkZDUlc1WGMxRm1hVlUyT0RSdmNYZFRRVzFGZUhsWWRUaGtNV0pMY0VGak0zVjBiekY0YlVKYVlUbEdhVzFQUTNCUlRVbEpabWhrUjBsc056RldWbk5HTUhWU2VUZ3JlVmMxYm5GQlp5dFJjREF4TDNOUFRFbHlTbXcyTkhReFVVOWllRkJOTmtoc1RtSjNMemRRT0RRM2EydFVNVE5SVEVack56Sm5MMGxtZVZGU09VMWplRzVPYzJoSldYbERaMVJzZFhvNU0wdEZZV1FyT0V0R1lrOTFNREZWTDJodk16ZFhLekZKU1dJeGNsa3JVRzB6TDBoMVQyVXdSVkJsVUVZdk5IUkhZM0JsV0d4RVkwdzVZelk0YlRBeVZubE9PQ3RPV2xSQ1RWcFhjaXN3VUVGQ1RWZDRSbTgyZWt4V2RsTndOVlZaZUdWWmEyd3ZOMFpzTTFwaGEybDBja3BvTUV4TmNuSnpSREprTlc5WE1YUkJhelV6ZW1wMFUxSmhOM2xuU0c1NmRFZHJMMnBLVFN0eVduZHJORnBpUkhoQlZraEhVa3BHZFVwSE1FWm1jbGhhTkhoNWNuTm1hVmw2ZUd4SVkxb3hhak4xY1V4NmNVUnROa2xOY3l0RVRIRkxjMEZqVFhCeVZISlhhME5UU1dReEwwUlhTV294VFcwck5HTlJVMDlMUTA1U1RTOU1kalZHY1hKc1RXdE9WVWR0UkdaTVdWaEdOSG8xVkVOTlN6VTBNbXhsVVdWcllqWnVVVEZZYUVadWIxQlhUMU5SVGxWS2NGZ3JjMjFRY0ZRM1RFWk1PR3RPUm01U09YUlVVRVpEVlV3clpIQmhaQzlvTlVWc1JrSlVSVmhDY0hKNGNFVktaM29yYlc1M00zRkNNek5LYjFkbWVGY3pRbmw1Tms0NWFYVnhPV1ZsWWpseFNucGxXR3QwVDJoeVVFVk5RVzl5U0d0dlZrUjBPWE5JYlcxUFdXSm5kRkZpY0VJelJqSnlVVTFEUVZSVk0xaDFURXBQYVVvNFFtSTVjVFpHYjBkb2FIbDRXV05QWlV4MGRVdGtUemR0UmtsNk5FcFJVV3hKUVZSMGRGbFNkbUU0WkhCYVJUWlBUVXhMVERWR2NIWlJVVTlLY1haVGVtRjBSR2R1TTBaMU0ydDJObEYwWlUxTFlubGlOa2t2VlVOUmNURXdhbUVyWVRSUlRVdHFjMms0WjBsMGNqWkhiRXBhTm10NlYxUXdaV2xuVFRnME5VdGtPVUZ5VVhaemNqbFBUbXRNWkhSSFdIbEtXbHBTTkhWd2EweEhXR2RpZWtrMWMyRkViMVZYTW1oNGMxTmFhSHBwZFRaMVJVVkdielpQTWxsd1VubFhTV0p0ZG1JMk1tTnhXRkZOYzBSVVJVbzFURElyTWpOdmRVTlBWbG92ZFVWNFVYaERlakZhVVZwWFdWZEVWelpMT1ZKSFFURkRZbU54TVZVNU5YZEZjV1poYjB4dVprTlllRmRHTkdWTE9ETXpZMVppTkRsWVNHZFdjVUZHVkROaFdrNU1ZVUZXUVhwRllUVkRWRGRwYzB4V1ZIUXpXalpGVlVoemNGZE1iamgyWVZvMk9DOWtLMmxZVkM4MU0zSkpNVmQwUTNGVGVDOXVWRkUwYkVOVFYwRmhSemRsTDJwNGIySTBPSGxyWW1aTGNFbE1ZeXM1ZW1kMk5DdE5kM1V4TUdKc1RqbHRRMk5MU2xCdE5XeEhNWFZtUjNkQlREWlZZMnBYUldKb1VXVk5SemxEVUZWd2MwYzJjMWRNY2sxWFRFcHlSbnB2ZW5ndk0zRkRSbXhMTWpoNVFXTnJjMEp5UlZGYVVHaEJhVkZSUkVGSVJuWkVVM0ZYY21KM2FISXhTR3hxVDNKb2VWcFJZVzk2Vlc5cmJXdEdUbU5HUmpsa1RtNDRLMEptYXpjNFlYTjRMMWRuVnpkVFVuQkVLMlJFY25KdVoyWm9WelV6YkZSaVdEZENSRTlpUlc1MlNVWkZSbHBNV2tscE9HWlNXakpKVUhNeVJHVXpVRWg0UkdRNWNsaFFaVTVtUlZJMlMwVnhUVnBXWVdnd1oyTlFiMFU5',
+               frameborder: 0,
+               scrolling: 'no',
+               allowfullscreen: 'yes',
+               allow: "autoplay",
+               style: 'height: 100%; width: 100%;'
+            }).appendTo('#the_frame');
+            $("#player_iframe").on("load", function () {
+                $("#the_frame").attr("style","background-image: none;");
+            });
+        }
+    }
+    
+    // pm redirector
+    window.addEventListener('message', message => {
+        if (message.source == window) {
+            return; // Skip message in this event listener
+        }
+        
+        var the_iframe = document.getElementById('player_iframe');
+        
+        if(message.source == window.parent){
+            the_iframe.contentWindow.postMessage(message.data,'*');
+        }else{
+            window.parent.postMessage(message.data , '*');
+        }
+        
+        
+        
+    });
+        
+        
+        
+    </script>
+    
+    
+    
+    
+    
+    
+   
+</body>
+</html>
