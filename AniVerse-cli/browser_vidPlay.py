@@ -12,293 +12,834 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 <script src="https://unpkg.com/lucide@latest"></script>
 <style>
-/* ── Reset & Variables ── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-:root {
-  --bg: #0a0a0a;
-  --surface: #141414;
-  --surface2: #1f1f1f;
-  --accent: #e50914;
-  --text: #ffffff;
-  --text-dim: #999;
-  --border: #2a2a2a;
-  --radius: 8px;
-}
-html, body { height: 100%; background: var(--bg); color: var(--text);
-             font-family: 'Segoe UI', system-ui, sans-serif; overflow-x: hidden; }
- 
-/* ── Layout ── */
-.watch-container { max-width: 1400px; margin: 0 auto; padding-bottom: 48px; }
- 
-/* ── Player wrapper & container ── */
-.video-player-wrapper { width: 100%; background: #000; }
+/* Player Container */
 .player-container {
-  position: relative; width: 100%; aspect-ratio: 16/9;
-  background: #000; cursor: none; outline: none;
-  user-select: none; overflow: hidden;
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 16/9;
+    background: #000;
+    font-family: Arial, sans-serif;
+    user-select: none;
+    overflow: hidden;
+    border-radius: 8px;
+    outline: none;
 }
-.player-container.controls-visible { cursor: default; }
-video { width: 100%; height: 100%; display: block; object-fit: contain; }
- 
-/* ── Gradients ── */
-.top-gradient-overlay {
-  position: absolute; top: 0; left: 0; right: 0; height: 80px;
-  background: linear-gradient(to bottom, rgba(0,0,0,.7) 0%, transparent 100%);
-  pointer-events: none; z-index: 2;
+
+.player-container.fullscreen {
+    width: 100vw;
+    height: 100vh;
+    max-width: none;
+    max-height: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 9999;
+    border-radius: 0;
 }
- 
-/* ── Loading Spinner ── */
+
+video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+/* Lucide Icons Styling */
+.lucide {
+    width: 20px;
+    height: 20px;
+    stroke-width: 2px;
+}
+
+/* Helper Class - !important to override any default display */
+.hidden {
+    display: none !important;
+}
+
+/* Loading Spinner */
 .loading-spinner {
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-  z-index: 10; display: none; align-items: center; justify-content: center;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    display: none;
+    z-index: 50;
 }
-.loading-spinner.visible { display: flex; }
-.loading-spinner svg { width: 48px; height: 48px; color: var(--accent); animation: spin 1s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
- 
-/* ── Feedback Icons ── */
+.loading-spinner.active { display: block; }
+.loading-spinner .lucide {
+    width: 48px;
+    height: 48px;
+    color: #e50914;
+    animation: spin 1s linear infinite;
+}
+@keyframes spin { 100% { transform: rotate(360deg); } }
+
+/* Visual Feedback Overlays */
 .feedback-overlay {
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
-  z-index: 8; pointer-events: none; display: flex; align-items: center; justify-content: center;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 40;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 .feedback-icon {
-  display: none; width: 64px; height: 64px; color: white;
-  filter: drop-shadow(0 0 8px rgba(0,0,0,.8));
+    width: 64px;
+    height: 64px;
+    background: rgba(0,0,0,0.6);
+    padding: 15px;
+    border-radius: 50%;
+    color: #fff;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: all 0.2s ease-out;
 }
-.feedback-icon.show { display: block; animation: feedback-pop .45s ease-out forwards; }
+.feedback-icon.animate {
+    opacity: 1;
+    transform: scale(1);
+    animation: fadeOut 0.5s ease-out 0.2s forwards;
+}
+@keyframes fadeOut { to { opacity: 0; transform: scale(1.2); } }
+
+/* Speed Overlay */
 .speed-overlay {
-  display: none; font-size: 1.4rem; font-weight: 700; color: white;
-  background: rgba(0,0,0,.65); padding: 8px 18px; border-radius: 6px;
+    background: rgba(0,0,0,0.7);
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: bold;
+    display: none;
 }
-.speed-overlay.show { display: block; animation: feedback-pop .45s ease-out forwards; }
-@keyframes feedback-pop {
-  0%   { opacity: 1; transform: scale(.8); }
-  70%  { opacity: 1; transform: scale(1.1); }
-  100% { opacity: 0; transform: scale(1); }
-}
- 
-/* ── Ripple Seek Overlays ── */
+.speed-overlay.visible { display: block; }
+
+/* Ripple Animations */
 .ripple-overlay {
-  position: absolute; top: 0; bottom: 0; width: 25%;
-  display: flex; align-items: center; justify-content: center;
-  opacity: 0; pointer-events: none; z-index: 7; transition: opacity .15s ease;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 30%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 35;
+    transition: opacity 0.2s;
 }
-.ripple-overlay.left  { left: 0;  background: radial-gradient(ellipse at left,  rgba(255,255,255,.12) 0%, transparent 70%); }
-.ripple-overlay.right { right: 0; background: radial-gradient(ellipse at right, rgba(255,255,255,.12) 0%, transparent 70%); }
-.ripple-overlay.show  { opacity: 1; }
-.ripple-content { display: flex; flex-direction: column; align-items: center; color: white; font-size: .85rem; gap: 4px; }
-.ripple-content svg { width: 28px; height: 28px; }
- 
-/* ── Toast ── */
-.toast-container { position: absolute; top: 16px; right: 16px; z-index: 20; display: flex; flex-direction: column; gap: 8px; }
+.ripple-overlay.left { left: 0; background: linear-gradient(to right, rgba(255,255,255,0.1), transparent); }
+.ripple-overlay.right { right: 0; background: linear-gradient(to left, rgba(255,255,255,0.1), transparent); }
+.ripple-overlay.animate { opacity: 1; }
+
+.ripple-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    color: #fff;
+    transform: scale(0.8);
+    transition: transform 0.2s;
+}
+.ripple-overlay.animate .ripple-content { transform: scale(1); }
+.ripple-content .lucide { width: 32px; height: 32px; margin-bottom: 5px; }
+.ripple-content span { font-weight: bold; font-size: 14px; }
+
+/* Toast Notifications */
+.toast-container {
+    position: absolute;
+    top: 10%;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 60;
+    pointer-events: none;
+}
 .toast {
-  background: rgba(0,0,0,.88); border: 1px solid var(--border); color: white;
-  padding: 8px 16px; border-radius: 6px; font-size: .85rem;
-  animation: toast-in .25s ease forwards;
+    background: rgba(0,0,0,0.8);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 14px;
+    margin-bottom: 5px;
+    opacity: 0;
+    animation: toastFade 2s forwards;
+    white-space: nowrap;
 }
-.toast.error { border-color: var(--accent); }
-@keyframes toast-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
- 
-/* ── Skip Buttons ── */
-.skip-btn {
-  position: absolute; bottom: 80px; right: 16px;
-  display: none; align-items: center; gap: 6px;
-  background: rgba(0,0,0,.8); border: 1px solid rgba(255,255,255,.3);
-  color: white; padding: 8px 16px; border-radius: 4px; cursor: pointer;
-  font-size: .9rem; font-weight: 500; z-index: 6; transition: background .2s, border-color .2s;
+@keyframes toastFade {
+    0% { opacity: 0; transform: translateY(10px); }
+    10% { opacity: 1; transform: translateY(0); }
+    80% { opacity: 1; }
+    100% { opacity: 0; }
 }
-.skip-btn:hover { background: rgba(229,9,20,.8); border-color: var(--accent); }
-.skip-btn.visible { display: flex; }
- 
-/* ── Controls Overlay ── */
+
+/* Controls Overlay - With Gradient */
 .controls-overlay {
-  position: absolute; bottom: 0; left: 0; right: 0;
-  background: linear-gradient(to top, rgba(0,0,0,.88) 0%, rgba(0,0,0,.4) 60%, transparent 100%);
-  padding: 12px 16px 16px;
-  opacity: 0; transform: translateY(8px);
-  transition: opacity .3s ease, transform .3s ease;
-  z-index: 5;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 100%);
+    padding: 40px 15px 15px 15px; /* Increased top padding for better gradient visibility */
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 30;
 }
-.player-container.controls-visible .controls-overlay,
-.player-container.paused .controls-overlay { opacity: 1 !important; transform: translateY(0) !important; }
- 
-/* ── Progress Bar ── */
-.progress-container { padding: 8px 0; cursor: pointer; }
+.player-container:hover .controls-overlay,
+.player-container.paused .controls-overlay,
+.controls-overlay:hover {
+    opacity: 1;
+}
+
+/* Progress Bar */
+.progress-container {
+    height: 5px;
+    background: rgba(255,255,255,0.3);
+    cursor: pointer;
+    margin-bottom: 15px;
+    position: relative;
+    border-radius: 2px;
+    transition: height 0.1s, background-color 0.2s;
+}
+.progress-container:hover {
+    height: 8px;
+    background: rgba(255,0,0,0.3); /* Slightly red on hover as requested */
+}
 .progress-bar {
-  position: relative; height: 4px; background: rgba(255,255,255,.25);
-  border-radius: 2px; transition: height .2s ease;
+    height: 100%;
+    background: #e50914;
+    width: 0%;
+    position: relative;
+    border-radius: 2px;
 }
-.progress-container:hover .progress-bar { height: 6px; }
-.progress-buffer, .progress-fill {
-  position: absolute; top: 0; left: 0; height: 100%; border-radius: 2px; pointer-events: none;
-}
-.progress-buffer { background: rgba(255,255,255,.18); width: 0%; }
-.progress-fill   { background: var(--accent); width: 0%; }
 .progress-handle {
-  position: absolute; top: 50%; left: 0%; transform: translate(-50%, -50%);
-  width: 14px; height: 14px; background: white; border-radius: 50%;
-  opacity: 0; transition: opacity .2s ease; box-shadow: 0 0 4px rgba(0,0,0,.5);
+    width: 14px; /* User requested 12-14px */
+    height: 14px;
+    background: #e50914;
+    border-radius: 50%;
+    position: absolute;
+    right: -7px;
+    top: 50%;
+    transform: translateY(-50%) scale(1); /* Always visible now */
+    transition: transform 0.1s;
+    box-shadow: 0 0 5px rgba(0,0,0,0.5);
 }
-.progress-container:hover .progress-handle { opacity: 1; }
- 
-/* ── Controls Row ── */
-.controls-row { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
-.controls-left, .controls-right { display: flex; align-items: center; gap: 4px; }
-.spacer { flex: 1; }
+.progress-container:hover .progress-handle {
+    transform: translateY(-50%) scale(1.2); /* Grow on hover */
+}
+
+/* Buttons Row */
+.controls-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.controls-left, .controls-right {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+/* Left controls shouldn't grow, spacer handles it */
+.controls-left {
+    flex-grow: 0;
+}
+
+.spacer {
+    flex-grow: 1;
+}
+
+/* Control Buttons */
 .control-btn {
-  background: none; border: none; color: white; cursor: pointer; padding: 6px;
-  border-radius: 4px; display: flex; align-items: center; justify-content: center;
-  transition: background .15s; flex-shrink: 0;
+    background: none;
+    border: none;
+    color: #fff;
+    padding: 8px; /* Increased padding for better touch targets */
+    cursor: pointer;
+    opacity: 0.85;
+    transition: opacity 0.2s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
 }
-.control-btn:hover { background: rgba(255,255,255,.15); }
-.control-btn svg { width: 20px; height: 20px; }
- 
-/* play/pause icon toggling */
-.player-container         .icon-pause { display: none; }
-.player-container.playing .icon-play  { display: none; }
-.player-container.playing .icon-pause { display: block; }
- 
-/* volume icon toggling */
-.control-btn .icon-vol-low,
-.control-btn .icon-vol-mute { display: none; }
-.player-container[data-vol="low"]  .icon-vol-high { display: none; }
-.player-container[data-vol="low"]  .icon-vol-low  { display: block; }
-.player-container[data-vol="mute"] .icon-vol-high,
-.player-container[data-vol="mute"] .icon-vol-low  { display: none; }
-.player-container[data-vol="mute"] .icon-vol-mute  { display: block; }
- 
-/* volume slider */
-#volume-slider {
-  -webkit-appearance: none; width: 80px; height: 4px;
-  background: linear-gradient(to right, white 0%, white var(--vol-pct, 100%), rgba(255,255,255,.25) var(--vol-pct, 100%));
-  border-radius: 2px; cursor: pointer; outline: none;
+.control-btn:hover { opacity: 1; }
+.control-btn:active { transform: scale(0.95); }
+
+/* Volume Slider */
+.volume-container {
+    display: flex;
+    align-items: center;
+    width: 100px;
+    margin-left: 0px;
 }
-#volume-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 12px; height: 12px;
-  background: white; border-radius: 50%; cursor: pointer;
+.volume-container input {
+    width: 100%;
+    cursor: pointer;
+    margin-left: 8px;
+    height: 3px;
 }
-.volume-container { display: flex; align-items: center; gap: 4px; }
- 
-/* fullscreen icon toggling */
-.player-container          .icon-min { display: none; }
-.player-container.fullscreen .icon-max { display: none; }
-.player-container.fullscreen .icon-min { display: block; }
- 
-/* time display */
+
 .time-display {
-  font-size: .8rem; color: rgba(255,255,255,.85); white-space: nowrap;
-  margin-left: 4px; font-variant-numeric: tabular-nums;
+    font-size: 14px;
+    color: #ddd;
+    margin-left: 15px;
+    font-family: monospace;
+    white-space: nowrap;
 }
- 
-/* ── Settings Menu ── */
+
+/* Settings Menu */
 .settings-menu {
-  position: absolute; bottom: 70px; right: 16px;
-  background: rgba(18,18,18,.97); backdrop-filter: blur(12px);
-  border: 1px solid var(--border); border-radius: var(--radius);
-  width: 280px; overflow: hidden; z-index: 20;
-  opacity: 0; transform: scale(.95) translateY(8px);
-  transform-origin: bottom right;
-  transition: opacity .2s ease, transform .2s ease;
-  pointer-events: none;
+    position: absolute;
+    bottom: 70px;
+    right: 20px;
+    width: 260px;
+    background: rgba(20, 20, 20, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 8px;
+    padding: 8px 0;
+    color: #eee;
+    font-size: 14px;
+    display: none;
+    flex-direction: column;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.1);
 }
-.settings-menu.open { opacity: 1; transform: scale(1) translateY(0); pointer-events: all; }
-.settings-main, .settings-submenu { padding: 8px 0; }
-.settings-submenu { display: none; }
-.settings-submenu.active { display: block; }
+.settings-menu.active { display: flex; }
+
 .settings-item {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 16px; cursor: pointer; transition: background .15s; font-size: .9rem;
+    padding: 12px 15px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background 0.2s;
 }
-.settings-item:hover { background: rgba(255,255,255,.07); }
-.settings-item .label { display: flex; align-items: center; gap: 10px; color: var(--text-dim); }
-.settings-item .label svg { width: 16px; height: 16px; }
-.settings-item .value { display: flex; align-items: center; gap: 6px; color: white; font-size: .85rem; }
-.settings-item .value svg { width: 14px; height: 14px; opacity: .6; }
+.settings-item:hover { background: rgba(255,255,255,0.1); }
+
+.settings-item .label { display: flex; align-items: center; gap: 10px; }
+.settings-item .value { display: flex; align-items: center; gap: 5px; color: #aaa; font-size: 13px; }
+
 .settings-header {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 16px; cursor: pointer; font-weight: 600;
-  border-bottom: 1px solid var(--border); margin-bottom: 4px;
+    padding: 12px 15px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    margin-bottom: 5px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
 }
-.settings-header:hover { background: rgba(255,255,255,.05); }
-.settings-header svg { width: 16px; height: 16px; }
-.settings-option {
-  padding: 9px 16px 9px 44px; cursor: pointer; font-size: .875rem;
-  transition: background .15s; display: flex; align-items: center; justify-content: space-between;
+.settings-header:hover { background: rgba(255,255,255,0.05); }
+
+.settings-submenu { display: none; flex-direction: column; }
+.settings-submenu.active { display: flex; }
+
+.check-icon { opacity: 0; color: #e50914; margin-left: auto; width: 16px; height: 16px; }
+.settings-item.selected .check-icon { opacity: 1; }
+
+/* Skip Intro Buttons */
+.skip-btn {
+    position: absolute;
+    bottom: 90px;
+    right: 20px;
+    background: rgba(20, 20, 20, 0.9);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: bold;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.3s;
+    z-index: 45;
 }
-.settings-option:hover { background: rgba(255,255,255,.07); }
-.settings-option.active { color: var(--accent); }
-.settings-option .check-icon { display: none; width: 14px; height: 14px; }
-.settings-option.active .check-icon { display: block; }
- 
-/* ── Shortcut Overlay ── */
+.skip-btn:hover { background: rgba(255,255,255,0.1); border-color: #fff; }
+.skip-btn.visible { opacity: 1; pointer-events: auto; }
+.skip-btn .lucide { width: 16px; height: 16px; }
+
+/* Shortcut Overlay */
 .shortcut-overlay {
-  position: absolute; inset: 0; background: rgba(0,0,0,.78); backdrop-filter: blur(4px);
-  z-index: 30; display: none; align-items: center; justify-content: center;
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 200;
+    display: none;
+    justify-content: center;
+    align-items: center;
 }
-.shortcut-overlay.open { display: flex; }
+.shortcut-overlay.active { display: flex; }
 .shortcut-modal {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-  padding: 24px; max-width: 480px; width: 90%; position: relative;
+    background: #1f1f1f;
+    padding: 20px;
+    border-radius: 8px;
+    max-width: 500px;
+    width: 90%;
+    position: relative;
+    border: 1px solid rgba(255,255,255,0.1);
 }
-.shortcut-modal h3 { font-size: 1.1rem; margin-bottom: 16px; }
-.shortcut-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.sc-item { font-size: .85rem; color: var(--text-dim); }
+.shortcut-modal h3 { margin-top: 0; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 15px; }
+.shortcut-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 20px;
+    font-size: 13px;
+    color: #ccc;
+}
+.sc-item { display: flex; justify-content: space-between; align-items: center; }
 .key {
-  display: inline-block; background: var(--surface2); border: 1px solid var(--border);
-  border-radius: 4px; padding: 2px 6px; font-family: monospace; font-size: .8rem; color: white;
+    background: #333;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-weight: bold;
+    color: #fff;
+    border: 1px solid #444;
 }
 .close-shortcuts {
-  position: absolute; top: 12px; right: 12px;
-  background: none; border: none; color: var(--text-dim); cursor: pointer; padding: 4px;
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    background: none;
+    border: none;
+    color: #aaa;
+    cursor: pointer;
 }
-.close-shortcuts:hover { color: white; }
-.close-shortcuts svg { width: 18px; height: 18px; }
- 
-/* ── Player Notice ── */
-.player-notice {
-  display: flex; align-items: center; justify-content: space-between;
-  background: rgba(229,9,20,.1); border: 1px solid rgba(229,9,20,.3);
-  border-top: none; padding: 10px 16px; font-size: .85rem;
+.close-shortcuts:hover { color: #fff; }
+
+/* Icon Wrapper Styling */
+.icon-state-play, .icon-state-pause, 
+.icon-vol-high, .icon-vol-low, .icon-vol-mute,
+.icon-max, .icon-min {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
 }
-.player-notice p { display: flex; align-items: center; gap: 8px; }
-.notice-icon { width: 16px; height: 16px; color: var(--accent); flex-shrink: 0; }
-.dismiss-btn { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 1.2rem; }
- 
-/* ── Episode / Source Info ── */
-.episode-info { padding: 16px 20px 8px; }
-.episode-info h2 { font-size: 1.3rem; font-weight: 700; margin-bottom: 4px; }
-.episode-info h3 { font-size: 1rem; color: var(--text-dim); font-weight: 400; }
- 
-/* ── Sources List ── */
-.episode-list-container {
-  margin: 12px 20px; background: var(--surface);
-  border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden;
+
+/* Icon State Logic - Approach 1 */
+
+/* Hide all state-dependent icons by default */
+.icon-play, .icon-pause, 
+.icon-vol-high, .icon-vol-low, .icon-vol-mute,
+.icon-max, .icon-min {
+    display: none !important; /* Force hide unless overridden */
 }
-.episode-list-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 16px; font-weight: 600; cursor: pointer; border-bottom: 1px solid var(--border);
+
+/* Play/Pause State */
+/* When PAUSED or INITIAL (no class) -> Show Play */
+.player-container:not(.playing) .icon-play {
+    display: block !important;
 }
-.episode-list-header:hover { background: rgba(255,255,255,.04); }
-.episode-list-header svg { width: 16px; height: 16px; }
-.episode-scroll-area {
-  display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px;
-  max-height: 160px; overflow-y: auto;
+/* When PLAYING -> Show Pause */
+.player-container.playing .icon-pause {
+    display: block !important;
 }
+/* Ensure Play is hidden when Playing */
+.player-container.playing .icon-play {
+    display: none !important;
+}
+
+/* Volume State */
+/* High Volume (> 50%) */
+.player-container[data-volume="high"] .icon-vol-high {
+    display: block !important;
+}
+/* Low Volume (1-50%) */
+.player-container[data-volume="low"] .icon-vol-low {
+    display: block !important;
+}
+/* Muted or 0% */
+.player-container[data-volume="mute"] .icon-vol-mute {
+    display: block !important;
+}
+
+/* Fullscreen State */
+/* Default (Not Fullscreen) -> Show Maximize */
+.player-container:not(.fullscreen) .icon-max {
+    display: block !important;
+}
+/* Fullscreen -> Show Minimize */
+.player-container.fullscreen .icon-min {
+    display: block !important;
+}
+/* Ensure Maximize hidden in Fullscreen */
+.player-container.fullscreen .icon-max {
+    display: none !important;
+}
+
+/* Remove old wrapper styling if it conflicts, but keep flex centering */
+.control-btn .lucide {
+    /* Ensure icons are centered in button */
+    margin: 0 auto;
+}
+
+/* ===== CRITICAL FIXES ===== */
+
+/* 1. Icon Sizing - Force 20px on the SVG itself */
+.controls-row .lucide,
+.controls-row svg, 
+.control-btn svg {
+    width: 20px !important;
+    height: 20px !important;
+}
+
+/* 2. Gradient Background Fix */
+.controls-overlay {
+    background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.5) 70%, transparent 100%) !important;
+}
+
+/* 3. Icon Visibility - Absolute Force Hide/Show */
+/* Default state: HIDE ALL */
+.icon-play, .icon-pause, 
+.icon-vol-high, .icon-vol-low, .icon-vol-mute,
+.icon-max, .icon-min {
+    display: none !important;
+}
+
+/* Play/Pause Logic */
+/* Not Playing -> Show Play */
+.player-container:not(.playing) .icon-play {
+    display: block !important;
+}
+/* Playing -> Show Pause */
+.player-container.playing .icon-pause {
+    display: block !important;
+}
+
+/* Volume Logic */
+/* High */
+.player-container[data-volume="high"] .icon-vol-high {
+    display: block !important;
+}
+/* Low */
+.player-container[data-volume="low"] .icon-vol-low {
+    display: block !important;
+}
+/* Mute */
+.player-container[data-volume="mute"] .icon-vol-mute {
+    display: block !important;
+}
+
+/* Fullscreen Logic */
+/* Not Fullscreen -> Show Maximize */
+.player-container:not(.fullscreen) .icon-max {
+    display: block !important;
+}
+/* Fullscreen -> Show Minimize */
+.player-container.fullscreen .icon-min {
+    display: block !important;
+}
+
+/* ===== SETTINGS MENU LAYOUT FIX ===== */
+
+/* Ensure settings menu containers are always vertical (portrait) */
+.settings-main, 
+.settings-submenu {
+    display: flex;
+    flex-direction: column !important;
+    width: 100%;
+}
+
+/* Ensure menu itself is vertical */
+.settings-menu {
+    flex-direction: column !important;
+    width: 260px !important; /* Force width */
+}
+
+/* Ensure items take full width */
+.settings-item {
+    width: 100%;
+    box-sizing: border-box; /* Include padding in width */
+}
+
+/* ===== MOBILE & TOUCH OPTIMIZATION ===== */
+
+/* 1. Show Controls State (for mobile/touch interactions) */
+.player-container.show-controls .controls-overlay {
+    opacity: 1 !important;
+}
+
+/* 2. Mobile Layout Adjustments */
+@media (max-width: 768px) {
+    /* Increase touch targets */
+    .control-btn {
+        padding: 12px !important; /* Larger hit area */
+    }
+    
+    /* Make volume slider larger for touch */
+    .volume-container {
+        width: 120px;
+    }
+    
+    .volume-container input {
+        height: 5px; /* Thicker slider */
+    }
+    
+    /* Adjust spacing */
+    .controls-left, .controls-right {
+        gap: 10px;
+    }
+    
+    /* Hide specific non-essential controls on small screens if needed */
+    /* Example: Hide volume text or reduce spacing */
+    
+    /* Ensure fullscreen icon is visible and accessible */
+    #fullscreen-btn {
+        margin-left: 5px;
+    }
+    
+    /* Center Play/Pause button on screen overlay? Or keep in bar? */
+    /* For now, keep in bar but make it accessible */
+}
+
+/* 3. Hide cursor when controls are hidden */
+.player-container:not(.show-controls):not(.paused):hover {
+    cursor: none;
+}
+
+/* ===== MOBILE PLAYER OPTIMIZATIONS ===== */
+
+@media (max-width: 768px) {
+    /* 1. Hide Volume Slider on Mobile */
+    #volume-slider {
+        display: none !important;
+    }
+    
+    /* 2. Settings Menu Position */
+    .settings-menu {
+        bottom: 60px !important; /* Move up slightly */
+        right: 10px !important;
+        width: 240px !important;
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+    
+    /* 3. Ensure Fullscreen Button Visible */
+    #fullscreen-btn {
+        display: flex !important;
+    }
+    
+    /* 4. Controls Spacing */
+    .controls-left {
+        gap: 10px;
+    }
+    
+    .time-display {
+        font-size: 12px;
+        margin-left: 5px;
+    }
+    
+    /* 5. Fix Player Height (Already 16/9, but ensure container fits) */
+    .video-player-wrapper {
+        width: 100%;
+        margin: 0;
+    }
+}
+
+/* ===== MOBILE OVERFLOW FIX ===== */
+@media (max-width: 768px) {
+    /* Hide redundant controls to fit screen width */
+    /* Gestures replace seek buttons */
+    #prev-10s-btn,
+    #next-10s-btn {
+        display: none !important;
+    }
+    
+    /* Episode list below replaces next button */
+    #next-ep-btn {
+        display: none !important;
+    }
+    
+    /* Settings menu contains subtitles option */
+    #subs-btn {
+        display: none !important;
+    }
+    
+    /* Further compact spacing */
+    .controls-left, .controls-right {
+        gap: 5px !important;
+    }
+    
+    /* Ensure container doesn't overflow horizontally */
+    .player-container {
+        width: 100vw;
+        max-width: 100vw;
+        overflow-x: hidden;
+    }
+    
+    /* Reset padding to ensure buttons fit */
+    .control-btn {
+        padding: 10px !important; /* Slightly smaller than 12px to be safe */
+    }
+}
+
+/* ===== SUBTITLE MENU POLISH ===== */
+
+/* 1. Refined Menu Styling */
+.settings-menu {
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    background: rgba(20, 20, 20, 0.95);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    /* Improve transition */
+    transition: opacity 0.2s, transform 0.2s;
+    transform-origin: bottom right;
+}
+
+/* 2. Checkmark Styling */
+.check-icon {
+    color: #e50914 !important; /* Force red checkmark */
+    stroke-width: 3px;
+}
+
+.settings-item.selected span {
+    color: #fff;
+    font-weight: bold;
+}
+
+.settings-item:not(.selected) span {
+    color: #ccc;
+}
+
+/* 3. Header Styling with Chevron */
+.settings-header {
+    background: rgba(255,255,255,0.05);
+    color: #eee;
+    font-size: 14px;
+    padding: 12px 15px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.settings-header .lucide-chevron-left {
+    width: 18px;
+    height: 18px;
+    margin-right: 5px;
+}
+
+/* 4. Subtitle List Styling */
+#settings-subs-options {
+    max-height: 250px;
+    overflow-y: auto;
+    /* Custom scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: #444 transparent;
+}
+
+#settings-subs-options::-webkit-scrollbar {
+    width: 6px;
+}
+#settings-subs-options::-webkit-scrollbar-thumb {
+    background-color: #444;
+    border-radius: 3px;
+}
+
+/* Position Settings Menu correctly relative to button */
+/* Desktop */
+@media (min-width: 769px) {
+    .settings-menu {
+        bottom: 60px;
+        right: 20px; /* Aligned with right controls */
+        transform-origin: bottom right;
+    }
+}
+
+/* Mobile is already handled in previous step, but ensuring overrides work */
+@media (max-width: 768px) {
+    .settings-menu {
+        bottom: 70px !important;
+        right: 10px !important;
+    }
+}
+
+/* ===== CONTROL VISIBILITY & TRANSITIONS ===== */
+
+/* Base Overlay Transition */
+.controls-overlay {
+    transition: opacity 0.3s ease;
+    pointer-events: none; /* Default to none, enable when visible */
+}
+
+/* Visible State */
+.player-container.show-controls .controls-overlay {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Hidden State (Implicitly when show-controls is missing) */
+.player-container:not(.show-controls) .controls-overlay {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Top Gradient Overlay */
+.top-gradient-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 80px;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 25;
+}
+
+.player-container.show-controls .top-gradient-overlay {
+    opacity: 1;
+}
+
+/* Cursor Hiding */
+.player-container.hide-cursor {
+    cursor: none;
+}
+
+/* Always show controls when paused */
+.player-container.paused .controls-overlay,
+.player-container.paused .top-gradient-overlay {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+}
+
+
+/* Watch Container (Body wrapper) */
+body { background: #0f0f0f; margin: 0; font-family: Arial, sans-serif; }
+.watch-container { max-width: 1200px; margin: 0 auto; padding: 20px; box-sizing: border-box; }
+/* Notice */
+.player-notice { background: rgba(229, 9, 20, 0.1); border: 1px solid rgba(229, 9, 20, 0.3); padding: 10px 15px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; margin-top: 15px; color: #fff; font-size: 14px; }
+.player-notice p { margin: 0; display: flex; align-items: center; gap: 10px; }
+.notice-icon { width: 18px; height: 18px; color: #e50914; }
+.dismiss-btn { background: none; border: none; color: #aaa; cursor: pointer; font-size: 18px; padding: 0; }
+.dismiss-btn:hover { color: #fff; }
+/* Episode Info */
+.episode-info { margin-top: 20px; color: #fff; }
+.episode-info h2 { margin: 0 0 5px 0; font-size: 22px; }
+.episode-info h3 { margin: 0; font-size: 15px; color: #aaa; font-weight: normal; }
+/* Sources List */
+.episode-list-container { margin-top: 20px; background: #1a1a1a; border-radius: 8px; padding: 15px; border: 1px solid rgba(255,255,255,0.05); }
+.episode-list-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; color: #fff; font-weight: bold; }
+.episode-list-header .lucide { width: 18px; height: 18px; }
+.episode-scroll-area { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; margin-top: 15px; max-height: 250px; overflow-y: auto; }
 .episode-scroll-area.hidden { display: none; }
-.ep-btn {
-  min-width: 52px; height: 36px; display: flex; align-items: center; justify-content: center;
-  background: var(--surface2); border: 1px solid var(--border); border-radius: 4px;
-  color: var(--text-dim); font-size: .85rem; cursor: pointer; text-decoration: none;
-  padding: 0 8px; transition: all .15s ease;
-}
-.ep-btn:hover { background: rgba(255,255,255,.12); color: white; border-color: rgba(255,255,255,.3); }
-.ep-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
- 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.ep-btn { background: #2a2a2a; color: #ddd; padding: 10px; text-align: center; border-radius: 6px; text-decoration: none; font-size: 14px; transition: all 0.2s; border: 1px solid rgba(255,255,255,0.05); }
+.ep-btn:hover { background: #3a3a3a; color: #fff; }
+.ep-btn.active { background: #e50914; color: #fff; border-color: #e50914; font-weight: bold; }
 </style>
+
 </head>
 <body>
 <div class="watch-container">
@@ -353,8 +894,6 @@ video { width: 100%; height: 100%; display: block; object-fit: contain; }
       <div class="controls-overlay" id="controls-overlay">
         <div class="progress-container" id="progress-container">
           <div class="progress-bar" id="progress-bar">
-            <div class="progress-buffer" id="progress-buffer"></div>
-            <div class="progress-fill"   id="progress-fill"></div>
             <div class="progress-handle" id="progress-handle"></div>
           </div>
         </div>
@@ -492,6 +1031,8 @@ video { width: 100%; height: 100%; display: block; object-fit: contain; }
 // ─── Embedded stream data ───────────────────────────────────────────────────
 const STREAMS   = __STREAMS__;
 const SUBTITLES = __SUBTITLES__;
+const HEADERS   = __HEADERS__;
+const API_BASE  = "http://localhost:8001";
 const CATEGORY  = __CATEGORY_JSON__;
 const TITLE     = __TITLE_JSON__;
 const EP_NUM    = __EP_NUM__;
@@ -527,7 +1068,7 @@ class AniVersePlayer {
     // Audio
     document.getElementById('settings-audio-options').innerHTML =
       ['Sub','Dub'].map(a => `
-        <div class="settings-option ${CATEGORY.toLowerCase()===a.toLowerCase()?'active':''}"
+        <div class="settings-item ${CATEGORY.toLowerCase()===a.toLowerCase()?'selected':''}"
              data-audio="${a.toLowerCase()}">
           ${a}<i data-lucide="check" class="check-icon"></i>
         </div>`).join('');
@@ -538,7 +1079,7 @@ class AniVersePlayer {
     // Speed
     document.getElementById('settings-speed-options').innerHTML =
       this.speeds.map((s,i) => `
-        <div class="settings-option ${s===1?'active':''}" data-speed="${s}">
+        <div class="settings-item ${s===1?'selected':''}" data-speed="${s}">
           ${this.speedLabels[i]}<i data-lucide="check" class="check-icon"></i>
         </div>`).join('');
  
@@ -557,7 +1098,7 @@ class AniVersePlayer {
   _rebuildSources() {
     document.getElementById('settings-source-options').innerHTML =
       this.streams.map((s,i) => `
-        <div class="settings-option ${i===0?'active':''}" data-source="${i}">
+        <div class="settings-item ${i===0?'selected':''}" data-source="${i}">
           ${s.server||('Server '+(i+1))}<i data-lucide="check" class="check-icon"></i>
         </div>`).join('');
     if (this.streams[0])
@@ -566,10 +1107,10 @@ class AniVersePlayer {
   }
  
   _rebuildSubs() {
-    const off = `<div class="settings-option active" data-sub="-1">
+    const off = `<div class="settings-item selected" data-sub="-1">
                    Off<i data-lucide="check" class="check-icon"></i></div>`;
     const tracks = this.subtitles.map((s,i) => `
-      <div class="settings-option" data-sub="${i}">
+      <div class="settings-item" data-sub="${i}">
         ${s.label||('Track '+(i+1))}<i data-lucide="check" class="check-icon"></i>
       </div>`).join('');
     document.getElementById('settings-subs-options').innerHTML = off + tracks;
@@ -585,7 +1126,7 @@ class AniVersePlayer {
  
     // Update active source highlights
     document.querySelectorAll('[data-source]').forEach(el =>
-      el.classList.toggle('active', +el.dataset.source === idx));
+      el.classList.toggle('selected', +el.dataset.source === idx));
     document.querySelectorAll('#sources-list .ep-btn').forEach((el,i) =>
       el.classList.toggle('active', i === idx));
     document.getElementById('current-source').textContent =
@@ -594,8 +1135,19 @@ class AniVersePlayer {
     // Tear down previous HLS instance
     if (this.hls) { this.hls.destroy(); this.hls = null; }
  
-    const url = stream.url;
+    let url = stream.url;
     const isHLS = /\.m3u8|m3u8/i.test(url);
+    const referer = HEADERS.Referer || '';
+
+    let proxyUrl = url;
+    if (isHLS && !url.includes('/proxy/m3u8')) {
+        proxyUrl = `${API_BASE}/proxy/m3u8?url=${encodeURIComponent(url)}`;
+        if (referer) proxyUrl += `&referer=${encodeURIComponent(referer)}`;
+    } else if (!isHLS && !url.includes('/proxy/stream')) {
+        proxyUrl = `${API_BASE}/proxy/stream?url=${encodeURIComponent(url)}`;
+        if (referer) proxyUrl += `&referer=${encodeURIComponent(referer)}`;
+    }
+    url = proxyUrl;
  
     if (isHLS && Hls.isSupported()) {
       this.hls = new Hls({ startLevel: -1, maxBufferLength: 30 });
@@ -623,9 +1175,9 @@ class AniVersePlayer {
     this.qualities = levels;
     const opts = document.getElementById('settings-quality-options');
     opts.innerHTML =
-      `<div class="settings-option active" data-quality="-1">Auto<i data-lucide="check" class="check-icon"></i></div>` +
+      `<div class="settings-item selected" data-quality="-1">Auto<i data-lucide="check" class="check-icon"></i></div>` +
       levels.map((l,i) => `
-        <div class="settings-option" data-quality="${i}">
+        <div class="settings-item" data-quality="${i}">
           ${l.height ? l.height+'p' : 'Level '+(i+1)}
           <i data-lucide="check" class="check-icon"></i>
         </div>`).join('');
@@ -640,11 +1192,16 @@ class AniVersePlayer {
     this.curSub = -1;
     document.getElementById('current-subs').textContent = 'Off';
  
+    const referer = HEADERS.Referer || '';
     this.subtitles.forEach((sub, i) => {
       const t = document.createElement('track');
       t.kind    = 'subtitles';
       t.label   = sub.label || `Track ${i+1}`;
-      t.src     = sub.file  || sub.url || '';
+      let subUrl = sub.file || sub.url || '';
+      if (subUrl) {
+          subUrl = `${API_BASE}/proxy/subtitle?url=${encodeURIComponent(subUrl)}&referer=${encodeURIComponent(referer)}`;
+      }
+      t.src     = subUrl;
       t.default = false;
       this.video.appendChild(t);
     });
@@ -662,7 +1219,7 @@ class AniVersePlayer {
       document.getElementById('current-subs').textContent = 'Off';
     }
     document.querySelectorAll('[data-sub]').forEach(el =>
-      el.classList.toggle('active', +el.dataset.sub === idx));
+      el.classList.toggle('selected', +el.dataset.sub === idx));
     lucide.createIcons();
   }
  
@@ -683,7 +1240,7 @@ class AniVersePlayer {
     v.addEventListener('play',    ()  => c.classList.remove('paused'));
     v.addEventListener('ended',   ()  => c.classList.remove('playing'));
     v.addEventListener('timeupdate',  () => this.updateProgress());
-    v.addEventListener('progress',    () => this.updateBuffer());
+    
  
     // Volume
     const slider = document.getElementById('volume-slider');
@@ -730,7 +1287,7 @@ class AniVersePlayer {
  
     // Settings option clicks (delegated)
     document.getElementById('settings-menu').addEventListener('click', e => {
-      const opt = e.target.closest('.settings-option');
+      const opt = e.target.closest('.settings-item');
       if (!opt) return;
  
       if (opt.dataset.source !== undefined) {
@@ -743,7 +1300,7 @@ class AniVersePlayer {
         document.getElementById('current-quality').textContent =
           lvl === -1 ? 'Auto' : (this.qualities[lvl]?.height + 'p' || `Level ${lvl}`);
         document.querySelectorAll('[data-quality]').forEach(el =>
-          el.classList.toggle('active', +el.dataset.quality === lvl));
+          el.classList.toggle('selected', +el.dataset.quality === lvl));
         lucide.createIcons();
         this.closeSettings();
  
@@ -753,7 +1310,7 @@ class AniVersePlayer {
         const lbl = spd === 1 ? 'Normal' : spd + 'x';
         document.getElementById('current-speed').textContent = lbl;
         document.querySelectorAll('[data-speed]').forEach(el =>
-          el.classList.toggle('active', +el.dataset.speed === spd));
+          el.classList.toggle('selected', +el.dataset.speed === spd));
         lucide.createIcons();
         this.feedback('speed', lbl + ' Speed');
         this.closeSettings();
@@ -766,7 +1323,7 @@ class AniVersePlayer {
         document.getElementById('current-audio').textContent =
           opt.dataset.audio.charAt(0).toUpperCase() + opt.dataset.audio.slice(1);
         document.querySelectorAll('[data-audio]').forEach(el =>
-          el.classList.toggle('active', el.dataset.audio === opt.dataset.audio));
+          el.classList.toggle('selected', el.dataset.audio === opt.dataset.audio));
         lucide.createIcons();
         this.toast('Audio preference updated. Reload streams to apply.', 'info');
         this.closeSettings();
@@ -804,16 +1361,16 @@ class AniVersePlayer {
         case 's': case 'S': this.toggleSettings(); break;
         case 'c': case 'C': this.openSub('subs'); break;
         case '?':
-          document.getElementById('shortcut-overlay').classList.toggle('open'); break;
+          document.getElementById('shortcut-overlay').classList.toggle('active'); break;
         case 'Escape':
-          document.getElementById('shortcut-overlay').classList.remove('open');
+          document.getElementById('shortcut-overlay').classList.remove('active');
           this.closeSettings(); break;
       }
     });
  
     // Close shortcut modal
     document.getElementById('close-shortcuts').addEventListener('click', () =>
-      document.getElementById('shortcut-overlay').classList.remove('open'));
+      document.getElementById('shortcut-overlay').classList.remove('active'));
  
     // Double-tap seek (mobile)
     let lastTap = 0, lastZone = '';
@@ -853,9 +1410,9 @@ class AniVersePlayer {
     slider.value = v.volume;
     slider.style.setProperty('--vol-pct', (v.volume * 100) + '%');
     const c = this.container;
-    if (vol === 0 || v.muted)  c.dataset.vol = 'mute';
-    else if (vol < 0.5)        c.dataset.vol = 'low';
-    else                       delete c.dataset.vol;
+    if (vol === 0 || v.muted)  c.dataset.volume = 'mute';
+    else if (vol < 0.5)        c.dataset.volume = 'low';
+    else                       c.dataset.volume = 'high';
     lucide.createIcons();
   }
  
@@ -870,18 +1427,12 @@ class AniVersePlayer {
     const v = this.video;
     if (!v.duration) return;
     const pct = (v.currentTime / v.duration) * 100;
-    document.getElementById('progress-fill').style.width   = pct + '%';
-    document.getElementById('progress-handle').style.left  = `calc(${pct}% - 6px)`;
+    document.getElementById('progress-bar').style.width = pct + '%';
     document.getElementById('time-display').textContent    =
       `${this.fmt(v.currentTime)} / ${this.fmt(v.duration)}`;
   }
  
-  updateBuffer() {
-    const v = this.video;
-    if (!v.duration || !v.buffered.length) return;
-    const pct = (v.buffered.end(v.buffered.length - 1) / v.duration) * 100;
-    document.getElementById('progress-buffer').style.width = pct + '%';
-  }
+
  
   fmt(s) {
     if (!s || isNaN(s)) return '0:00';
@@ -897,34 +1448,34 @@ class AniVersePlayer {
   }
  
   showSpinner(on) {
-    document.getElementById('loading-spinner').classList.toggle('visible', on);
+    document.getElementById('loading-spinner').classList.toggle('active', on);
   }
  
   showControls() {
-    this.container.classList.add('controls-visible');
+    this.container.classList.add('show-controls');
     clearTimeout(this.hideTimer);
     this.startHideTimer();
   }
  
   startHideTimer() {
     this.hideTimer = setTimeout(() => {
-      if (!this.video.paused) this.container.classList.remove('controls-visible');
+      if (!this.video.paused) this.container.classList.remove('show-controls');
     }, 3000);
   }
  
   toggleSettings() {
     const m = document.getElementById('settings-menu');
-    if (m.classList.contains('open')) { this.closeSettings(); }
-    else { m.classList.add('open'); this.closeSub(); }
+    if (m.classList.contains('active')) { this.closeSettings(); }
+    else { m.classList.add('active'); this.closeSub(); }
   }
  
   closeSettings() {
-    document.getElementById('settings-menu').classList.remove('open');
+    document.getElementById('settings-menu').classList.remove('active');
     this.closeSub();
   }
  
   openSub(name) {
-    document.getElementById('settings-menu').classList.add('open');
+    document.getElementById('settings-menu').classList.add('active');
     document.getElementById('settings-main').style.display = 'none';
     document.querySelectorAll('.settings-submenu').forEach(s => s.classList.remove('active'));
     document.getElementById(`submenu-${name}`).classList.add('active');
@@ -941,17 +1492,17 @@ class AniVersePlayer {
     const el = document.getElementById(map[type]);
     if (!el) return;
     if (type === 'speed') el.textContent = text;
-    el.classList.remove('show');
+    el.classList.remove('animate');
     void el.offsetWidth;            // force reflow for re-animation
-    el.classList.add('show');
-    setTimeout(() => el.classList.remove('show'), 450);
+    el.classList.add('animate');
+    setTimeout(() => el.classList.remove('animate'), 450);
     lucide.createIcons();
   }
  
   ripple(side) {
     const el = document.getElementById(`ripple-${side}`);
-    el.classList.add('show');
-    setTimeout(() => el.classList.remove('show'), 450);
+    el.classList.add('animate');
+    setTimeout(() => el.classList.remove('animate'), 450);
   }
  
   toast(msg, type = 'info') {
@@ -973,19 +1524,21 @@ player.init();
 def get_player(title: str, ep_num: int, category: str, streams_data: dict) -> str:
     streams     = streams_data.get("streams", [])
     subtitles   = streams_data.get("subtitles", [])
+    headers     = streams_data.get("headers", {})
     return (
         HTML_TEMPLATE
         .replace("__STREAMS__",         json.dumps(streams))
         .replace("__SUBTITLES__",       json.dumps(subtitles))
+        .replace("__HEADERS__",         json.dumps(headers))
         .replace("__TITLE_ESC__",       html_lib.escape(title))
         .replace("__TITLE_JSON__",      json.dumps(title))
         .replace("__EP_NUM__",          str(ep_num))
         .replace("__CATEGORY_JSON__",   json.dumps(category))
-        .replace("__CATEGORY__UPPER__", category.upper())
+        .replace("__CATEGORY_UPPER__", category.upper())
     )
 def open_browser_player(title: str, ep_num: int, category: str, streams_data: dict) -> None:
-    html_content = get_player_html(title, ep_num, category, streams_data)
-    fd, path = tempfile.mkstemp(suffix=".html", prefix="aniverse_vid_player_")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
+    html_content = get_player(title, ep_num, category, streams_data)
+    path = os.path.abspath("aniverse_player.html")
+    with open(path, "w", encoding="utf-8") as f:
         f.write(html_content)
-    webbrowser.open(f"file://{path}")
+    webbrowser.open(path)

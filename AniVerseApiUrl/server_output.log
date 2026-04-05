@@ -1,0 +1,31 @@
+INFO:     Will watch for changes in these directories: ['/home/kaneki/app/AniVerse/AniVerseApiUrl']
+INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
+INFO:     Started reloader process [16133] using StatReload
+/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.
+INFO:     Started server process [16139]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:44126 - "GET /anime/search/jujutsu HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56140 - "GET /anime/resolve/113415/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56150 - "GET /anime/resolve_by_name/Demon%20Slayer/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49242 - "GET /anime/resolve_by_name/One%20Piece/1089 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58478 - "GET /anime/resolve_by_name/One%20Piece/1089 HTTP/1.1" 200 OK
+WARNING:  StatReload detected changes in 'app/core/orchestrator.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [16139]
+/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.
+INFO:     Started server process [16450]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+Provider GogoAnimeProvider returned error: No embed servers found (Might be Cloudflare blocked)
+INFO:     127.0.0.1:50218 - "GET /anime/resolve_by_name/One%20Piece/1089 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60184 - "GET /anime/resolve_by_name/One%20Piece/1089 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34818 - "GET /proxy/m3u8?url=https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43522 - "GET /anime/resolve_by_name/naruto/1 HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [16450]
+INFO:     Stopping reloader process [16133]

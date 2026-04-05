@@ -1,0 +1,26 @@
+INFO:     Will watch for changes in these directories: ['/home/kaneki/app/AniVerse/AniVerseApiUrl']
+INFO:     Uvicorn running on http://0.0.0.0:8001 (Press CTRL+C to quit)
+INFO:     Started reloader process [15383] using StatReload
+/etc/timezone is deprecated in some distros, and no longer reliable. tzlocal is ignoring it, and you can likely delete it.
+INFO:     Started server process [15389]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:43878 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43880 - "GET /anime/trending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43894 - "GET /anime/trending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54042 - "GET /anime/resolve_by_name/Naruto/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52636 - "GET /anime/latest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52650 - "GET /anime/latest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52656 - "GET /anime/upcoming HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52670 - "GET /anime/upcoming HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52678 - "GET /anime/genre/Action HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59502 - "GET /anime/genre/Action HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59516 - "GET /anime/browse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59522 - "GET /anime/browse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37596 - "GET /anime/resolve_by_name/Bleach/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54584 - "GET /anime/resolve_by_name/Bleach/1?category=dub HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [15389]
+INFO:     Stopping reloader process [15383]

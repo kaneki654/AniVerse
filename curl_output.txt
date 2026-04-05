@@ -1,0 +1,16 @@
+*   Trying 127.0.0.1:8001...
+* Connected to localhost (127.0.0.1) port 8001 (#0)
+> GET /anime/resolve/16498/1 HTTP/1.1
+> Host: localhost:8001
+> User-Agent: curl/7.88.1
+> Accept: */*
+> 
+< HTTP/1.1 200 OK
+< date: Sun, 05 Apr 2026 13:02:57 GMT
+< server: uvicorn
+< content-length: 936
+< content-type: application/json
+< 
+{ [936 bytes data]
+* Connection #0 to host localhost left intact
+{"streams":[{"quality":"auto","url":"https://vibeplayer.site/public/stream/4aa87451811e8db9/master.m3u8","server":"HD-1"},{"url":"https://tmstr5.cloudnestra.com/pl/H4sIAAAAAAAAAw3NW3KCMBQA0C1dgqD000pqMxVKnpI_TGIzBOiUKq_Vt2cDB6yL0ptJDvvU3O5wgMREzd6g..Hm0giaF4OlLNWi.fa1s4gQhk0s83nkIUDVd9qpbDI9RRTyHX3TsegTVGLqhcLlRSxRkxNygSpynX6tBznTM9ZKYNQEM7nczCwsrDx3J6Z8LbEfOCp6u_n1A75n3eNfCf6HIYov4ns0.JhWg1zrwfu6pQ_a2oXCg5kQlaol2HDamLj75FvxdEE.2el_3mhoRLbjkI1iOI4aLdzlZCqCXnlsnzJQbq_FIoV9VK29uty3bCBnEROwYFZ6kiXrKOJKJgUkqpLHpMTvEwNd6A2yPzONJohBAQAA/master.m3u8","quality":"auto","server":"VidSrc"}],"subtitles":[{"file":"https://cdn.cimovix.store/subtitles/cb/95/cb953f6ca5923f7517125db46ed1293d_806a582526a4c5a226514316bd5b6f64.vtt","label":"English","kind":"captions"}],"headers":{"Referer":"https://cloudnestra.com/","User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}}

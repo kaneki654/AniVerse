@@ -1,0 +1,1499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AniVerse — Test · Ep 1</title>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+/* Player Container */
+.player-container {
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 16/9;
+    background: #000;
+    font-family: Arial, sans-serif;
+    user-select: none;
+    overflow: hidden;
+    border-radius: 8px;
+    outline: none;
+}
+
+.player-container.fullscreen {
+    width: 100vw;
+    height: 100vh;
+    max-width: none;
+    max-height: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 9999;
+    border-radius: 0;
+}
+
+video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+/* Lucide Icons Styling */
+.lucide {
+    width: 20px;
+    height: 20px;
+    stroke-width: 2px;
+}
+
+/* Helper Class - !important to override any default display */
+.hidden {
+    display: none !important;
+}
+
+/* Loading Spinner */
+.loading-spinner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    display: none;
+    z-index: 50;
+}
+.loading-spinner.active { display: block; }
+.loading-spinner .lucide {
+    width: 48px;
+    height: 48px;
+    color: #e50914;
+    animation: spin 1s linear infinite;
+}
+@keyframes spin { 100% { transform: rotate(360deg); } }
+
+/* Visual Feedback Overlays */
+.feedback-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 40;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+.feedback-icon {
+    width: 64px;
+    height: 64px;
+    background: rgba(0,0,0,0.6);
+    padding: 15px;
+    border-radius: 50%;
+    color: #fff;
+    opacity: 0;
+    transform: scale(0.5);
+    transition: all 0.2s ease-out;
+}
+.feedback-icon.animate {
+    opacity: 1;
+    transform: scale(1);
+    animation: fadeOut 0.5s ease-out 0.2s forwards;
+}
+@keyframes fadeOut { to { opacity: 0; transform: scale(1.2); } }
+
+/* Speed Overlay */
+.speed-overlay {
+    background: rgba(0,0,0,0.7);
+    color: #fff;
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: bold;
+    display: none;
+}
+.speed-overlay.visible { display: block; }
+
+/* Ripple Animations */
+.ripple-overlay {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 30%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 35;
+    transition: opacity 0.2s;
+}
+.ripple-overlay.left { left: 0; background: linear-gradient(to right, rgba(255,255,255,0.1), transparent); }
+.ripple-overlay.right { right: 0; background: linear-gradient(to left, rgba(255,255,255,0.1), transparent); }
+.ripple-overlay.animate { opacity: 1; }
+
+.ripple-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    color: #fff;
+    transform: scale(0.8);
+    transition: transform 0.2s;
+}
+.ripple-overlay.animate .ripple-content { transform: scale(1); }
+.ripple-content .lucide { width: 32px; height: 32px; margin-bottom: 5px; }
+.ripple-content span { font-weight: bold; font-size: 14px; }
+
+/* Toast Notifications */
+.toast-container {
+    position: absolute;
+    top: 10%;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 60;
+    pointer-events: none;
+}
+.toast {
+    background: rgba(0,0,0,0.8);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 14px;
+    margin-bottom: 5px;
+    opacity: 0;
+    animation: toastFade 2s forwards;
+    white-space: nowrap;
+}
+@keyframes toastFade {
+    0% { opacity: 0; transform: translateY(10px); }
+    10% { opacity: 1; transform: translateY(0); }
+    80% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* Controls Overlay - With Gradient */
+.controls-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, transparent 100%);
+    padding: 40px 15px 15px 15px; /* Increased top padding for better gradient visibility */
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 30;
+}
+.player-container:hover .controls-overlay,
+.player-container.paused .controls-overlay,
+.controls-overlay:hover {
+    opacity: 1;
+}
+
+/* Progress Bar */
+.progress-container {
+    height: 5px;
+    background: rgba(255,255,255,0.3);
+    cursor: pointer;
+    margin-bottom: 15px;
+    position: relative;
+    border-radius: 2px;
+    transition: height 0.1s, background-color 0.2s;
+}
+.progress-container:hover {
+    height: 8px;
+    background: rgba(255,0,0,0.3); /* Slightly red on hover as requested */
+}
+.progress-bar {
+    height: 100%;
+    background: #e50914;
+    width: 0%;
+    position: relative;
+    border-radius: 2px;
+}
+.progress-handle {
+    width: 14px; /* User requested 12-14px */
+    height: 14px;
+    background: #e50914;
+    border-radius: 50%;
+    position: absolute;
+    right: -7px;
+    top: 50%;
+    transform: translateY(-50%) scale(1); /* Always visible now */
+    transition: transform 0.1s;
+    box-shadow: 0 0 5px rgba(0,0,0,0.5);
+}
+.progress-container:hover .progress-handle {
+    transform: translateY(-50%) scale(1.2); /* Grow on hover */
+}
+
+/* Buttons Row */
+.controls-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.controls-left, .controls-right {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+/* Left controls shouldn't grow, spacer handles it */
+.controls-left {
+    flex-grow: 0;
+}
+
+.spacer {
+    flex-grow: 1;
+}
+
+/* Control Buttons */
+.control-btn {
+    background: none;
+    border: none;
+    color: #fff;
+    padding: 8px; /* Increased padding for better touch targets */
+    cursor: pointer;
+    opacity: 0.85;
+    transition: opacity 0.2s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+.control-btn:hover { opacity: 1; }
+.control-btn:active { transform: scale(0.95); }
+
+/* Volume Slider */
+.volume-container {
+    display: flex;
+    align-items: center;
+    width: 100px;
+    margin-left: 0px;
+}
+.volume-container input {
+    width: 100%;
+    cursor: pointer;
+    margin-left: 8px;
+    height: 3px;
+}
+
+.time-display {
+    font-size: 14px;
+    color: #ddd;
+    margin-left: 15px;
+    font-family: monospace;
+    white-space: nowrap;
+}
+
+/* Settings Menu */
+.settings-menu {
+    position: absolute;
+    bottom: 70px;
+    right: 20px;
+    width: 260px;
+    background: rgba(20, 20, 20, 0.95);
+    backdrop-filter: blur(10px);
+    border-radius: 8px;
+    padding: 8px 0;
+    color: #eee;
+    font-size: 14px;
+    display: none;
+    flex-direction: column;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+.settings-menu.active { display: flex; }
+
+.settings-item {
+    padding: 12px 15px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background 0.2s;
+}
+.settings-item:hover { background: rgba(255,255,255,0.1); }
+
+.settings-item .label { display: flex; align-items: center; gap: 10px; }
+.settings-item .value { display: flex; align-items: center; gap: 5px; color: #aaa; font-size: 13px; }
+
+.settings-header {
+    padding: 12px 15px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    margin-bottom: 5px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+.settings-header:hover { background: rgba(255,255,255,0.05); }
+
+.settings-submenu { display: none; flex-direction: column; }
+.settings-submenu.active { display: flex; }
+
+.check-icon { opacity: 0; color: #e50914; margin-left: auto; width: 16px; height: 16px; }
+.settings-item.selected .check-icon { opacity: 1; }
+
+/* Skip Intro Buttons */
+.skip-btn {
+    position: absolute;
+    bottom: 90px;
+    right: 20px;
+    background: rgba(20, 20, 20, 0.9);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: bold;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.3s;
+    z-index: 45;
+}
+.skip-btn:hover { background: rgba(255,255,255,0.1); border-color: #fff; }
+.skip-btn.visible { opacity: 1; pointer-events: auto; }
+.skip-btn .lucide { width: 16px; height: 16px; }
+
+/* Shortcut Overlay */
+.shortcut-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 200;
+    display: none;
+    justify-content: center;
+    align-items: center;
+}
+.shortcut-overlay.active { display: flex; }
+.shortcut-modal {
+    background: #1f1f1f;
+    padding: 20px;
+    border-radius: 8px;
+    max-width: 500px;
+    width: 90%;
+    position: relative;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+.shortcut-modal h3 { margin-top: 0; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 15px; }
+.shortcut-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 20px;
+    font-size: 13px;
+    color: #ccc;
+}
+.sc-item { display: flex; justify-content: space-between; align-items: center; }
+.key {
+    background: #333;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-weight: bold;
+    color: #fff;
+    border: 1px solid #444;
+}
+.close-shortcuts {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    background: none;
+    border: none;
+    color: #aaa;
+    cursor: pointer;
+}
+.close-shortcuts:hover { color: #fff; }
+
+/* Icon Wrapper Styling */
+.icon-state-play, .icon-state-pause, 
+.icon-vol-high, .icon-vol-low, .icon-vol-mute,
+.icon-max, .icon-min {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+
+/* Icon State Logic - Approach 1 */
+
+/* Hide all state-dependent icons by default */
+.icon-play, .icon-pause, 
+.icon-vol-high, .icon-vol-low, .icon-vol-mute,
+.icon-max, .icon-min {
+    display: none !important; /* Force hide unless overridden */
+}
+
+/* Play/Pause State */
+/* When PAUSED or INITIAL (no class) -> Show Play */
+.player-container:not(.playing) .icon-play {
+    display: block !important;
+}
+/* When PLAYING -> Show Pause */
+.player-container.playing .icon-pause {
+    display: block !important;
+}
+/* Ensure Play is hidden when Playing */
+.player-container.playing .icon-play {
+    display: none !important;
+}
+
+/* Volume State */
+/* High Volume (> 50%) */
+.player-container[data-volume="high"] .icon-vol-high {
+    display: block !important;
+}
+/* Low Volume (1-50%) */
+.player-container[data-volume="low"] .icon-vol-low {
+    display: block !important;
+}
+/* Muted or 0% */
+.player-container[data-volume="mute"] .icon-vol-mute {
+    display: block !important;
+}
+
+/* Fullscreen State */
+/* Default (Not Fullscreen) -> Show Maximize */
+.player-container:not(.fullscreen) .icon-max {
+    display: block !important;
+}
+/* Fullscreen -> Show Minimize */
+.player-container.fullscreen .icon-min {
+    display: block !important;
+}
+/* Ensure Maximize hidden in Fullscreen */
+.player-container.fullscreen .icon-max {
+    display: none !important;
+}
+
+/* Remove old wrapper styling if it conflicts, but keep flex centering */
+.control-btn .lucide {
+    /* Ensure icons are centered in button */
+    margin: 0 auto;
+}
+
+/* ===== CRITICAL FIXES ===== */
+
+/* 1. Icon Sizing - Force 20px on the SVG itself */
+.controls-row .lucide,
+.controls-row svg, 
+.control-btn svg {
+    width: 20px !important;
+    height: 20px !important;
+}
+
+/* 2. Gradient Background Fix */
+.controls-overlay {
+    background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.5) 70%, transparent 100%) !important;
+}
+
+/* 3. Icon Visibility - Absolute Force Hide/Show */
+/* Default state: HIDE ALL */
+.icon-play, .icon-pause, 
+.icon-vol-high, .icon-vol-low, .icon-vol-mute,
+.icon-max, .icon-min {
+    display: none !important;
+}
+
+/* Play/Pause Logic */
+/* Not Playing -> Show Play */
+.player-container:not(.playing) .icon-play {
+    display: block !important;
+}
+/* Playing -> Show Pause */
+.player-container.playing .icon-pause {
+    display: block !important;
+}
+
+/* Volume Logic */
+/* High */
+.player-container[data-volume="high"] .icon-vol-high {
+    display: block !important;
+}
+/* Low */
+.player-container[data-volume="low"] .icon-vol-low {
+    display: block !important;
+}
+/* Mute */
+.player-container[data-volume="mute"] .icon-vol-mute {
+    display: block !important;
+}
+
+/* Fullscreen Logic */
+/* Not Fullscreen -> Show Maximize */
+.player-container:not(.fullscreen) .icon-max {
+    display: block !important;
+}
+/* Fullscreen -> Show Minimize */
+.player-container.fullscreen .icon-min {
+    display: block !important;
+}
+
+/* ===== SETTINGS MENU LAYOUT FIX ===== */
+
+/* Ensure settings menu containers are always vertical (portrait) */
+.settings-main, 
+.settings-submenu {
+    display: flex;
+    flex-direction: column !important;
+    width: 100%;
+}
+
+/* Ensure menu itself is vertical */
+.settings-menu {
+    flex-direction: column !important;
+    width: 260px !important; /* Force width */
+}
+
+/* Ensure items take full width */
+.settings-item {
+    width: 100%;
+    box-sizing: border-box; /* Include padding in width */
+}
+
+/* ===== MOBILE & TOUCH OPTIMIZATION ===== */
+
+/* 1. Show Controls State (for mobile/touch interactions) */
+.player-container.show-controls .controls-overlay {
+    opacity: 1 !important;
+}
+
+/* 2. Mobile Layout Adjustments */
+@media (max-width: 768px) {
+    /* Increase touch targets */
+    .control-btn {
+        padding: 12px !important; /* Larger hit area */
+    }
+    
+    /* Make volume slider larger for touch */
+    .volume-container {
+        width: 120px;
+    }
+    
+    .volume-container input {
+        height: 5px; /* Thicker slider */
+    }
+    
+    /* Adjust spacing */
+    .controls-left, .controls-right {
+        gap: 10px;
+    }
+    
+    /* Hide specific non-essential controls on small screens if needed */
+    /* Example: Hide volume text or reduce spacing */
+    
+    /* Ensure fullscreen icon is visible and accessible */
+    #fullscreen-btn {
+        margin-left: 5px;
+    }
+    
+    /* Center Play/Pause button on screen overlay? Or keep in bar? */
+    /* For now, keep in bar but make it accessible */
+}
+
+/* 3. Hide cursor when controls are hidden */
+.player-container:not(.show-controls):not(.paused):hover {
+    cursor: none;
+}
+
+/* ===== MOBILE PLAYER OPTIMIZATIONS ===== */
+
+@media (max-width: 768px) {
+    /* 1. Hide Volume Slider on Mobile */
+    #volume-slider {
+        display: none !important;
+    }
+    
+    /* 2. Settings Menu Position */
+    .settings-menu {
+        bottom: 60px !important; /* Move up slightly */
+        right: 10px !important;
+        width: 240px !important;
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+    
+    /* 3. Ensure Fullscreen Button Visible */
+    #fullscreen-btn {
+        display: flex !important;
+    }
+    
+    /* 4. Controls Spacing */
+    .controls-left {
+        gap: 10px;
+    }
+    
+    .time-display {
+        font-size: 12px;
+        margin-left: 5px;
+    }
+    
+    /* 5. Fix Player Height (Already 16/9, but ensure container fits) */
+    .video-player-wrapper {
+        width: 100%;
+        margin: 0;
+    }
+}
+
+/* ===== MOBILE OVERFLOW FIX ===== */
+@media (max-width: 768px) {
+    /* Hide redundant controls to fit screen width */
+    /* Gestures replace seek buttons */
+    #prev-10s-btn,
+    #next-10s-btn {
+        display: none !important;
+    }
+    
+    /* Episode list below replaces next button */
+    #next-ep-btn {
+        display: none !important;
+    }
+    
+    /* Settings menu contains subtitles option */
+    #subs-btn {
+        display: none !important;
+    }
+    
+    /* Further compact spacing */
+    .controls-left, .controls-right {
+        gap: 5px !important;
+    }
+    
+    /* Ensure container doesn't overflow horizontally */
+    .player-container {
+        width: 100vw;
+        max-width: 100vw;
+        overflow-x: hidden;
+    }
+    
+    /* Reset padding to ensure buttons fit */
+    .control-btn {
+        padding: 10px !important; /* Slightly smaller than 12px to be safe */
+    }
+}
+
+/* ===== SUBTITLE MENU POLISH ===== */
+
+/* 1. Refined Menu Styling */
+.settings-menu {
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    background: rgba(20, 20, 20, 0.95);
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    /* Improve transition */
+    transition: opacity 0.2s, transform 0.2s;
+    transform-origin: bottom right;
+}
+
+/* 2. Checkmark Styling */
+.check-icon {
+    color: #e50914 !important; /* Force red checkmark */
+    stroke-width: 3px;
+}
+
+.settings-item.selected span {
+    color: #fff;
+    font-weight: bold;
+}
+
+.settings-item:not(.selected) span {
+    color: #ccc;
+}
+
+/* 3. Header Styling with Chevron */
+.settings-header {
+    background: rgba(255,255,255,0.05);
+    color: #eee;
+    font-size: 14px;
+    padding: 12px 15px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.settings-header .lucide-chevron-left {
+    width: 18px;
+    height: 18px;
+    margin-right: 5px;
+}
+
+/* 4. Subtitle List Styling */
+#settings-subs-options {
+    max-height: 250px;
+    overflow-y: auto;
+    /* Custom scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: #444 transparent;
+}
+
+#settings-subs-options::-webkit-scrollbar {
+    width: 6px;
+}
+#settings-subs-options::-webkit-scrollbar-thumb {
+    background-color: #444;
+    border-radius: 3px;
+}
+
+/* Position Settings Menu correctly relative to button */
+/* Desktop */
+@media (min-width: 769px) {
+    .settings-menu {
+        bottom: 60px;
+        right: 20px; /* Aligned with right controls */
+        transform-origin: bottom right;
+    }
+}
+
+/* Mobile is already handled in previous step, but ensuring overrides work */
+@media (max-width: 768px) {
+    .settings-menu {
+        bottom: 70px !important;
+        right: 10px !important;
+    }
+}
+
+/* ===== CONTROL VISIBILITY & TRANSITIONS ===== */
+
+/* Base Overlay Transition */
+.controls-overlay {
+    transition: opacity 0.3s ease;
+    pointer-events: none; /* Default to none, enable when visible */
+}
+
+/* Visible State */
+.player-container.show-controls .controls-overlay {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Hidden State (Implicitly when show-controls is missing) */
+.player-container:not(.show-controls) .controls-overlay {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Top Gradient Overlay */
+.top-gradient-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 80px;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.7) 0%, transparent 100%);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 25;
+}
+
+.player-container.show-controls .top-gradient-overlay {
+    opacity: 1;
+}
+
+/* Cursor Hiding */
+.player-container.hide-cursor {
+    cursor: none;
+}
+
+/* Always show controls when paused */
+.player-container.paused .controls-overlay,
+.player-container.paused .top-gradient-overlay {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+}
+
+
+/* Watch Container (Body wrapper) */
+body { background: #0f0f0f; margin: 0; font-family: Arial, sans-serif; }
+.watch-container { max-width: 1200px; margin: 0 auto; padding: 20px; box-sizing: border-box; }
+/* Notice */
+.player-notice { background: rgba(229, 9, 20, 0.1); border: 1px solid rgba(229, 9, 20, 0.3); padding: 10px 15px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; margin-top: 15px; color: #fff; font-size: 14px; }
+.player-notice p { margin: 0; display: flex; align-items: center; gap: 10px; }
+.notice-icon { width: 18px; height: 18px; color: #e50914; }
+.dismiss-btn { background: none; border: none; color: #aaa; cursor: pointer; font-size: 18px; padding: 0; }
+.dismiss-btn:hover { color: #fff; }
+/* Episode Info */
+.episode-info { margin-top: 20px; color: #fff; }
+.episode-info h2 { margin: 0 0 5px 0; font-size: 22px; }
+.episode-info h3 { margin: 0; font-size: 15px; color: #aaa; font-weight: normal; }
+/* Sources List */
+.episode-list-container { margin-top: 20px; background: #1a1a1a; border-radius: 8px; padding: 15px; border: 1px solid rgba(255,255,255,0.05); }
+.episode-list-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; color: #fff; font-weight: bold; }
+.episode-list-header .lucide { width: 18px; height: 18px; }
+.episode-scroll-area { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; margin-top: 15px; max-height: 250px; overflow-y: auto; }
+.episode-scroll-area.hidden { display: none; }
+.ep-btn { background: #2a2a2a; color: #ddd; padding: 10px; text-align: center; border-radius: 6px; text-decoration: none; font-size: 14px; transition: all 0.2s; border: 1px solid rgba(255,255,255,0.05); }
+.ep-btn:hover { background: #3a3a3a; color: #fff; }
+.ep-btn.active { background: #e50914; color: #fff; border-color: #e50914; font-weight: bold; }
+</style>
+
+</head>
+<body>
+<div class="watch-container">
+ 
+  <!-- ── Player ── -->
+  <div class="video-player-wrapper" id="player-wrapper">
+    <div class="player-container" id="player-container" tabindex="0">
+      <video id="video" playsinline crossorigin="anonymous"></video>
+ 
+      <!-- Loading -->
+      <div class="loading-spinner" id="loading-spinner">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83
+                   M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+        </svg>
+      </div>
+ 
+      <div class="top-gradient-overlay"></div>
+ 
+      <!-- Visual Feedback -->
+      <div class="feedback-overlay" id="feedback-overlay">
+        <i data-lucide="play"     class="feedback-icon" id="fb-play"></i>
+        <i data-lucide="pause"    class="feedback-icon" id="fb-pause"></i>
+        <i data-lucide="volume-2" class="feedback-icon" id="fb-vol-up"></i>
+        <i data-lucide="volume-x" class="feedback-icon" id="fb-vol-mute"></i>
+        <div class="speed-overlay" id="fb-speed">1x</div>
+      </div>
+ 
+      <!-- Ripple Seek -->
+      <div class="ripple-overlay left" id="ripple-left">
+        <div class="ripple-content">
+          <i data-lucide="rewind"></i><span>-10s</span>
+        </div>
+      </div>
+      <div class="ripple-overlay right" id="ripple-right">
+        <div class="ripple-content">
+          <i data-lucide="fast-forward"></i><span>+10s</span>
+        </div>
+      </div>
+ 
+      <div class="toast-container" id="toast-container"></div>
+ 
+      <!-- Skip Buttons -->
+      <button id="skip-intro" class="skip-btn">
+        <span>Skip Intro</span> <i data-lucide="chevrons-right"></i>
+      </button>
+      <button id="skip-outro" class="skip-btn">
+        <span>Skip Outro</span> <i data-lucide="chevrons-right"></i>
+      </button>
+ 
+      <!-- Controls Overlay -->
+      <div class="controls-overlay" id="controls-overlay">
+        <div class="progress-container" id="progress-container">
+          <div class="progress-bar" id="progress-bar">
+            <div class="progress-handle" id="progress-handle"></div>
+          </div>
+        </div>
+        <div class="controls-row">
+          <div class="controls-left">
+            <button id="prev-10s-btn" class="control-btn" title="Rewind 10s (J)">
+              <i data-lucide="rotate-ccw"></i>
+            </button>
+            <button id="play-btn" class="control-btn" title="Play/Pause (Space)">
+              <i data-lucide="play"  class="icon-play"></i>
+              <i data-lucide="pause" class="icon-pause"></i>
+            </button>
+            <button id="next-10s-btn" class="control-btn" title="Forward 10s (L)">
+              <i data-lucide="rotate-cw"></i>
+            </button>
+            <button id="next-ep-btn" class="control-btn" title="Next Episode (N)" style="display:none">
+              <i data-lucide="skip-forward"></i>
+            </button>
+            <div class="volume-container">
+              <button id="mute-btn" class="control-btn" title="Mute (M)">
+                <i data-lucide="volume-2" class="icon-vol-high"></i>
+                <i data-lucide="volume-1" class="icon-vol-low"></i>
+                <i data-lucide="volume-x" class="icon-vol-mute"></i>
+              </button>
+              <input type="range" id="volume-slider" min="0" max="1" step="0.05" value="1">
+            </div>
+            <span class="time-display" id="time-display">0:00 / 0:00</span>
+          </div>
+          <div class="spacer"></div>
+          <div class="controls-right">
+            <button id="subs-btn"      class="control-btn" title="Subtitles (C)"><i data-lucide="subtitles"></i></button>
+            <button id="settings-btn"  class="control-btn" title="Settings (S)"><i data-lucide="settings"></i></button>
+            <button id="fullscreen-btn" class="control-btn" title="Fullscreen (F)">
+              <i data-lucide="maximize" class="icon-max"></i>
+              <i data-lucide="minimize" class="icon-min"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+ 
+      <!-- Settings Menu -->
+      <div class="settings-menu" id="settings-menu">
+        <div class="settings-main" id="settings-main">
+          <div class="settings-item" data-target="audio">
+            <div class="label"><i data-lucide="headphones"></i> Audio</div>
+            <div class="value"><span id="current-audio">SUB</span> <i data-lucide="chevron-right"></i></div>
+          </div>
+          <div class="settings-item" data-target="source">
+            <div class="label"><i data-lucide="server"></i> Source</div>
+            <div class="value"><span id="current-source">—</span> <i data-lucide="chevron-right"></i></div>
+          </div>
+          <div class="settings-item" data-target="quality">
+            <div class="label"><i data-lucide="monitor"></i> Quality</div>
+            <div class="value"><span id="current-quality">Auto</span> <i data-lucide="chevron-right"></i></div>
+          </div>
+          <div class="settings-item" data-target="speed">
+            <div class="label"><i data-lucide="gauge"></i> Speed</div>
+            <div class="value"><span id="current-speed">Normal</span> <i data-lucide="chevron-right"></i></div>
+          </div>
+          <div class="settings-item" data-target="subs">
+            <div class="label"><i data-lucide="subtitles"></i> Subtitles</div>
+            <div class="value"><span id="current-subs">Off</span> <i data-lucide="chevron-right"></i></div>
+          </div>
+        </div>
+        <!-- Sub-menus -->
+        <div class="settings-submenu" id="submenu-audio">
+          <div class="settings-header" id="back-audio"><i data-lucide="chevron-left"></i> Audio</div>
+          <div id="settings-audio-options"></div>
+        </div>
+        <div class="settings-submenu" id="submenu-source">
+          <div class="settings-header" id="back-source"><i data-lucide="chevron-left"></i> Source</div>
+          <div id="settings-source-options"></div>
+        </div>
+        <div class="settings-submenu" id="submenu-quality">
+          <div class="settings-header" id="back-quality"><i data-lucide="chevron-left"></i> Quality</div>
+          <div id="settings-quality-options"></div>
+        </div>
+        <div class="settings-submenu" id="submenu-speed">
+          <div class="settings-header" id="back-speed"><i data-lucide="chevron-left"></i> Speed</div>
+          <div id="settings-speed-options"></div>
+        </div>
+        <div class="settings-submenu" id="submenu-subs">
+          <div class="settings-header" id="back-subs"><i data-lucide="chevron-left"></i> Subtitles</div>
+          <div id="settings-subs-options"></div>
+        </div>
+      </div>
+ 
+      <!-- Shortcut Help -->
+      <div class="shortcut-overlay" id="shortcut-overlay">
+        <div class="shortcut-modal">
+          <h3>Keyboard Shortcuts</h3>
+          <div class="shortcut-grid">
+            <div class="sc-item"><span class="key">SPACE</span> / <span class="key">K</span> Play/Pause</div>
+            <div class="sc-item"><span class="key">J</span> / <span class="key">←</span> Rewind 10s</div>
+            <div class="sc-item"><span class="key">L</span> / <span class="key">→</span> Forward 10s</div>
+            <div class="sc-item"><span class="key">F</span> Fullscreen</div>
+            <div class="sc-item"><span class="key">M</span> Mute</div>
+            <div class="sc-item"><span class="key">↑</span> / <span class="key">↓</span> Volume</div>
+            <div class="sc-item"><span class="key">N</span> Next Ep</div>
+            <div class="sc-item"><span class="key">?</span> Toggle Help</div>
+          </div>
+          <button class="close-shortcuts" id="close-shortcuts"><i data-lucide="x"></i></button>
+        </div>
+      </div>
+    </div><!-- /.player-container -->
+  </div><!-- /.video-player-wrapper -->
+ 
+  <!-- Notice -->
+  <div class="player-notice" id="player-notice">
+    <p>
+      <i data-lucide="info" class="notice-icon"></i>
+      <span>If video fails, try changing <strong>Source</strong> or <strong>Audio</strong> in settings.</span>
+    </p>
+    <button class="dismiss-btn" onclick="document.getElementById('player-notice').style.display='none'">×</button>
+  </div>
+ 
+  <!-- Episode Info -->
+  <div class="episode-info">
+    <h2>Test</h2>
+    <h3>Episode 1 &nbsp;·&nbsp; SUB</h3>
+  </div>
+ 
+  <!-- Sources Panel -->
+  <div class="episode-list-container">
+    <div class="episode-list-header" onclick="this.nextElementSibling.classList.toggle('hidden')">
+      <span>Sources</span>
+      <i data-lucide="chevron-down"></i>
+    </div>
+    <div class="episode-scroll-area" id="sources-list"></div>
+  </div>
+ 
+</div><!-- /.watch-container -->
+ 
+<script>
+// ─── Embedded stream data ───────────────────────────────────────────────────
+const STREAMS   = [{"url": "http://test", "server": "Test-1"}];
+const SUBTITLES = [];
+const CATEGORY  = "sub";
+const TITLE     = "Test";
+const EP_NUM    = 1;
+ 
+// ─── Player ────────────────────────────────────────────────────────────────
+class AniVersePlayer {
+  constructor() {
+    this.video      = document.getElementById('video');
+    this.container  = document.getElementById('player-container');
+    this.hls        = null;
+    this.streams    = STREAMS;
+    this.subtitles  = SUBTITLES;
+    this.curStream  = 0;
+    this.curSub     = -1;
+    this.qualities  = [];
+    this.prevVol    = 1;
+    this.hideTimer  = null;
+    this.dragging   = false;
+    this.speeds     = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+    this.speedLabels= ['0.25x','0.5x','0.75x','Normal','1.25x','1.5x','1.75x','2x'];
+  }
+ 
+  // ── Initialise ────────────────────────────────────────────────────────────
+  init() {
+    this.bindEvents();
+    this.buildSettings();
+    if (this.streams.length) this.loadStream(0);
+    lucide.createIcons();
+  }
+ 
+  // ── Settings builder ─────────────────────────────────────────────────────
+  buildSettings() {
+    // Audio
+    document.getElementById('settings-audio-options').innerHTML =
+      ['Sub','Dub'].map(a => `
+        <div class="settings-item ${CATEGORY.toLowerCase()===a.toLowerCase()?'selected':''}"
+             data-audio="${a.toLowerCase()}">
+          ${a}<i data-lucide="check" class="check-icon"></i>
+        </div>`).join('');
+ 
+    // Sources
+    this._rebuildSources();
+ 
+    // Speed
+    document.getElementById('settings-speed-options').innerHTML =
+      this.speeds.map((s,i) => `
+        <div class="settings-item ${s===1?'selected':''}" data-speed="${s}">
+          ${this.speedLabels[i]}<i data-lucide="check" class="check-icon"></i>
+        </div>`).join('');
+ 
+    // Subs
+    this._rebuildSubs();
+ 
+    // Sources list panel at bottom
+    document.getElementById('sources-list').innerHTML =
+      this.streams.map((s,i) => `
+        <a class="ep-btn ${i===0?'active':''}" href="#"
+           onclick="player.loadStream(${i});return false;">
+          ${s.server||('S'+(i+1))}
+        </a>`).join('');
+  }
+ 
+  _rebuildSources() {
+    document.getElementById('settings-source-options').innerHTML =
+      this.streams.map((s,i) => `
+        <div class="settings-item ${i===0?'selected':''}" data-source="${i}">
+          ${s.server||('Server '+(i+1))}<i data-lucide="check" class="check-icon"></i>
+        </div>`).join('');
+    if (this.streams[0])
+      document.getElementById('current-source').textContent =
+        this.streams[0].server || 'Server 1';
+  }
+ 
+  _rebuildSubs() {
+    const off = `<div class="settings-item selected" data-sub="-1">
+                   Off<i data-lucide="check" class="check-icon"></i></div>`;
+    const tracks = this.subtitles.map((s,i) => `
+      <div class="settings-item" data-sub="${i}">
+        ${s.label||('Track '+(i+1))}<i data-lucide="check" class="check-icon"></i>
+      </div>`).join('');
+    document.getElementById('settings-subs-options').innerHTML = off + tracks;
+  }
+ 
+  // ── Stream loading ───────────────────────────────────────────────────────
+  loadStream(idx) {
+    this.curStream = idx;
+    const stream = this.streams[idx];
+    if (!stream) return;
+ 
+    this.showSpinner(true);
+ 
+    // Update active source highlights
+    document.querySelectorAll('[data-source]').forEach(el =>
+      el.classList.toggle('selected', +el.dataset.source === idx));
+    document.querySelectorAll('#sources-list .ep-btn').forEach((el,i) =>
+      el.classList.toggle('active', i === idx));
+    document.getElementById('current-source').textContent =
+      stream.server || `Server ${idx+1}`;
+ 
+    // Tear down previous HLS instance
+    if (this.hls) { this.hls.destroy(); this.hls = null; }
+ 
+    const url = stream.url;
+    const isHLS = /\.m3u8|m3u8/i.test(url);
+ 
+    if (isHLS && Hls.isSupported()) {
+      this.hls = new Hls({ startLevel: -1, maxBufferLength: 30 });
+      this.hls.loadSource(url);
+      this.hls.attachMedia(this.video);
+      this.hls.on(Hls.Events.MANIFEST_PARSED, (_e, data) => {
+        this._buildQuality(data.levels);
+        this.video.play().catch(()=>{});
+        this.showSpinner(false);
+      });
+      this.hls.on(Hls.Events.ERROR, (_e, data) => {
+        if (data.fatal) { this.toast('Stream error — try another source.','error'); this.showSpinner(false); }
+      });
+    } else {
+      // Native (MP4 / native HLS on Safari)
+      this.video.src = url;
+      this.video.play().catch(()=>{});
+      this.showSpinner(false);
+    }
+ 
+    this._applySubtitles();
+  }
+ 
+  _buildQuality(levels) {
+    this.qualities = levels;
+    const opts = document.getElementById('settings-quality-options');
+    opts.innerHTML =
+      `<div class="settings-item selected" data-quality="-1">Auto<i data-lucide="check" class="check-icon"></i></div>` +
+      levels.map((l,i) => `
+        <div class="settings-item" data-quality="${i}">
+          ${l.height ? l.height+'p' : 'Level '+(i+1)}
+          <i data-lucide="check" class="check-icon"></i>
+        </div>`).join('');
+    document.getElementById('current-quality').textContent = 'Auto';
+    lucide.createIcons();
+  }
+ 
+  // ── Subtitle tracks ───────────────────────────────────────────────────────
+  _applySubtitles() {
+    // Remove old tracks
+    Array.from(this.video.querySelectorAll('track')).forEach(t => t.remove());
+    this.curSub = -1;
+    document.getElementById('current-subs').textContent = 'Off';
+ 
+    this.subtitles.forEach((sub, i) => {
+      const t = document.createElement('track');
+      t.kind    = 'subtitles';
+      t.label   = sub.label || `Track ${i+1}`;
+      t.src     = sub.file  || sub.url || '';
+      t.default = false;
+      this.video.appendChild(t);
+    });
+  }
+ 
+  setSub(idx) {
+    this.curSub = idx;
+    const tracks = this.video.textTracks;
+    for (let i = 0; i < tracks.length; i++) tracks[i].mode = 'disabled';
+    if (idx >= 0 && tracks[idx]) {
+      tracks[idx].mode = 'showing';
+      document.getElementById('current-subs').textContent =
+        this.subtitles[idx]?.label || `Track ${idx+1}`;
+    } else {
+      document.getElementById('current-subs').textContent = 'Off';
+    }
+    document.querySelectorAll('[data-sub]').forEach(el =>
+      el.classList.toggle('selected', +el.dataset.sub === idx));
+    lucide.createIcons();
+  }
+ 
+  // ── Event binding ─────────────────────────────────────────────────────────
+  bindEvents() {
+    const v  = this.video;
+    const c  = this.container;
+ 
+    // Play / Pause
+    document.getElementById('play-btn').addEventListener('click', () => this.togglePlay());
+    v.addEventListener('click', () => this.togglePlay());
+ 
+    // Video state
+    v.addEventListener('waiting', ()  => this.showSpinner(true));
+    v.addEventListener('canplay', ()  => this.showSpinner(false));
+    v.addEventListener('playing', ()  => { this.showSpinner(false); c.classList.add('playing'); });
+    v.addEventListener('pause',   ()  => { c.classList.remove('playing'); c.classList.add('paused'); this.showControls(); });
+    v.addEventListener('play',    ()  => c.classList.remove('paused'));
+    v.addEventListener('ended',   ()  => c.classList.remove('playing'));
+    v.addEventListener('timeupdate',  () => this.updateProgress());
+    
+ 
+    // Volume
+    const slider = document.getElementById('volume-slider');
+    slider.addEventListener('input', () => { v.volume = +slider.value; this.updateVolumeUI(); });
+    document.getElementById('mute-btn').addEventListener('click', () => this.toggleMute());
+ 
+    // Seek
+    const pc = document.getElementById('progress-container');
+    pc.addEventListener('mousedown', e => { this.dragging = true; this._seek(e); });
+    document.addEventListener('mousemove', e => { if (this.dragging) this._seek(e); });
+    document.addEventListener('mouseup',   () => { this.dragging = false; });
+    pc.addEventListener('touchstart', e => { this.dragging = true; this._seek(e.touches[0]); }, { passive: true });
+    document.addEventListener('touchmove', e => { if (this.dragging) this._seek(e.touches[0]); }, { passive: true });
+    document.addEventListener('touchend',  () => { this.dragging = false; });
+ 
+    // Skip 10s
+    document.getElementById('prev-10s-btn').addEventListener('click', () =>
+      { v.currentTime = Math.max(0, v.currentTime - 10); this.ripple('left'); });
+    document.getElementById('next-10s-btn').addEventListener('click', () =>
+      { v.currentTime = Math.min(v.duration||0, v.currentTime + 10); this.ripple('right'); });
+ 
+    // Fullscreen
+    document.getElementById('fullscreen-btn').addEventListener('click', () => this.toggleFullscreen());
+    document.addEventListener('fullscreenchange', () => {
+      c.classList.toggle('fullscreen', !!document.fullscreenElement);
+      lucide.createIcons();
+    });
+ 
+    // Settings open / close
+    document.getElementById('settings-btn').addEventListener('click', e => {
+      e.stopPropagation(); this.toggleSettings();
+    });
+    document.getElementById('subs-btn').addEventListener('click', () =>
+      this.openSub('subs'));
+ 
+    // Settings items
+    document.querySelectorAll('.settings-item').forEach(item =>
+      item.addEventListener('click', () => this.openSub(item.dataset.target)));
+ 
+    // Back headers
+    ['audio','source','quality','speed','subs'].forEach(name => {
+      document.getElementById(`back-${name}`).addEventListener('click', () => this.closeSub());
+    });
+ 
+    // Settings option clicks (delegated)
+    document.getElementById('settings-menu').addEventListener('click', e => {
+      const opt = e.target.closest('.settings-item');
+      if (!opt) return;
+ 
+      if (opt.dataset.source !== undefined) {
+        this.loadStream(+opt.dataset.source);
+        this.closeSettings();
+ 
+      } else if (opt.dataset.quality !== undefined) {
+        const lvl = +opt.dataset.quality;
+        if (this.hls) this.hls.currentLevel = lvl;
+        document.getElementById('current-quality').textContent =
+          lvl === -1 ? 'Auto' : (this.qualities[lvl]?.height + 'p' || `Level ${lvl}`);
+        document.querySelectorAll('[data-quality]').forEach(el =>
+          el.classList.toggle('selected', +el.dataset.quality === lvl));
+        lucide.createIcons();
+        this.closeSettings();
+ 
+      } else if (opt.dataset.speed !== undefined) {
+        const spd = +opt.dataset.speed;
+        v.playbackRate = spd;
+        const lbl = spd === 1 ? 'Normal' : spd + 'x';
+        document.getElementById('current-speed').textContent = lbl;
+        document.querySelectorAll('[data-speed]').forEach(el =>
+          el.classList.toggle('selected', +el.dataset.speed === spd));
+        lucide.createIcons();
+        this.feedback('speed', lbl + ' Speed');
+        this.closeSettings();
+ 
+      } else if (opt.dataset.sub !== undefined) {
+        this.setSub(+opt.dataset.sub);
+        this.closeSettings();
+ 
+      } else if (opt.dataset.audio !== undefined) {
+        document.getElementById('current-audio').textContent =
+          opt.dataset.audio.charAt(0).toUpperCase() + opt.dataset.audio.slice(1);
+        document.querySelectorAll('[data-audio]').forEach(el =>
+          el.classList.toggle('selected', el.dataset.audio === opt.dataset.audio));
+        lucide.createIcons();
+        this.toast('Audio preference updated. Reload streams to apply.', 'info');
+        this.closeSettings();
+      }
+    });
+ 
+    // Click outside settings to close
+    c.addEventListener('click', e => {
+      if (!e.target.closest('#settings-menu') && !e.target.closest('#settings-btn'))
+        this.closeSettings();
+    });
+ 
+    // Mouse controls visibility
+    c.addEventListener('mousemove', () => this.showControls());
+    c.addEventListener('mouseleave', () => { if (!v.paused) this.startHideTimer(); });
+ 
+    // Keyboard shortcuts
+    document.addEventListener('keydown', e => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      switch (e.key) {
+        case ' ': case 'k': case 'K':
+          e.preventDefault(); this.togglePlay(); break;
+        case 'j': case 'J': case 'ArrowLeft':
+          e.preventDefault(); v.currentTime -= 10; this.ripple('left'); break;
+        case 'l': case 'L': case 'ArrowRight':
+          e.preventDefault(); v.currentTime += 10; this.ripple('right'); break;
+        case 'ArrowUp':
+          e.preventDefault();
+          v.volume = Math.min(1, v.volume + 0.1); this.updateVolumeUI(); this.feedback('vol-up'); break;
+        case 'ArrowDown':
+          e.preventDefault();
+          v.volume = Math.max(0, v.volume - 0.1); this.updateVolumeUI(); break;
+        case 'f': case 'F': this.toggleFullscreen(); break;
+        case 'm': case 'M': this.toggleMute(); break;
+        case 's': case 'S': this.toggleSettings(); break;
+        case 'c': case 'C': this.openSub('subs'); break;
+        case '?':
+          document.getElementById('shortcut-overlay').classList.toggle('active'); break;
+        case 'Escape':
+          document.getElementById('shortcut-overlay').classList.remove('active');
+          this.closeSettings(); break;
+      }
+    });
+ 
+    // Close shortcut modal
+    document.getElementById('close-shortcuts').addEventListener('click', () =>
+      document.getElementById('shortcut-overlay').classList.remove('active'));
+ 
+    // Double-tap seek (mobile)
+    let lastTap = 0, lastZone = '';
+    c.addEventListener('touchend', e => {
+      const x = e.changedTouches[0].clientX;
+      const rect = c.getBoundingClientRect();
+      const zone = x < rect.left + rect.width / 2 ? 'left' : 'right';
+      const now = Date.now();
+      if (now - lastTap < 300 && zone === lastZone) {
+        v.currentTime += zone === 'left' ? -10 : 10;
+        this.ripple(zone);
+      }
+      lastTap = now; lastZone = zone;
+    });
+  }
+ 
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  togglePlay() {
+    if (this.video.paused) { this.video.play(); this.feedback('play'); }
+    else                   { this.video.pause(); this.feedback('pause'); }
+  }
+ 
+  toggleMute() {
+    const v = this.video;
+    if (v.muted || v.volume === 0) {
+      v.muted = false; v.volume = this.prevVol || 0.5; this.feedback('vol-up');
+    } else {
+      this.prevVol = v.volume; v.muted = true; this.feedback('vol-mute');
+    }
+    this.updateVolumeUI();
+  }
+ 
+  updateVolumeUI() {
+    const v = this.video;
+    const vol = v.muted ? 0 : v.volume;
+    const slider = document.getElementById('volume-slider');
+    slider.value = v.volume;
+    slider.style.setProperty('--vol-pct', (v.volume * 100) + '%');
+    const c = this.container;
+    if (vol === 0 || v.muted)  c.dataset.volume = 'mute';
+    else if (vol < 0.5)        c.dataset.volume = 'low';
+    else                       c.dataset.volume = 'high';
+    lucide.createIcons();
+  }
+ 
+  _seek(e) {
+    const bar  = document.getElementById('progress-container');
+    const rect = bar.getBoundingClientRect();
+    const pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    this.video.currentTime = pct * (this.video.duration || 0);
+  }
+ 
+  updateProgress() {
+    const v = this.video;
+    if (!v.duration) return;
+    const pct = (v.currentTime / v.duration) * 100;
+    document.getElementById('progress-bar').style.width = pct + '%';
+    document.getElementById('time-display').textContent    =
+      `${this.fmt(v.currentTime)} / ${this.fmt(v.duration)}`;
+  }
+ 
+
+ 
+  fmt(s) {
+    if (!s || isNaN(s)) return '0:00';
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = String(Math.floor(s % 60)).padStart(2, '0');
+    return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${sec}` : `${m}:${sec}`;
+  }
+ 
+  toggleFullscreen() {
+    if (!document.fullscreenElement) this.container.requestFullscreen().catch(()=>{});
+    else document.exitFullscreen().catch(()=>{});
+  }
+ 
+  showSpinner(on) {
+    document.getElementById('loading-spinner').classList.toggle('active', on);
+  }
+ 
+  showControls() {
+    this.container.classList.add('show-controls');
+    clearTimeout(this.hideTimer);
+    this.startHideTimer();
+  }
+ 
+  startHideTimer() {
+    this.hideTimer = setTimeout(() => {
+      if (!this.video.paused) this.container.classList.remove('show-controls');
+    }, 3000);
+  }
+ 
+  toggleSettings() {
+    const m = document.getElementById('settings-menu');
+    if (m.classList.contains('active')) { this.closeSettings(); }
+    else { m.classList.add('active'); this.closeSub(); }
+  }
+ 
+  closeSettings() {
+    document.getElementById('settings-menu').classList.remove('active');
+    this.closeSub();
+  }
+ 
+  openSub(name) {
+    document.getElementById('settings-menu').classList.add('active');
+    document.getElementById('settings-main').style.display = 'none';
+    document.querySelectorAll('.settings-submenu').forEach(s => s.classList.remove('active'));
+    document.getElementById(`submenu-${name}`).classList.add('active');
+    lucide.createIcons();
+  }
+ 
+  closeSub() {
+    document.getElementById('settings-main').style.display = '';
+    document.querySelectorAll('.settings-submenu').forEach(s => s.classList.remove('active'));
+  }
+ 
+  feedback(type, text) {
+    const map = { play:'fb-play', pause:'fb-pause', 'vol-up':'fb-vol-up', 'vol-mute':'fb-vol-mute', speed:'fb-speed' };
+    const el = document.getElementById(map[type]);
+    if (!el) return;
+    if (type === 'speed') el.textContent = text;
+    el.classList.remove('animate');
+    void el.offsetWidth;            // force reflow for re-animation
+    el.classList.add('animate');
+    setTimeout(() => el.classList.remove('animate'), 450);
+    lucide.createIcons();
+  }
+ 
+  ripple(side) {
+    const el = document.getElementById(`ripple-${side}`);
+    el.classList.add('animate');
+    setTimeout(() => el.classList.remove('animate'), 450);
+  }
+ 
+  toast(msg, type = 'info') {
+    const tc = document.getElementById('toast-container');
+    const t  = document.createElement('div');
+    t.className = 'toast' + (type === 'error' ? ' error' : '');
+    t.textContent = msg;
+    tc.appendChild(t);
+    setTimeout(() => t.remove(), 3500);
+  }
+}
+ 
+const player = new AniVersePlayer();
+player.init();
+</script>
+</body>
+</html>

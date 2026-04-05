@@ -81,6 +81,13 @@ class ResolverOrchestrator:
         sub_results = all_results[len(tasks):] if category == "dub" else []
         
         valid_results = [r for r in results if not isinstance(r, Exception) and "error" not in r]
+        
+        for idx, r in enumerate(results):
+            if isinstance(r, Exception):
+                print(f"Provider {self.providers[idx].__class__.__name__} failed with exception: {r}")
+            elif "error" in r:
+                print(f"Provider {self.providers[idx].__class__.__name__} returned error: {r['error']}")
+                
         valid_sub_results = [r for r in sub_results if not isinstance(r, Exception) and "error" not in r]
         
         if not valid_results:
