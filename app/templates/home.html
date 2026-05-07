@@ -3,9 +3,13 @@
 {% block title %}AniVerse - Home{% endblock %}
 
 {% block content %}
-{% if data and data.get('data') %}
-    {% set api_data = data.get('data') %}
-    
+{% set api_data = data.get('data') if data else {} %}
+{% set has_any = api_data and (api_data.get('spotlightAnimes')
+                               or api_data.get('trendingAnimes')
+                               or api_data.get('latestEpisodeAnimes')
+                               or api_data.get('topAiringAnimes')
+                               or api_data.get('topUpcomingAnimes')) %}
+{% if has_any %}
     <section class="hero-carousel">
         <h2>Spotlight</h2>
         <div class="carousel-container">

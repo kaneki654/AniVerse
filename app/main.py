@@ -53,8 +53,55 @@ def fix_cover(url: str):
 # --- ANIME ROUTES ---
 
 import httpx
+import json
+import time
+import pathlib
 
 NEW_API_BASE = "http://localhost:8001"
+
+# --- Home page resilience: disk cache + AniList direct fallback ---
+CACHE_DIR = pathlib.Path(__file__).resolve().parent.parent / ".cache"
+CACHE_DIR.mkdir(exist_ok=True)
+HOME_CACHE_FILE = CACHE_DIR / "home.json"
+HOME_CACHE_FRESH_TTL = 15 * 60           # serve cache without upstream calls
+HOME_CACHE_STALE_TTL = 30 * 24 * 3600    # last-resort fallback window
+BACKEND_TIMEOUT = 6.0
+ANILIST_URL = "https://graphql.anilist.co"
+ANILIST_HOME_QUERY = """
+query ($page:Int,$perPage:Int,$sort:[MediaSort],$status:MediaStatus) {
+  Page(page:$page, perPage:$perPage) {
+    media(type:ANIME, sort:$sort, status:$status) {
+      id title { romaji english } coverImage { large }
+      episodes nextAiringEpisode { episode }
+    }
+  }
+}
+"""
+
+def _read_home_cache():
+    try:
+        with open(HOME_CACHE_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+def _write_home_cache(sections):
+    payload = {"written_at": int(time.time()), "sections": sections}
+    tmp = HOME_CACHE_FILE.with_suffix(".tmp")
+    with open(tmp, "w") as f:
+        json.dump(payload, f)
+    os.replace(tmp, HOME_CACHE_FILE)
+
+async def _anilist_section(client, sort, status=None, per_page=12):
+    variables = {"page": 1, "perPage": per_page, "sort": sort}
+    if status:
+        variables["status"] = status
+    r = await client.post(
+        ANILIST_URL,
+        json={"query": ANILIST_HOME_QUERY, "variables": variables},
+        timeout=8,
+    )
+    return (r.json().get("data") or {}).get("Page", {}).get("media", []) or []
 
 def map_anilist_list(items):
     mapped = []
@@ -69,49 +116,103 @@ def map_anilist_list(items):
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    async with httpx.AsyncClient() as client:
-        try:
-            popular = await client.get(f"{NEW_API_BASE}/anime/popular?per_page=12", timeout=10)
-            trending = await client.get(f"{NEW_API_BASE}/anime/trending?per_page=12", timeout=10)
-            latest = await client.get(f"{NEW_API_BASE}/anime/latest?per_page=12", timeout=10)
-            upcoming = await client.get(f"{NEW_API_BASE}/anime/upcoming?per_page=12", timeout=10)
-            
-            latest_list = latest.json() if isinstance(latest.json(), list) else []
-            for item in latest_list:
-                ep_count = "?"
-                # We specifically injected exact_latest_episode from the AiringSchedule backend
-                if item.get("exact_latest_episode"):
-                    ep_count = str(item["exact_latest_episode"])
-                elif item.get("nextAiringEpisode"):
-                    ep = item["nextAiringEpisode"]["episode"]
-                    ep_count = str(ep - 1) if ep > 1 else "1"
-                elif item.get("episodes"):
-                    ep_count = str(item["episodes"])
-                    
-                item["episodes"] = {"sub": ep_count}
+    cached = _read_home_cache()
+    now = int(time.time())
+    sections = {"popular": [], "trending": [], "latest": [], "upcoming": []}
 
-            data = {
-                "data": {
-                    "spotlightAnimes": map_anilist_list(popular.json()[:6]),
-                    "trendingAnimes": map_anilist_list(trending.json()),
-                    "topAiringAnimes": map_anilist_list(popular.json()),
-                    "latestEpisodeAnimes": map_anilist_list(latest_list),
-                    "topUpcomingAnimes": map_anilist_list(upcoming.json())
-                }
+    if cached and now - cached["written_at"] < HOME_CACHE_FRESH_TTL:
+        sections = cached["sections"]
+    else:
+        async with httpx.AsyncClient(timeout=BACKEND_TIMEOUT) as client:
+            async def fetch_backend(name, path):
+                try:
+                    r = await client.get(f"{NEW_API_BASE}{path}")
+                    r.raise_for_status()
+                    body = r.json()
+                    return name, body if isinstance(body, list) else None
+                except Exception as e:
+                    print(f"Home[{name}] backend fail: {e}")
+                    return name, None
+
+            results = await asyncio.gather(
+                fetch_backend("popular",  "/anime/popular?per_page=12"),
+                fetch_backend("trending", "/anime/trending?per_page=12"),
+                fetch_backend("latest",   "/anime/latest?per_page=12"),
+                fetch_backend("upcoming", "/anime/upcoming?per_page=12"),
+            )
+            fresh = {name: data for name, data in results}
+
+            fallback_map = {
+                "popular":  (["POPULARITY_DESC"], None),
+                "trending": (["TRENDING_DESC"], None),
+                "latest":   (["UPDATED_AT_DESC"], "RELEASING"),
+                "upcoming": (["POPULARITY_DESC"], "NOT_YET_RELEASED"),
             }
-            # Add sub badges back for latest
-            for idx, item in enumerate(latest_list):
-                if idx < len(data["data"]["latestEpisodeAnimes"]):
-                    data["data"]["latestEpisodeAnimes"][idx]["episodes"] = item.get("episodes")
-                    
-        except Exception as e:
-            print("Home Error:", e)
-            data = {}
+            for name, (sort, status) in fallback_map.items():
+                if fresh.get(name) is None:
+                    try:
+                        fresh[name] = await _anilist_section(client, sort, status)
+                    except Exception as e:
+                        print(f"Home[{name}] AniList fallback fail: {e}")
+                        fresh[name] = None
+
+        stale_ok = cached and now - cached["written_at"] < HOME_CACHE_STALE_TTL
+        for name in list(sections.keys()):
+            if fresh.get(name):
+                sections[name] = fresh[name]
+            elif stale_ok:
+                sections[name] = cached["sections"].get(name, [])
+
+        if any(sections.values()):
+            try:
+                _write_home_cache(sections)
+            except Exception as e:
+                print(f"Home cache write fail: {e}")
+
+    for item in sections["latest"]:
+        ep_count = "?"
+        if item.get("exact_latest_episode"):
+            ep_count = str(item["exact_latest_episode"])
+        elif item.get("nextAiringEpisode"):
+            ep = item["nextAiringEpisode"]["episode"]
+            ep_count = str(ep - 1) if ep > 1 else "1"
+        elif item.get("episodes"):
+            ep_count = str(item["episodes"])
+        item["episodes"] = {"sub": ep_count}
+
+    data = {"data": {
+        "spotlightAnimes":     map_anilist_list(sections["popular"][:6]),
+        "trendingAnimes":      map_anilist_list(sections["trending"]),
+        "topAiringAnimes":     map_anilist_list(sections["popular"]),
+        "latestEpisodeAnimes": map_anilist_list(sections["latest"]),
+        "topUpcomingAnimes":   map_anilist_list(sections["upcoming"]),
+    }}
+    for idx, item in enumerate(sections["latest"]):
+        if idx < len(data["data"]["latestEpisodeAnimes"]):
+            data["data"]["latestEpisodeAnimes"][idx]["episodes"] = item.get("episodes")
+
     return templates.TemplateResponse(
-        request=request, 
-        name="home.html", 
-        context={"data": data}
+        request=request,
+        name="home.html",
+        context={"data": data},
     )
+
+
+@app.get("/health")
+async def health():
+    backend_ok = False
+    try:
+        async with httpx.AsyncClient(timeout=2) as c:
+            r = await c.get(f"{NEW_API_BASE}/health")
+            backend_ok = r.status_code == 200
+    except Exception:
+        pass
+    cache = _read_home_cache()
+    return {
+        "frontend": "ok",
+        "backend": "ok" if backend_ok else "down",
+        "home_cache_age_sec": (int(time.time()) - cache["written_at"]) if cache else None,
+    }
 
 @app.get("/history", response_class=HTMLResponse)
 async def history(request: Request):
