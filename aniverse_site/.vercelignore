@@ -1,0 +1,5 @@
+# Explicit, because without this file Vercel falls back to .gitignore -- which
+# deliberately excludes aniverse.apk and version.json from git and would drop
+# them from the deployment too.
+build_site.py
+.gitignore
