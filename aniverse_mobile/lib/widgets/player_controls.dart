@@ -17,6 +17,14 @@ class AniVersePlayerControls extends StatefulWidget {
   final Map<String, dynamic>? outro;
   final VoidCallback? onNextEpisode;
 
+  /// Current audio track, 'sub' or 'dub'. The toggle lives here rather than in
+  /// an app bar because the player is now full-bleed with no bar to put it in.
+  final String category;
+  final VoidCallback? onToggleCategory;
+
+  final bool isFullscreen;
+  final VoidCallback? onToggleFullscreen;
+
   const AniVersePlayerControls({
     super.key,
     required this.controller,
@@ -24,6 +32,10 @@ class AniVersePlayerControls extends StatefulWidget {
     this.intro,
     this.outro,
     this.onNextEpisode,
+    this.category = 'sub',
+    this.onToggleCategory,
+    this.isFullscreen = false,
+    this.onToggleFullscreen,
   });
 
   @override
@@ -107,20 +119,16 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
     }
     if (active == null) return null;
 
-    return Positioned(
-      right: 20,
-      bottom: 90,
-      child: ElevatedButton.icon(
-        onPressed: () =>
-            _c.seekTo(Duration(seconds: (active!['end'] as num).toInt())),
-        icon: const Icon(Icons.fast_forward, size: 18),
-        label: Text(label),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.white.withValues(alpha: 0.92),
-          foregroundColor: Colors.black,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        ),
+    return ElevatedButton.icon(
+      onPressed: () =>
+          _c.seekTo(Duration(seconds: (active!['end'] as num).toInt())),
+      icon: const Icon(Icons.fast_forward, size: 18),
+      label: Text(label),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white.withValues(alpha: 0.92),
+        foregroundColor: Colors.black,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       ),
     );
   }
@@ -137,8 +145,13 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
       behavior: HitTestBehavior.opaque,
       child: Stack(
         children: [
-          // Skip buttons stay available even when the chrome is hidden.
-          if (skip != null) skip,
+          // While the chrome is hidden the skip button floats bottom-right, so
+          // an intro can still be skipped mid-watch. With the chrome showing it
+          // moves into the bottom row instead: the transport row is centred, and
+          // on a portrait-sized player box that put it straight on top of the
+          // +10s button, swallowing those taps.
+          if (skip != null && !_visible)
+            Positioned(right: 20, bottom: 24, child: skip),
 
           AnimatedOpacity(
             opacity: _visible ? 1 : 0,
@@ -187,6 +200,14 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
                             ),
                           ),
                         ),
+                        if (widget.onToggleCategory != null)
+                          _AudioToggle(
+                            category: widget.category,
+                            onTap: () {
+                              widget.onToggleCategory!();
+                              _scheduleHide();
+                            },
+                          ),
                       ],
                     ),
                   ),
@@ -265,9 +286,29 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
                                       style: TextStyle(color: Colors.white)),
                                 ),
                               const Spacer(),
+                              if (skip != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(right: 10),
+                                  child: skip,
+                                ),
                               Text(_fmt(duration),
                                   style: const TextStyle(
                                       color: Colors.white70, fontSize: 12)),
+                              if (widget.onToggleFullscreen != null)
+                                IconButton(
+                                  padding: const EdgeInsets.only(left: 8),
+                                  constraints: const BoxConstraints(),
+                                  icon: Icon(
+                                    widget.isFullscreen
+                                        ? Icons.fullscreen_exit
+                                        : Icons.fullscreen,
+                                    color: Colors.white,
+                                  ),
+                                  onPressed: () {
+                                    widget.onToggleFullscreen!();
+                                    _scheduleHide();
+                                  },
+                                ),
                             ],
                           ),
                         ),
@@ -283,6 +324,48 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
     );
   }
 }
+
+/// SUB / DUB pill. Shows the track that is playing now; tapping switches.
+class _AudioToggle extends StatelessWidget {
+  final String category;
+  final VoidCallback onTap;
+
+  const _AudioToggle({required this.category, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final isSub = category == 'sub';
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        margin: const EdgeInsets.only(left: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: AniVerseTheme.red,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.swap_horiz, size: 15, color: Colors.white),
+            const SizedBox(width: 5),
+            Text(
+              isSub ? 'SUB' : 'DUB',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.8,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 
 class _RoundButton extends StatelessWidget {
   final IconData icon;
