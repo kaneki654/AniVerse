@@ -11,40 +11,84 @@ class VidSrcProvider(BaseProvider):
     def name(self) -> str:
         return "VidSrc"
 
+    # ani.zip "type" values that correspond to a TMDB *tv* id. A TMDB movie id
+    # lives in a different namespace, so feeding it to /embed/tv/ resolves to an
+    # unrelated series.
+    TV_TYPES = {"TV", "TV_SHORT", "ONA", "OVA", "SPECIAL"}
+
     async def resolve(self, anilist_id: str, episode: int, category: str = "sub") -> Dict[str, Any]:
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
             try:
-                tmdb_id = await self.map_anime(client, anilist_id)
-                if not tmdb_id:
+                mapping = await self._ani_zip(client, anilist_id)
+                if not mapping:
                     return {"error": "Anime not found on VidSrc (Mapping failed)"}
-                    
-                episode_id = await self.get_episode(client, tmdb_id, episode)
-                
+
+                mappings = mapping.get("mappings") or {}
+                tmdb_id = mappings.get("themoviedb_id")
+                if not tmdb_id:
+                    return {"error": "Anime not found on VidSrc (no TMDB id)"}
+
+                media_type = (mappings.get("type") or "").upper()
+                if media_type and media_type not in self.TV_TYPES:
+                    return {"error": f"VidSrc skipped (TMDB id is not a TV id: {media_type})"}
+
+                episode_id = self._episode_route(mapping, str(tmdb_id), episode)
+                if not episode_id:
+                    # Guessing season 1 here is what made every season 2+ entry
+                    # play season 1, so refuse instead.
+                    return {"error": f"VidSrc has no season mapping for episode {episode}"}
+
                 servers = await self.get_servers(client, episode_id)
                 if not servers:
                     return {"error": "No embed servers found on VidSrc"}
-                    
+
                 return await self.extract(client, servers)
             except Exception as e:
                 return {"error": f"VidSrc extraction failed: {str(e)}"}
 
-    async def map_anime(self, client: httpx.AsyncClient, anilist_id: str) -> str:
-        """Map AniList ID to TMDB ID using Ani.zip API"""
+    async def _ani_zip(self, client: httpx.AsyncClient, anilist_id: str) -> Dict[str, Any]:
+        """Full Ani.zip mapping payload (ids plus per-episode season numbers)."""
         try:
             resp = await client.get(f"https://api.ani.zip/mappings?anilist_id={anilist_id}")
             if resp.status_code == 200:
-                data = resp.json()
-                if "mappings" in data and "themoviedb_id" in data["mappings"]:
-                    return str(data["mappings"]["themoviedb_id"])
+                return resp.json() or {}
         except Exception as e:
-            print(f"Mapping error: {e}")
-        return ""
+            print(f"VidSrc mapping error: {type(e).__name__}: {e}")
+        return {}
 
-    async def get_episode(self, client: httpx.AsyncClient, tmdb_id: str, episode_num: int) -> str:
-        """Construct the VidSrc route (Assuming Season 1 for basic episodes)"""
-        # For a robust system, you would query TMDB to find the exact Season/Episode mapping.
-        # Most anime season 1 matches episode 1-24. 
-        return f"{tmdb_id}/1/{episode_num}"
+    async def map_anime(self, client: httpx.AsyncClient, anilist_id: str) -> str:
+        """Map AniList ID to TMDB ID using Ani.zip API"""
+        mapping = await self._ani_zip(client, anilist_id)
+        tmdb_id = (mapping.get("mappings") or {}).get("themoviedb_id")
+        return str(tmdb_id) if tmdb_id else ""
+
+    def _episode_route(self, mapping: Dict[str, Any], tmdb_id: str, episode_num: int) -> str:
+        """Build the `<tmdb>/<season>/<episode>` route for a VidSrc embed.
+
+        TMDB keys a whole series under one id, so the season must come from the
+        mapping. AniList numbers episodes per season while TMDB continues them
+        within a season, so use the mapping's episodeNumber too.
+        """
+        ep = (mapping.get("episodes") or {}).get(str(episode_num))
+        if not isinstance(ep, dict):
+            return ""
+        season = ep.get("seasonNumber")
+        number = ep.get("episodeNumber", episode_num)
+        if season is None:
+            return ""
+        return f"{tmdb_id}/{season}/{number}"
+
+    async def get_episode(self, client: httpx.AsyncClient, anilist_id: str, episode_num: int) -> str:
+        """Resolve the VidSrc route for an episode via its Ani.zip season mapping.
+
+        Takes the AniList id: Ani.zip is keyed by it, and passing the TMDB id
+        here looked up an unrelated show's seasons.
+        """
+        mapping = await self._ani_zip(client, anilist_id)
+        tmdb_id = (mapping.get("mappings") or {}).get("themoviedb_id")
+        if not tmdb_id:
+            return ""
+        return self._episode_route(mapping, str(tmdb_id), episode_num)
 
     async def get_servers(self, client: httpx.AsyncClient, episode_id: str) -> List[Dict[str, str]]:
         """Scrape VidSrc for the iframe source"""
@@ -98,7 +142,9 @@ class VidSrcProvider(BaseProvider):
                     urls = raw_m3u8.split(" or ")
                     if urls:
                         master_url = urls[0].replace("{v1}", parsed_url.netloc)
-                        streams.append({"url": master_url, "quality": "auto", "server": server.get("name", "VidSrc")})
+                        streams.append({"url": master_url, "quality": "auto",
+                                        "server": server.get("name", "VidSrc"),
+                                        "category": "sub"})
                     
                     subs_match = re.search(r'subtitle:\s*"([^"]+)"', resp2.text)
                     if subs_match:

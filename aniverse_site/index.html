@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AniVerse — Install</title>
+<meta name="description" content="Download and install the AniVerse Android app.">
+<link rel="icon" href="/icon.png">
+<style>
+  :root {
+    --red: #E50914;
+    --red-dark: #8E0610;
+    --bg: #0E0E0E;
+    --surface: #1A1A1A;
+    --surface-high: #242424;
+    --line: #2C2C2C;
+    --dim: rgba(255,255,255,.54);
+    --faint: rgba(255,255,255,.38);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: #fff;
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  /* Red wash behind the fold, echoing the logo glow. */
+  .glow {
+    position: fixed;
+    top: -30vh; left: 50%;
+    width: 120vw; height: 80vh;
+    transform: translateX(-50%);
+    background: radial-gradient(closest-side, rgba(229,9,20,.22), transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .wrap {
+    position: relative;
+    z-index: 1;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 56px 20px 72px;
+  }
+
+  header { text-align: center; }
+  .mark {
+    width: 96px; height: 96px;
+    border-radius: 22px;
+    display: block;
+    margin: 0 auto 22px;
+    box-shadow: 0 10px 40px rgba(229,9,20,.35);
+  }
+  h1 {
+    margin: 0;
+    font-size: 40px;
+    letter-spacing: 4px;
+    font-weight: 800;
+    color: var(--red);
+    text-shadow: 0 0 24px rgba(229,9,20,.65);
+  }
+  .tag { margin: 10px 0 0; color: var(--dim); font-size: 15px; }
+
+  .ver {
+    display: inline-block;
+    margin-top: 16px;
+    padding: 5px 12px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 12px;
+    color: var(--dim);
+    letter-spacing: .4px;
+  }
+
+  .cta { margin: 34px 0 8px; text-align: center; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--red);
+    color: #fff;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 17px;
+    padding: 16px 34px;
+    border-radius: 10px;
+    box-shadow: 0 8px 28px rgba(229,9,20,.4);
+    transition: transform .15s ease, box-shadow .15s ease, background .15s ease;
+  }
+  .btn:hover { background: #ff1520; transform: translateY(-1px); box-shadow: 0 12px 34px rgba(229,9,20,.5); }
+  .btn:active { transform: translateY(1px); }
+  .btn svg { width: 20px; height: 20px; fill: currentColor; }
+  .size { margin-top: 10px; color: var(--faint); font-size: 12.5px; }
+
+  section {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px;
+    margin-top: 26px;
+  }
+  h2 {
+    margin: 0 0 14px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1.4px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h2::before {
+    content: "";
+    width: 4px; height: 17px;
+    background: var(--red);
+    border-radius: 2px;
+  }
+
+  ol { margin: 0; padding-left: 20px; color: var(--dim); }
+  ol li { margin: 9px 0; }
+  ol li b { color: #fff; font-weight: 600; }
+
+  .addr {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+    margin-top: 4px;
+  }
+  .addr code {
+    flex: 1;
+    background: var(--surface-high);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px;
+    color: #fff;
+    overflow-x: auto;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+  }
+  .copy {
+    background: var(--surface-high);
+    border: 1px solid var(--line);
+    color: #fff;
+    border-radius: 8px;
+    padding: 0 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .15s ease, border-color .15s ease;
+  }
+  .copy:hover { background: #303030; border-color: #3d3d3d; }
+  .copy.done { background: var(--red-dark); border-color: var(--red); }
+  .note { margin: 12px 0 0; color: var(--faint); font-size: 12.5px; line-height: 1.5; }
+
+  .qrbox { text-align: center; }
+  #qr {
+    display: inline-block;
+    background: #fff;
+    padding: 12px;
+    border-radius: 10px;
+    line-height: 0;
+    min-height: 40px;
+  }
+  #qr img, #qr canvas { display: block; }
+
+  footer {
+    margin-top: 34px;
+    text-align: center;
+    color: var(--faint);
+    font-size: 12px;
+  }
+
+  @media (max-width: 520px) {
+    .wrap { padding: 40px 16px 56px; }
+    h1 { font-size: 32px; letter-spacing: 3px; }
+    .addr { flex-direction: column; }
+    .copy { padding: 11px 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<div class="wrap">
+
+  <header>
+    <img class="mark" src="/icon.png" alt="AniVerse app icon">
+    <h1>ANIVERSE</h1>
+    <p class="tag">Stream anime on Android. No ads, no account.</p>
+    <span class="ver" id="ver">loading version&hellip;</span>
+  </header>
+
+  <div class="cta">
+    <a class="btn" href="/aniverse.apk" download="AniVerse.apk">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16l-5-5h3V4h4v7h3l-5 5zm-7 2h14v2H5v-2z"/></svg>
+      Download APK
+    </a>
+    <p class="size" id="size">Android 8.0 or newer</p>
+  </div>
+
+  <section>
+    <h2>Install</h2>
+    <ol>
+      <li>Tap <b>Download APK</b> above. Chrome will warn that this file type can harm your device &mdash; that warning shows for every APK outside the Play Store. Choose <b>Download anyway</b>.</li>
+      <li>Open the downloaded file. Android will ask permission to install from this source &mdash; tap <b>Settings</b>, enable <b>Allow from this source</b>, then go back.</li>
+      <li>Tap <b>Install</b>, then <b>Open</b>.</li>
+    </ol>
+    <p class="note">Updating from an older build? Just install over it &mdash; your settings are kept. The app also checks for new builds on its own and offers to update in place.</p>
+  </section>
+
+  <section>
+    <h2>Server address</h2>
+    <p class="note" style="margin:0 0 12px">
+      The app talks to a home server through a Cloudflare tunnel. This address is already
+      built into the download above, so it should work straight away. If the tunnel has been
+      restarted since this page was published, the address changes &mdash; paste the current one
+      into the app under the <b>gear icon</b> &rarr; <b>Server address</b>.
+    </p>
+    <div class="addr">
+      <code id="host">https://writes-hindu-pediatric-creates.trycloudflare.com</code>
+      <button class="copy" id="copy" type="button">Copy</button>
+    </div>
+  </section>
+
+  <section class="qrbox">
+    <h2 style="justify-content:flex-start">Scan to install</h2>
+    <div id="qr"></div>
+    <p class="note">Point your phone's camera here to open this page on the device.</p>
+  </section>
+
+  <footer>AniVerse &middot; personal project &middot; not affiliated with any streaming service</footer>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+  // Copy the server address.
+  var copyBtn = document.getElementById('copy');
+  copyBtn.addEventListener('click', function () {
+    var text = document.getElementById('host').textContent.trim();
+    var done = function () {
+      copyBtn.textContent = 'Copied';
+      copyBtn.classList.add('done');
+      setTimeout(function () {
+        copyBtn.textContent = 'Copy';
+        copyBtn.classList.remove('done');
+      }, 1600);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else {
+      fallback();
+    }
+    function fallback() {
+      // clipboard API is unavailable on insecure origins and older browsers.
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) { /* leave the text selectable */ }
+      document.body.removeChild(ta);
+    }
+  });
+
+  // QR points at this page, so a phone can reach the download without typing.
+  if (window.QRCode) {
+    new QRCode(document.getElementById('qr'), {
+      text: location.origin + location.pathname,
+      width: 176,
+      height: 176,
+      colorDark: '#0E0E0E',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  } else {
+    document.getElementById('qr').parentElement.style.display = 'none';
+  }
+
+  // Version and size come from the same version.json the app itself polls, so
+  // this page cannot drift from what is actually published.
+  fetch('/version.json', { cache: 'no-store' })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (v) {
+      if (!v) throw new Error('no version.json');
+      document.getElementById('ver').textContent =
+        'Version ' + v.versionName + '  ·  build ' + v.versionCode;
+      if (v.size) {
+        document.getElementById('size').textContent =
+          (v.size / 1048576).toFixed(1) + ' MB  ·  Android 8.0 or newer';
+      }
+      if (v.host) {
+        document.getElementById('host').textContent = v.host;
+      }
+    })
+    .catch(function () {
+      document.getElementById('ver').textContent = 'Android 8.0 or newer';
+    });
+</script>
+</body>
+</html>

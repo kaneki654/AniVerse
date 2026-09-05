@@ -99,7 +99,13 @@ class CustomPlayer {
             let referer = '';
             
             // We want to force a fetch if the API previously threw an error
-            if (!this._cachedSources || this._cachedSources.length === 0 || this._cachedCategory !== category) {
+            // Keyed by episode as well as category: keying on category alone
+            // meant that if the episode ever changes without a page reload, the
+            // cached sources from the previous episode are replayed under the
+            // new episode's title.
+            if (!this._cachedSources || this._cachedSources.length === 0
+                || this._cachedCategory !== category
+                || this._cachedEpisodeId !== this.episodeId) {
                 const url = `/api/source?episode_id=${this.episodeId}&server=Auto&category=${category}`;
                 const resp = await fetch(url);
                 if (!resp.ok) throw new Error(`HTTP error! status: ${resp.status}`);
@@ -110,10 +116,12 @@ class CustomPlayer {
                 // Cache them so we can switch quickly
                 this._cachedSources = data.data.sources;
                 this._cachedCategory = category;
+                this._cachedEpisodeId = this.episodeId;
                 this._cachedHeaders = data.data.headers || {};
                 this._cachedSubtitles = data.data.tracks || data.data.subtitles || [];
                 this.state.intro = data.data.intro || null;
                 this.state.outro = data.data.outro || null;
+                this.state.hasDub = data.data.hasDub !== undefined ? data.data.hasDub : null;
                 
                 // Update the UI Servers list dynamically with names!
                 this.state.servers[category] = this._cachedSources.map((s, idx) => ({
@@ -128,6 +136,7 @@ class CustomPlayer {
                     if(qualEl) qualEl.innerText = serverName;
                 }
                 this.updateSettingsUI();
+                this.updateNotice(category);
             }
             
             // Find the requested server from cache
@@ -202,6 +211,23 @@ class CustomPlayer {
         } catch(e) {
             console.error(e);
             this.showLoading(false);
+            // If a dub source failed to load, remove dub from the menu and revert to sub.
+            if(category === 'dub') {
+                this.state.hasDub = false;
+                delete this.state.servers['dub'];
+                this._cachedSources = null;
+                this._cachedCategory = null;
+                this._cachedEpisodeId = null;
+                this.state.currentCategory = 'sub';
+                if(this.state.servers['sub'] && this.state.servers['sub'].length > 0) {
+                    this.state.currentServer = this.state.servers['sub'][0].serverName;
+                    const audioEl = document.getElementById('current-audio');
+                    if(audioEl) audioEl.innerText = 'SUB';
+                    this.updateSettingsUI();
+                    this.loadSource(this.state.currentServer, 'sub', 0);
+                    return;
+                }
+            }
             this.showError("Failed to load video source. Please try another server.");
         }
     }
@@ -712,6 +738,18 @@ class CustomPlayer {
         setTimeout(() => toast.remove(), 2000);
     }
     
+    updateNotice(category) {
+        // With a single server there is nothing to switch to, so pointing at
+        // Source is a dead end -- the only thing left to try is the other audio.
+        const el = document.getElementById('player-notice-text');
+        if (!el) return;
+        const only = !this._cachedSources || this._cachedSources.length <= 1;
+        const other = category === 'dub' ? 'Sub' : 'Dub';
+        el.innerHTML = only
+            ? `Not playing? Switch <strong>Audio</strong> to <strong>${other}</strong>.`
+            : `Not playing? Try another <strong>Source</strong> or <strong>Audio</strong>.`;
+    }
+
     showError(msg) {
         this.showToast("Error: " + msg);
         console.error(msg);
@@ -850,6 +888,8 @@ class CustomPlayer {
             audioMenu.innerHTML = '';
             let hasAudio = false;
             ['sub', 'dub', 'raw'].forEach(cat => {
+                // If the API told us this show has no dub, hide the Dub option.
+                if(cat === 'dub' && this.state.hasDub === false) return;
                 if(this.state.servers[cat] && this.state.servers[cat].length > 0) {
                     hasAudio = true;
                     const item = document.createElement('div');
@@ -1077,6 +1117,7 @@ CustomPlayer.prototype.setupSubtitles = function(tracks, referer) {
         // Map properties (API uses 'lang' and 'url', some might use 'label' and 'file')
         const label = t.label || t.lang || "Unknown";
         const url = t.file || t.url;
+        const subReferer = t.referer || referer || '';
         
         // Safety Check 2: Skip Thumbnails
         if (label === 'Thumbnails' || (t.kind && t.kind === 'thumbnails')) return;
@@ -1101,7 +1142,7 @@ CustomPlayer.prototype.setupSubtitles = function(tracks, referer) {
             track.srclang = 'en'; // fallback
         }
         
-        track.src = `/proxy/subtitle?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(referer)}`;
+        track.src = `/proxy/subtitle?url=${encodeURIComponent(url)}&referer=${encodeURIComponent(subReferer)}`;
         this.video.appendChild(track);
         
         const item = document.createElement('div');

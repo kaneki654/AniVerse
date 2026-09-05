@@ -4,3 +4,12 @@ __pycache__/
 libs/
 .DS_Store
 .vercel
+
+# Runtime logs (server output, tunnel output) -- noise in diffs, regenerated on every run.
+logs/
+*.log
+.cache/
+
+# One-off provider-debugging scratch scripts kept out of the tree.
+AniVerseApiUrl/debug_*.py
+AniVerseApiUrl/debug_*.txt

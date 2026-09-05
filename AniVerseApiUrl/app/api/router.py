@@ -1,9 +1,24 @@
+import httpx
 from fastapi import APIRouter, HTTPException
 from app.core.orchestrator import orchestrator
 from app.api.proxy import router as proxy_router
 from app.services.anilist import anilist_service
+from app.services import anilist_media
 
 router = APIRouter(prefix="/anime", tags=["Anime"])
+
+
+@router.get("/info/{anilist_id}")
+async def anime_info(anilist_id: str):
+    """Full metadata for one anime, so clients don't query AniList themselves."""
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            media = await anilist_media.get_full_media(client, anilist_id)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Metadata lookup failed: {e}")
+    if not media:
+        raise HTTPException(status_code=404, detail="Anime not found")
+    return media
 
 @router.get("/popular")
 async def popular_anime(page: int = 1, per_page: int = 12):

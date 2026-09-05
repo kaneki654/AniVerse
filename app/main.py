@@ -1,7 +1,7 @@
 import sys
 import os
 import re
-from urllib.parse import urljoin, quote, unquote
+from urllib.parse import urljoin, quote, unquote, urlparse
 from datetime import date as dt
 import asyncio
 
@@ -443,13 +443,93 @@ async def watch_episode(request: Request, anime_id: str, ep_num: int):
         }
     )
 
+# --- Mobile app self-update -------------------------------------------------
+# The phone reaches this server anyway, so the APK is published here and the app
+# updates itself rather than being sideloaded again for every change.
+_APK_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "aniverse_mobile", "build", "app", "outputs", "flutter-apk", "app-release.apk",
+)
+_PUBSPEC_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "aniverse_mobile", "pubspec.yaml",
+)
+
+
+def _apk_version():
+    """(versionName, versionCode) from pubspec's `version: 1.2.3+45` line."""
+    try:
+        with open(_PUBSPEC_PATH) as f:
+            for line in f:
+                if line.startswith("version:"):
+                    raw = line.split(":", 1)[1].strip()
+                    name, _, code = raw.partition("+")
+                    return name.strip(), int(code or 1)
+    except Exception as e:
+        print(f"apk version read failed: {e}")
+    return "0.0.0", 0
+
+
+@app.get("/app/version.json")
+async def app_version():
+    """What the installed app compares itself against."""
+    name, code = _apk_version()
+    exists = os.path.exists(_APK_PATH)
+    return {
+        "versionName": name,
+        "versionCode": code,
+        "url": "/app/aniverse.apk",
+        "size": os.path.getsize(_APK_PATH) if exists else 0,
+        "available": exists,
+    }
+
+
+@app.get("/app/aniverse.apk")
+async def app_apk():
+    from fastapi.responses import FileResponse
+    if not os.path.exists(_APK_PATH):
+        return Response(content='{"detail":"apk not built"}', status_code=404,
+                        media_type="application/json")
+    return FileResponse(
+        _APK_PATH,
+        media_type="application/vnd.android.package-archive",
+        filename="aniverse.apk",
+    )
+
+
+@app.api_route("/api/anime/{path:path}", methods=["GET"])
+async def anime_api_passthrough(path: str, request: Request):
+    """Expose the AniVerse API through this app's origin.
+
+    The mobile client reaches this server through a single public tunnel, and a
+    tunnel only forwards one port. Proxying the API here means the app needs one
+    base URL instead of two, and the API never has to be exposed directly.
+    """
+    query = request.url.query
+    url = f"{NEW_API_BASE}/anime/{path}" + (f"?{query}" if query else "")
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.get(url)
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            media_type=resp.headers.get("content-type", "application/json"),
+        )
+    except Exception as e:
+        print(f"API passthrough failed for /anime/{path}: {e}")
+        return Response(content='{"detail":"upstream unavailable"}',
+                        status_code=502, media_type="application/json")
+
 @app.get("/api/source")
 async def get_source(episode_id: str, server: str = "Auto", category: str = "sub"):
     try:
         anilist_id, ep_num = episode_id.split("/")
         url = f"{NEW_API_BASE}/anime/resolve/{anilist_id}/{ep_num}?category={category}"
         async with httpx.AsyncClient() as client:
-            resp = await client.get(url, timeout=30)
+            # A cold resolve fans out across every provider and can include a
+            # Byse proof-of-work solve, which routinely runs past 30s; timing
+            # out here dropped the request before the backend ever answered.
+            resp = await client.get(url, timeout=180)
             data = resp.json()
             
             sources = []
@@ -457,14 +537,23 @@ async def get_source(episode_id: str, server: str = "Auto", category: str = "sub
                 # Always proxy the master m3u8 to bypass IP-locked streams like premilkyway.com
                 abs_url = stream["url"]
                 referer = data.get("headers", {}).get("Referer", "https://cloudnestra.com/")
-                
-                # Fix Referer specifically for StreamHG / premilkyway streams
-                if "premilkyway.com" in abs_url:
+
+                # Providers that know which host token-locked the stream say so
+                # directly; only fall back to guessing from the URL when they don't.
+                if stream.get("referer"):
+                    referer = stream["referer"]
+                elif "premilkyway.com" in abs_url:
                     referer = "https://otakuhg.site/"
                 elif "vibeplayer.site" in abs_url:
                     referer = "https://vibeplayer.site/"
                 elif "cloudatacdn" in abs_url or "dood" in abs_url:
                     referer = "https://myvidplay.com/"
+                elif "1anime.site" in abs_url:
+                    referer = "https://my.1anime.site/"
+                elif "watching.onl" in abs_url or "sugevideo.xyz" in abs_url:
+                    referer = "https://megaplay.buzz/"
+                elif "sprintcdn" in abs_url or "owphbf24.com" in abs_url:
+                    referer = f"https://{urlparse(abs_url).netloc}/"
                     
                 # Do NOT proxy premilkyway.com streams because they use tokenized IPs/Cookies
                 if "premilkyway.com" in abs_url:
@@ -487,12 +576,16 @@ async def get_source(episode_id: str, server: str = "Auto", category: str = "sub
                 "data": {
                     "sources": sources,
                     "subtitles": data.get("subtitles", []),
-                    "headers": data.get("headers", {})
+                    "headers": data.get("headers", {}),
+                    "hasDub": data.get("hasDub", None),
+                    "intro": data.get("intro"),
+                    "outro": data.get("outro")
                 }
             }
     except Exception as e:
-        print("Source Error:", e)
-        return {}
+        print(f"Source Error ({type(e).__name__}): {e}")
+        return {"data": {"sources": [], "subtitles": [], "headers": {},
+                         "hasDub": None, "error": f"{type(e).__name__}"}}
 
 # Rewritten routes
 @app.get("/azlist/{sort_option}", response_class=HTMLResponse)
@@ -805,11 +898,21 @@ async def proxy_m3u8(url: str, referer: str = None):
         headers["Referer"] = referer
         headers["Origin"] = referer.rstrip("/")
     
-    async with httpx.AsyncClient(timeout=8.0) as client:
+    # 8s was tight enough that slow CDN edges timed out into a blank 500.
+    async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
         try:
             resp = await client.get(url, headers=headers)
+            if resp.status_code != 200:
+                # Upstream rejected us (usually a 403 from a referer-locked CDN).
+                # Propagate it instead of rewriting the error page into a fake playlist.
+                print(f"Proxy M3U8: upstream {resp.status_code} for {url} (referer={referer!r})")
+                return Response(status_code=resp.status_code, content="Upstream rejected the manifest request")
+
             content = resp.text
-            
+            if "#EXTM3U" not in content:
+                print(f"Proxy M3U8: not a playlist for {url} (referer={referer!r})")
+                return Response(status_code=502, content="Upstream did not return an HLS playlist")
+
             lines = content.split('\n')
             rewritten_lines = []
             for line in lines:
@@ -838,8 +941,9 @@ async def proxy_m3u8(url: str, referer: str = None):
             
             return Response(content='\n'.join(rewritten_lines), media_type="application/vnd.apple.mpegurl")
         except Exception as e:
-            print(f"Proxy M3U8 Error: {e}")
-            return Response(status_code=500, content="Proxy Error")
+            print(f"Proxy M3U8 Error ({type(e).__name__}) for {url}: {e}")
+            return Response(status_code=504 if "Timeout" in type(e).__name__ else 502,
+                            content="Proxy Error")
 
 @app.get("/proxy/ts")
 async def proxy_ts(url: str, referer: str = None):
@@ -849,14 +953,13 @@ async def proxy_ts(url: str, referer: str = None):
         headers["Origin"] = referer.rstrip("/")
     
     async def stream_ts():
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
             try:
                 async with client.stream("GET", url, headers=headers) as response:
                     async for chunk in response.aiter_bytes():
                         yield chunk
             except Exception as e:
-                print(f"Proxy TS Error: {e}")
-                yield b"Proxy Error"
+                print(f"Proxy TS Error ({type(e).__name__}) for {url}: {e}")
                 
     return StreamingResponse(stream_ts(), media_type="video/mp2t")
 
@@ -868,13 +971,12 @@ async def proxy_subtitle(url: str, referer: str = None):
         headers["Origin"] = referer.rstrip("/")
     
     async def stream_subtitle():
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
             try:
                 async with client.stream("GET", url, headers=headers) as response:
                     async for chunk in response.aiter_bytes():
                         yield chunk
             except Exception as e:
-                print(f"Proxy Subtitle Error: {e}")
-                yield b"Proxy Error"
+                print(f"Proxy Subtitle Error ({type(e).__name__}) for {url}: {e}")
     
     return StreamingResponse(stream_subtitle(), media_type="text/vtt")
