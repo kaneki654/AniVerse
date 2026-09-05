@@ -386,11 +386,20 @@ class AniWatchProvider(BaseProvider):
 
             entry = items.get(wanted)
             if entry and (not expected_title
-                          or episode_map.titles_match(expected_title, entry["title"])):
+                          or (episode_map.positional_episode_number(entry["title"]) is None
+                              and episode_map.titles_match(expected_title, entry["title"]))):
                 return entry["id"]
 
             if expected_title:
                 for num, item in items.items():
+                    # Never correct *into* a positional placeholder. "<Series>
+                    # Episode 2" restates its own number and carries nothing
+                    # else, but it fuzzy-matches a real title that happens to
+                    # equal the series name -- which sent episode 1 of "Smoking
+                    # Behind the Supermarket with You" to episode 2's file, and
+                    # left episode 2 pointing at that same file.
+                    if episode_map.positional_episode_number(item["title"]) is not None:
+                        continue
                     if episode_map.titles_match(expected_title, item["title"]):
                         if num != wanted:
                             print(f"AniWatch episode: {anilist_id} ep {wanted} is "

@@ -15,16 +15,76 @@ class ApiService {
 
   static String get host => _host;
 
+  /// Where the current server address is published.
+  ///
+  /// The tunnel URL rotates on every restart, so a build-time constant goes
+  /// stale and used to mean rebuilding and reinstalling the APK. This page is
+  /// on stable hosting and carries the live address, so a restart only needs
+  /// the site redeployed -- the installed app picks the new address up by
+  /// itself on next launch.
+  static const String discoveryUrl =
+      'https://aniversesite.vercel.app/version.json';
+
   static Future<void> load() async {
+    var explicit = false;
     try {
       final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getString(_hostKey);
       if (saved != null && saved.trim().isNotEmpty) {
         _host = _clean(saved);
+        explicit = true;
       }
     } catch (_) {
       // Preferences unavailable: fall back to the compiled-in default.
     }
+
+    // A saved address is the user's explicit choice, so it is tried first and
+    // kept whenever it still answers. Only when it has gone dead -- the usual
+    // case, since the tunnel it names was restarted -- is the published address
+    // consulted, which is what stops a stale entry stranding the app forever.
+    if (explicit && await _reachable(_host)) return;
+
+    final published = await _publishedHost();
+    if (published != null && published != _host) {
+      _host = published;
+      // Remember it, so the next launch starts on the working address instead
+      // of probing the dead one again.
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_hostKey, _host);
+      } catch (_) {
+        // Not being able to persist it only costs one probe next launch.
+      }
+    }
+  }
+
+  /// Whether [host] still answers. Short timeout: this runs before first paint.
+  static Future<bool> _reachable(String host) async {
+    try {
+      final r = await http
+          .get(Uri.parse('$host/app/version.json'))
+          .timeout(const Duration(seconds: 5));
+      return r.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// The address advertised by [discoveryUrl], or null if it cannot be reached.
+  static Future<String?> _publishedHost() async {
+    try {
+      final r = await http
+          .get(Uri.parse(discoveryUrl))
+          .timeout(const Duration(seconds: 6));
+      if (r.statusCode != 200) return null;
+      final body = json.decode(r.body);
+      if (body is! Map) return null;
+      final host = body['host'];
+      if (host is String && host.trim().isNotEmpty) return _clean(host);
+    } catch (_) {
+      // Offline, or the site is unreachable: keep the compiled-in default.
+    }
+    return null;
   }
 
   static Future<void> setHost(String value) async {

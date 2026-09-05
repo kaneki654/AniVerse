@@ -47,6 +47,27 @@ async def episode_titles(client: httpx.AsyncClient, anilist_id: str) -> Dict[str
     return titles
 
 
+# "Episode 4", or a series name followed by "Episode 4". Anchored at the end so
+# a real title that merely mentions a number ("Wound: The Battle for Trost (8)")
+# is not caught.
+_POSITIONAL_RE = re.compile(r"(?:^|\s)(?:episode|ep)\.?\s*(\d{1,4})\s*$", re.I)
+
+
+def positional_episode_number(title: str) -> Optional[int]:
+    """The N in a title that is only a positional "Episode N" label, else None.
+
+    Sites fill unnamed episodes with a placeholder that restates the number and
+    says nothing else. Matching those by text is not just useless, it is unsafe:
+    when a show's real first-episode title equals the series name -- "Smoking
+    Behind the Supermarket with You" -- it fuzzy-matches that site's "Smoking
+    Behind the Supermarket with You Episode 2" at well over any sane threshold,
+    so episode 1 silently resolved to episode 2 and episode 2 landed on the same
+    file. Callers skip these when correcting numbering by title.
+    """
+    m = _POSITIONAL_RE.search(title or "")
+    return int(m.group(1)) if m else None
+
+
 def normalize_episode_title(title: str) -> str:
     return re.sub(r'[^a-z0-9 ]', '', (title or "").lower()).strip()
 
