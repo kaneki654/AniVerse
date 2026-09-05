@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../services/api_service.dart';
 import '../theme.dart';
@@ -27,6 +28,9 @@ class _WatchScreenState extends State<WatchScreen> {
   /// Whether the system UI is currently hidden. Tracked so the immersive-mode
   /// call only fires on an actual change instead of on every rebuild.
   bool _immersive = false;
+
+  /// Whether the screen is currently being held awake.
+  bool _awake = false;
 
   @override
   void initState() {
@@ -80,6 +84,7 @@ class _WatchScreenState extends State<WatchScreen> {
         }
 
         _videoPlayerController = controller;
+        controller.addListener(_syncWakelock);
         controller.play();
         break;
       }
@@ -90,6 +95,24 @@ class _WatchScreenState extends State<WatchScreen> {
     if (mounted) setState(() => isLoading = false);
   }
 
+  /// Hold the screen awake while video is actually playing.
+  ///
+  /// Android's display timeout does not know about video playback, so the
+  /// screen was switching off mid-episode. Tied to isPlaying rather than to the
+  /// screen being open, so pausing and walking away releases it instead of
+  /// burning the battery on a static frame.
+  void _syncWakelock() {
+    final playing = _videoPlayerController?.value.isPlaying ?? false;
+    if (playing == _awake) return;
+    _awake = playing;
+    // The plugin sets FLAG_KEEP_SCREEN_ON on the activity window and throws
+    // NoActivityException when there is no foreground activity -- which is
+    // exactly when this listener can fire, since the controller keeps ticking
+    // as the app goes to the background. Android already clears the flag on the
+    // way out, so a failure here is nothing to recover from.
+    WakelockPlus.toggle(enable: playing).catchError((_) {});
+  }
+
   /// Reload the current episode on the other audio track.
   void _toggleCategory() {
     final next = category == 'sub' ? 'dub' : 'sub';
@@ -98,6 +121,7 @@ class _WatchScreenState extends State<WatchScreen> {
       category = next;
       _videoPlayerController = null;
     });
+    old?.removeListener(_syncWakelock);
     old?.dispose();
     _loadStream();
   }
@@ -130,7 +154,10 @@ class _WatchScreenState extends State<WatchScreen> {
 
   @override
   void dispose() {
+    _videoPlayerController?.removeListener(_syncWakelock);
     _videoPlayerController?.dispose();
+    // Never leave the wakelock held after the player is gone.
+    if (_awake) WakelockPlus.disable().catchError((_) {});
     // Leave the device as the rest of the app expects to find it.
     SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
