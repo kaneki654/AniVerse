@@ -167,6 +167,20 @@ queries a minute. Successful genre pages are cached for 30 minutes and throttled
 requests are retried, so this should recover on its own; it is not a
 misconfiguration.
 
+**`ModuleNotFoundError: No module named 'Crypto'`** (or numpy, rapidfuzz,
+selectolax, m3u8, apscheduler, py_mini_racer) — only the root
+`requirements.txt` was installed. It covers the frontend; the backend's packages
+are in `AniVerseApiUrl/requirements.txt`. Install both, with the same
+interpreter that runs the scripts:
+
+```bash
+python3 -m pip install -r AniVerseApiUrl/requirements.txt -r requirements.txt
+```
+
+`Crypto` comes from `pycryptodome`. Use `python3 -m pip` rather than a bare
+`pip`, which can belong to a different interpreter. `start_all.sh` checks for all
+of these before starting anything and names whatever is missing.
+
 **Nothing plays** — check `logs\backend.log`. A cold resolve fans out across
 every provider and can include a proof-of-work solve, so the first request for
 an episode legitimately takes tens of seconds. Subsequent ones are cached for

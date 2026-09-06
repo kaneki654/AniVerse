@@ -31,6 +31,34 @@ if [ -z "$PY" ]; then
   if command -v python3 >/dev/null 2>&1; then PY=python3; else PY=python; fi
 fi
 
+# --- dependency preflight -----------------------------------------------------
+# Without this a missing package just makes uvicorn exit on import, the restart
+# loop respawns it every 3s, and all you see is a health check timing out. The
+# usual cause is installing only the root requirements.txt, which does not carry
+# the backend's packages -- Crypto (pycryptodome) is the one that bites first.
+check_deps() {
+  local missing
+  missing="$("$PY" - <<'PYCHECK' 2>/dev/null
+import importlib.util as u
+need = [("fastapi","fastapi"), ("uvicorn","uvicorn"), ("httpx","httpx"),
+        ("jinja2","jinja2"), ("Crypto","pycryptodome"), ("numpy","numpy"),
+        ("rapidfuzz","rapidfuzz"), ("selectolax","selectolax"), ("m3u8","m3u8"),
+        ("apscheduler","APScheduler"), ("py_mini_racer","mini-racer")]
+print(" ".join(pkg for mod, pkg in need if u.find_spec(mod) is None))
+PYCHECK
+)"
+  [ -z "$missing" ] && return 0
+  echo
+  echo "Missing Python packages: $missing"
+  echo
+  echo "Install both requirements files with the same interpreter this script"
+  echo "uses ($PY) -- the root one alone does not cover the backend:"
+  echo
+  echo "  $PY -m pip install -r AniVerseApiUrl/requirements.txt -r requirements.txt"
+  echo
+  exit 1
+}
+
 say() { printf '\n\033[1;31m==>\033[0m %s\n' "$*"; }
 
 # --- free the ports ----------------------------------------------------------
@@ -83,6 +111,8 @@ cleanup() {
   exit 0
 }
 trap cleanup INT TERM
+
+check_deps
 
 say "Clearing ports 8000 and 8001"
 free_port 8001
