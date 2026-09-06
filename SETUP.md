@@ -81,11 +81,29 @@ Same two servers, same ports, same logic — `run.sh` is the mirror of `run.bat`
 git clone https://github.com/kaneki654/AniVerse.git ~/AniVerse
 cd ~/AniVerse
 python3 -m pip install -r AniVerseApiUrl/requirements.txt -r requirements.txt
-chmod +x run.sh run_tunnel.sh
-./run.sh
+./start_all.sh
 ```
 
-Then open <http://localhost:8000>. Ctrl+C stops both.
+`start_all.sh` is the one that does everything: frees the ports, starts the
+backend and waits for it, starts the frontend, opens the tunnel, and publishes
+the tunnel's address so the phone app can find it. Ctrl+C stops all of it.
+
+| command | what it does |
+| --- | --- |
+| `./start_all.sh` | servers + tunnel + publish the address |
+| `./start_all.sh --no-publish` | servers + tunnel, just print the URL |
+| `./start_all.sh --no-tunnel` | servers only |
+| `./run.sh` | same as `--no-tunnel` |
+| `./run_tunnel.sh` | tunnel only — assumes the servers are already up |
+
+Then open <http://localhost:8000>.
+
+**If the app cannot reach the server, this is nearly always why:** every
+cloudflared start gets a fresh random URL, and the app looks the current one up
+from the install site. Running `run_tunnel.sh` on its own starts a tunnel but
+tells nobody about it, so the app keeps trying the previous, now-dead address.
+`start_all.sh` publishes it for you. That step needs the Vercel CLI (`npm i -g
+vercel`); without it the script prints the exact commands to run elsewhere.
 
 `run.sh` frees ports 8000 and 8001 before starting (via `lsof`, `fuser` or `ss`,
 whichever is installed), starts the backend, waits for its health check, then
