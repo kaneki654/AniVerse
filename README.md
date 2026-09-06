@@ -13,9 +13,18 @@ AniVerse runs as **two** servers: a backend on 8001 that resolves streams, and a
 frontend on 8000 that serves the player and proxies the backend under
 `/api/anime/*`.
 
+Windows:
+
 ```bat
 pip install -r AniVerseApiUrl\requirements.txt -r requirements.txt
 run.bat
+```
+
+Linux / macOS:
+
+```bash
+python3 -m pip install -r AniVerseApiUrl/requirements.txt -r requirements.txt
+chmod +x run.sh && ./run.sh
 ```
 
 Then open <http://localhost:8000>.
@@ -23,9 +32,10 @@ Then open <http://localhost:8000>.
 Full instructions -- including reaching it from a phone over a Cloudflare
 tunnel, and what to do when that URL changes -- are in **[SETUP.md](SETUP.md)**.
 
-> `run.sh` and the `libs/` folder are from the original Linux single-server
-> deployment. `libs/` holds Linux-only `.so` binaries; on Windows install the
-> requirements normally and do not put it on `PYTHONPATH`.
+> The `libs/` folder is left over from the original single-server deployment
+> and holds only the frontend's packages -- every backend one is missing from
+> it. Install the requirements normally and keep it off `PYTHONPATH` on both
+> platforms.
 
 ## Features
 

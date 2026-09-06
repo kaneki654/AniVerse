@@ -1,0 +1,19 @@
+# Line endings are not a style question for these two: a shell script checked
+# out with CRLF fails on Linux with "bash: \r: command not found", and a batch
+# file with LF can misparse in cmd.exe. Pin both so the result does not depend
+# on whatever core.autocrlf happens to be set to on the machine cloning.
+*.sh    text eol=lf
+*.bat   text eol=crlf
+
+# Everything else: normalise in the repo, let git pick on checkout.
+*       text=auto
+
+# Binaries git must not touch.
+*.png   binary
+*.jpg   binary
+*.apk   binary
+*.jar   binary
+*.so    binary
+*.pyd   binary
+*.ttf   binary
+*.otf   binary

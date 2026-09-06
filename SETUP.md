@@ -10,7 +10,9 @@ Two servers make up the web app:
 The frontend is the only one that needs to be reachable from outside: it
 passes API calls through to the backend, so a single tunnel covers both.
 
-## 1. Clone
+## Windows
+
+### 1. Clone
 
 ```bat
 git clone https://github.com/kaneki654/AniVerse.git C:\AniVerse
@@ -26,7 +28,7 @@ parent folder. If it does fail with `Filename too long`:
 git config --global core.longpaths true
 ```
 
-## 2. Install Python dependencies
+### 2. Install Python dependencies
 
 Python 3.9 or newer, on PATH.
 
@@ -42,7 +44,7 @@ and form handling).
 > from an earlier deployment. Ignore it on Windows, and do not put it on
 > `PYTHONPATH` — `run.bat` deliberately does not.
 
-## 3. Run
+### 3. Run
 
 ```bat
 run.bat
@@ -71,7 +73,45 @@ The frontend finds the backend at `http://localhost:8001` unless
 set ANIVERSE_API_BASE=http://127.0.0.1:8011
 ```
 
-## 4. Reaching it from a phone (optional)
+## Linux / macOS
+
+Same two servers, same ports, same logic — `run.sh` is the mirror of `run.bat`.
+
+```bash
+git clone https://github.com/kaneki654/AniVerse.git ~/AniVerse
+cd ~/AniVerse
+python3 -m pip install -r AniVerseApiUrl/requirements.txt -r requirements.txt
+chmod +x run.sh run_tunnel.sh
+./run.sh
+```
+
+Then open <http://localhost:8000>. Ctrl+C stops both.
+
+`run.sh` frees ports 8000 and 8001 before starting (via `lsof`, `fuser` or `ss`,
+whichever is installed), starts the backend, waits for its health check, then
+starts the frontend — restarting either if it exits. Logs go to `logs/`.
+
+Override the interpreter if `python3` is not the one you want:
+
+```bash
+PYTHON=/usr/bin/python3.12 ./run.sh
+```
+
+> **Do not put `libs/` on `PYTHONPATH`.** Older versions of `run.sh` did. That
+> folder only ever contained the frontend's packages — it is missing numpy,
+> rapidfuzz, selectolax, pycryptodome, mini-racer, m3u8 and APScheduler — so the
+> backend cannot import with it. Install the requirements normally instead.
+
+For the tunnel:
+
+```bash
+./run_tunnel.sh
+```
+
+It looks for `cloudflared` on PATH, then the usual install locations, and prints
+install hints if it finds none.
+
+## Reaching it from a phone (optional)
 
 Only needed for the Android app, or for watching away from this machine.
 
