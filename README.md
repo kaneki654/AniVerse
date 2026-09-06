@@ -4,24 +4,28 @@ A lightweight anime streaming application built with FastAPI, Jinja2, Vanilla JS
 
 ## Prerequisites
 
-- Python 3.7+
-- Internet connection (to fetch API data and HLS.js from CDN)
+- Python 3.9+
+- Internet connection
 
 ## Setup
 
-1. Install dependencies (already included in `libs` for convenience):
-   If you want to install locally:
-   pip install -r requirements.txt
+AniVerse runs as **two** servers: a backend on 8001 that resolves streams, and a
+frontend on 8000 that serves the player and proxies the backend under
+`/api/anime/*`.
 
-2. Run the application:
-   ./run.sh
+```bat
+pip install -r AniVerseApiUrl\requirements.txt -r requirements.txt
+run.bat
+```
 
-   Or manually:
-   export PYTHONPATH=$(pwd)/libs
-   python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+Then open <http://localhost:8000>.
 
-3. Open your browser and navigate to:
-   http://localhost:8000
+Full instructions -- including reaching it from a phone over a Cloudflare
+tunnel, and what to do when that URL changes -- are in **[SETUP.md](SETUP.md)**.
+
+> `run.sh` and the `libs/` folder are from the original Linux single-server
+> deployment. `libs/` holds Linux-only `.so` binaries; on Windows install the
+> requirements normally and do not put it on `PYTHONPATH`.
 
 ## Features
 
