@@ -181,6 +181,20 @@ python3 -m pip install -r AniVerseApiUrl/requirements.txt -r requirements.txt
 `pip`, which can belong to a different interpreter. `start_all.sh` checks for all
 of these before starting anything and names whatever is missing.
 
+**`failed to build selectolax` / `pydantic-core`** — you are on a Python newer
+than the old pins had wheels for, so pip tried to compile them, which needs a
+Rust toolchain for pydantic-core and a C compiler for selectolax. The
+requirements now floor those at versions that ship wheels through Python 3.14,
+so a `git pull` and a reinstall is the fix:
+
+```bash
+git pull
+python3 -m pip install -r AniVerseApiUrl/requirements.txt -r requirements.txt
+```
+
+If you are stuck on an older checkout, the alternative is a Python 3.12 venv,
+where the original pins do have wheels.
+
 **Nothing plays** — check `logs\backend.log`. A cold resolve fans out across
 every provider and can include a proof-of-work solve, so the first request for
 an episode legitimately takes tens of seconds. Subsequent ones are cached for

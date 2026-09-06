@@ -1,12 +1,21 @@
-fastapi==0.109.2
-uvicorn==0.27.1
-httpx==0.26.0
-pycryptodome==3.20.0
-mini-racer==0.12.2
-rapidfuzz==3.6.1
-selectolax==0.3.21
-m3u8==4.1.0
-pydantic==2.6.1
-pydantic-settings==2.2.1
-APScheduler==3.10.4
-numpy==2.5.1
+# Backend dependencies.
+#
+# Floors, not exact pins. The previous file pinned pydantic==2.6.1 and
+# selectolax==0.3.21, neither of which ships a wheel for current Python
+# versions, so pip fell back to building them from source and needed a Rust
+# toolchain for pydantic-core and a C compiler for selectolax. Those pins were
+# also fiction: nothing here has actually run on them for a long time. The
+# versions below are the ones this project is verified against, and they have
+# wheels for every supported Python.
+fastapi>=0.139.0
+uvicorn>=0.51.0
+httpx>=0.28.1
+pycryptodome>=3.23.0
+mini-racer>=0.14.1
+rapidfuzz>=3.14.5
+selectolax>=0.4.10
+m3u8>=6.0.0
+pydantic>=2.13.4
+pydantic-settings>=2.14.2
+APScheduler>=3.11.3
+numpy>=2.5.1
