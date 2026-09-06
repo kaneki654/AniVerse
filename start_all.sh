@@ -160,16 +160,31 @@ if [ "$WITH_TUNNEL" -eq 0 ]; then
 fi
 
 # --- tunnel ------------------------------------------------------------------
-CF=""
-if command -v cloudflared >/dev/null 2>&1; then
-  CF="$(command -v cloudflared)"
-else
-  for c in /usr/local/bin/cloudflared /usr/bin/cloudflared \
-           /opt/cloudflared/cloudflared "$HOME/.local/bin/cloudflared" \
-           "$HOME/bin/cloudflared"; do
-    [ -x "$c" ] && { CF="$c"; break; }
+# Search order: an explicit CLOUDFLARED override, then PATH (under both names,
+# since git-bash needs the .exe), then the usual install locations for Linux,
+# macOS and Windows. The Windows paths matter because this script also runs
+# under git-bash, where the old Linux-only list reported "not found" and
+# silently skipped the tunnel on a machine that had cloudflared at C:\Tools.
+find_cloudflared() {
+  local c
+  if [ -n "${CLOUDFLARED:-}" ]; then
+    [ -x "${CLOUDFLARED}" ] && { printf '%s' "${CLOUDFLARED}"; return 0; }
+    echo "CLOUDFLARED is set to '${CLOUDFLARED}' but that is not executable" >&2
+    return 1
+  fi
+  for c in cloudflared cloudflared.exe; do
+    if command -v "$c" >/dev/null 2>&1; then
+      printf '%s' "$(command -v "$c")"; return 0
+    fi
   done
-fi
+  for c in     /usr/local/bin/cloudflared     /usr/bin/cloudflared     /opt/cloudflared/cloudflared     /snap/bin/cloudflared     /opt/homebrew/bin/cloudflared     "${HOME:-}/.local/bin/cloudflared"     "${HOME:-}/bin/cloudflared"     /c/Tools/cloudflared.exe     "/c/Program Files/cloudflared/cloudflared.exe"     "/c/Program Files (x86)/cloudflared/cloudflared.exe"
+  do
+    [ -x "$c" ] && { printf '%s' "$c"; return 0; }
+  done
+  return 1
+}
+
+CF="$(find_cloudflared || true)"
 
 if [ -z "$CF" ]; then
   echo

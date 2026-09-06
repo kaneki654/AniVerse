@@ -16,19 +16,21 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 LOG="$ROOT/logs/tunnel.log"
 mkdir -p "$ROOT/logs"
 
-# PATH first, then the usual manual-install locations.
+# Search order: an explicit CLOUDFLARED override, then PATH (under both names,
+# since git-bash needs the .exe), then the usual install locations for Linux,
+# macOS and Windows.
 CF=""
-if command -v cloudflared >/dev/null 2>&1; then
-  CF="$(command -v cloudflared)"
+if [ -n "${CLOUDFLARED:-}" ] && [ -x "${CLOUDFLARED}" ]; then
+  CF="${CLOUDFLARED}"
 else
-  for candidate in \
-    /usr/local/bin/cloudflared \
-    /usr/bin/cloudflared \
-    /opt/cloudflared/cloudflared \
-    "$HOME/.local/bin/cloudflared" \
-    "$HOME/bin/cloudflared"
+  for c in cloudflared cloudflared.exe; do
+    if command -v "$c" >/dev/null 2>&1; then CF="$(command -v "$c")"; break; fi
+  done
+fi
+if [ -z "$CF" ]; then
+  for c in     /usr/local/bin/cloudflared     /usr/bin/cloudflared     /opt/cloudflared/cloudflared     /snap/bin/cloudflared     /opt/homebrew/bin/cloudflared     "${HOME:-}/.local/bin/cloudflared"     "${HOME:-}/bin/cloudflared"     /c/Tools/cloudflared.exe     "/c/Program Files/cloudflared/cloudflared.exe"     "/c/Program Files (x86)/cloudflared/cloudflared.exe"
   do
-    [ -x "$candidate" ] && { CF="$candidate"; break; }
+    [ -x "$c" ] && { CF="$c"; break; }
   done
 fi
 
