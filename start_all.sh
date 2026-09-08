@@ -38,15 +38,7 @@ fi
 # the backend's packages -- Crypto (pycryptodome) is the one that bites first.
 check_deps() {
   local missing
-  missing="$("$PY" - <<'PYCHECK' 2>/dev/null
-import importlib.util as u
-need = [("fastapi","fastapi"), ("uvicorn","uvicorn"), ("httpx","httpx"),
-        ("jinja2","jinja2"), ("Crypto","pycryptodome"), ("numpy","numpy"),
-        ("rapidfuzz","rapidfuzz"), ("selectolax","selectolax"), ("m3u8","m3u8"),
-        ("apscheduler","APScheduler"), ("py_mini_racer","mini-racer")]
-print(" ".join(pkg for mod, pkg in need if u.find_spec(mod) is None))
-PYCHECK
-)"
+  missing="$("$PY" "$ROOT/scripts/check_deps.py" 2>/dev/null)"
   [ -z "$missing" ] && return 0
   echo
   echo "Missing Python packages: $missing"

@@ -15,6 +15,7 @@ from typing import Any, Dict, Optional
 import httpx
 
 from app.core.cache import cache
+from app.services import anime_meta
 
 MEDIA_QUERY = """
 query ($id: Int) {
@@ -49,17 +50,22 @@ def _shape(media: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 async def _query(client: httpx.AsyncClient, anilist_id: str) -> Dict[str, Any]:
-    resp = await client.post("https://graphql.anilist.co", json={
-        "query": MEDIA_QUERY,
-        "variables": {"id": int(anilist_id)},
-    })
-    if resp.status_code != 200:
-        # A 429 here must not be cached as "this show has no title", or the
-        # empty result would poison mapping for the whole TTL.
-        raise RuntimeError(f"AniList HTTP {resp.status_code}")
-    info = _shape((resp.json().get("data") or {}).get("Media"))
+    """Titles and episode facts for an id, used to find the show on providers.
+
+    Goes through anime_meta so this survives an AniList outage. Querying AniList
+    directly meant a 403 here failed every provider's title lookup at once --
+    "Anime not found on GogoAnime (Mapping failed)" for everything, so nothing
+    played even though the metadata pages themselves had already fallen back.
+
+    A failure still raises rather than returning empty titles: caching "this
+    show has no name" would poison provider mapping for the whole TTL.
+    """
+    media = await anime_meta.fetch_media(anilist_id, client)
+    if not media:
+        raise RuntimeError(f"no metadata for AniList id {anilist_id}")
+    info = _shape(media)
     if not info["title_ro"] and not info["title_en"]:
-        raise RuntimeError("AniList returned no titles")
+        raise RuntimeError("no titles for AniList id %s" % anilist_id)
     return info
 
 
@@ -94,18 +100,11 @@ async def get_full_media(client: httpx.AsyncClient, anilist_id: str) -> Optional
     if cached:
         return cached
 
-    resp = await client.post("https://graphql.anilist.co", json={
-        "query": FULL_MEDIA_QUERY,
-        "variables": {"id": int(anilist_id)},
-    }, timeout=15)
-    # AniList answers an unknown id with 404; that is "no such anime", not a
-    # lookup failure, and must not surface as a 502.
-    if resp.status_code == 404:
-        return None
-    if resp.status_code != 200:
-        raise RuntimeError(f"AniList HTTP {resp.status_code}")
-
-    media = (resp.json().get("data") or {}).get("Media")
+    # Through anime_meta so a detail page still renders when AniList is down:
+    # it prefers AniList and falls back to Kitsu, re-keyed onto the same AniList
+    # id so episode resolution and saved history keep working. Querying AniList
+    # directly here meant every detail page 502'd for the whole outage.
+    media = await anime_meta.fetch_media(anilist_id, client)
     if not media:
         return None
 

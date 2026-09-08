@@ -3,8 +3,18 @@ import httpx
 from typing import Optional, Dict, Any, List
 
 from app.core.cache import cache
+from app.services import anime_meta
 
 class AniListService:
+    """Metadata for the API routes.
+
+    A thin facade over anime_meta, which prefers AniList and falls back to
+    Kitsu when it is unavailable -- as it is right now, answering every query
+    with 403 "temporarily disabled due to severe stability issues". Every
+    method used to query AniList directly, so that outage emptied the home
+    screen, search and every genre at once.
+    """
+
     API_URL = "https://graphql.anilist.co"
 
     # AniList currently advertises a degraded budget (x-ratelimit-limit of 30/min
@@ -62,191 +72,44 @@ class AniListService:
 
     @classmethod
     async def search_anime(cls, query: str) -> List[Dict[str, Any]]:
-        graphql_query = """
-        query ($search: String, $page: Int, $perPage: Int) {
-          Page (page: $page, perPage: $perPage) {
-            media (search: $search, type: ANIME, sort: SEARCH_MATCH) {
-              id
-              title { romaji english }
-              coverImage { large }
-              status
-              episodes
-              nextAiringEpisode { episode }
-            }
-          }
-        }
-        """
-        data = await cls._execute_query(graphql_query, {"search": query, "page": 1, "perPage": 20})
-        if data and "Page" in data and "media" in data["Page"]:
-            return data["Page"]["media"]
-        return []
+        result = await anime_meta.search_media(query=query, page=1, per_page=20)
+        return result.get("media", []) if isinstance(result, dict) else (result or [])
 
     @classmethod
     async def get_popular(cls, page: int = 1, per_page: int = 20) -> List[Dict[str, Any]]:
-        graphql_query = """
-        query ($page: Int, $perPage: Int) {
-          Page (page: $page, perPage: $perPage) {
-            media (type: ANIME, sort: POPULARITY_DESC) {
-              id
-              title { romaji english }
-              coverImage { large }
-              status
-              episodes
-              nextAiringEpisode { episode }
-            }
-          }
-        }
-        """
-        data = await cls._execute_query(graphql_query, {"page": page, "perPage": per_page})
-        if data and "Page" in data and "media" in data["Page"]:
-            return data["Page"]["media"]
-        return []
+        return await anime_meta.fetch_popular(page, per_page)
 
     @classmethod
     async def get_trending(cls, page: int = 1, per_page: int = 20) -> List[Dict[str, Any]]:
-        graphql_query = """
-        query ($page: Int, $perPage: Int) {
-          Page (page: $page, perPage: $perPage) {
-            media (type: ANIME, sort: TRENDING_DESC) {
-              id
-              title { romaji english }
-              coverImage { large }
-              status
-              episodes
-              nextAiringEpisode { episode }
-            }
-          }
-        }
-        """
-        data = await cls._execute_query(graphql_query, {"page": page, "perPage": per_page})
-        if data and "Page" in data and "media" in data["Page"]:
-            return data["Page"]["media"]
-        return []
-
+        return await anime_meta.fetch_trending(page, per_page)
 
     @classmethod
     async def get_recently_updated(cls, page: int = 1, per_page: int = 20) -> List[Dict[str, Any]]:
-        import time
-        current_time = int(time.time())
-        graphql_query = '''
-        query ($page: Int, $perPage: Int, $time: Int) {
-          Page (page: $page, perPage: $perPage) {
-            airingSchedules (
-              airingAt_lesser: $time,
-              sort: TIME_DESC
-            ) {
-              episode
-              media {
-                id
-                title { romaji english }
-                coverImage { large }
-                episodes
-              }
-            }
-          }
-        }
-        '''
-        data = await cls._execute_query(graphql_query, {"page": page, "perPage": per_page, "time": current_time})
-        if data and "Page" in data and "airingSchedules" in data["Page"]:
-            # Remap to look like the normal media objects but with the explicit exact episode number
-            results = []
-            seen_ids = set()
-            for schedule in data["Page"]["airingSchedules"]:
-                media = schedule.get("media")
-                if not media: continue
-                if media["id"] in seen_ids: continue
-                seen_ids.add(media["id"])
-                
-                # Attach the exact aired episode number
-                media["exact_latest_episode"] = schedule.get("episode")
-                results.append(media)
-            return results
-        return []
+        return await anime_meta.fetch_latest(page, per_page)
 
     @classmethod
     async def get_upcoming(cls, page: int = 1, per_page: int = 20) -> List[Dict[str, Any]]:
-        graphql_query = '''
-        query ($page: Int, $perPage: Int) {
-          Page (page: $page, perPage: $perPage) {
-            media (type: ANIME, status: NOT_YET_RELEASED, sort: POPULARITY_DESC) {
-              id
-              title { romaji english }
-              coverImage { large }
-              status
-              episodes
-              nextAiringEpisode { episode }
-            }
-          }
-        }
-        '''
-        data = await cls._execute_query(graphql_query, {"page": page, "perPage": per_page})
-        if data and "Page" in data and "media" in data["Page"]:
-            return data["Page"]["media"]
-        return []
+        return await anime_meta.fetch_upcoming(page, per_page)
 
     @classmethod
     async def search_by_genre(cls, genre: str, page: int = 1, per_page: int = 20) -> List[Dict[str, Any]]:
-        graphql_query = '''
-        query ($genre: String, $page: Int, $perPage: Int) {
-          Page (page: $page, perPage: $perPage) {
-            media (type: ANIME, genre: $genre, sort: POPULARITY_DESC) {
-              id
-              title { romaji english }
-              coverImage { large }
-              status
-              episodes
-              nextAiringEpisode { episode }
-            }
-          }
-        }
-        '''
-        # Cache hits are what actually keep the genre screens working: AniList
-        # allows ~30 queries a minute and browsing genres fires one per tap plus
-        # one per infinite-scroll page, which exhausted the budget in seconds.
-        # Only successful, non-empty pages are stored -- caching a throttled
-        # empty would pin "nothing found" in place for the whole TTL.
+        # Cache hits are what keep the genre screens usable: AniList allows about
+        # 30 queries a minute and browsing fires one per tap plus one per scroll
+        # page. Only successful, non-empty pages are stored -- caching an empty
+        # would pin "nothing found" in place for the whole TTL.
         key = f"anilist:genre:{genre}:{page}:{per_page}"
         cached = cache.get(key)
         if cached is not None:
             return cached
 
-        variables = {"genre": genre, "page": page, "perPage": per_page}
-        for attempt in range(2):
-            data = await cls._execute_query(graphql_query, variables)
-            media = ((data or {}).get("Page") or {}).get("media")
-            if media:
-                cache.set(key, media, ttl_seconds=1800)
-                return media
-            # AniList intermittently answers 200 with an empty page under load.
-            # Page 1 of a stock genre is never genuinely empty, so treat that as
-            # the hiccup it is and try once more; deeper pages really can run
-            # past the end, so those are returned as-is.
-            if page != 1 or attempt == 1:
-                break
-            print(f"AniList returned an empty page 1 for genre {genre!r}; retrying")
-            await asyncio.sleep(1.0)
-        return []
+        media = await anime_meta.fetch_by_genre(genre, page, per_page)
+        if media:
+            cache.set(key, media, ttl_seconds=1800)
+        return media or []
 
     @classmethod
     async def browse(cls, sort: str = "POPULARITY_DESC", page: int = 1, per_page: int = 20) -> List[Dict[str, Any]]:
-        graphql_query = '''
-        query ($sort: [MediaSort], $page: Int, $perPage: Int) {
-          Page (page: $page, perPage: $perPage) {
-            media (type: ANIME, sort: $sort) {
-              id
-              title { romaji english }
-              coverImage { large }
-              status
-              episodes
-              nextAiringEpisode { episode }
-            }
-          }
-        }
-        '''
-        data = await cls._execute_query(graphql_query, {"sort": [sort], "page": page, "perPage": per_page})
-        if data and "Page" in data and "media" in data["Page"]:
-            return data["Page"]["media"]
-        return []
+        return await anime_meta.browse_media(sort, page, per_page)
+
 
 anilist_service = AniListService()
-

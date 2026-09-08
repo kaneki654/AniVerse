@@ -14,6 +14,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import httpx
 
+import anime_meta
+
 app = FastAPI()
 
 # Mount static files
@@ -282,23 +284,29 @@ async def search(request: Request, q: str = "", genres: str = None, page: int = 
     if mapped_genres:
         variables["genres"] = mapped_genres
         
+    # Through anime_meta, which prefers AniList and falls back to Kitsu. Querying
+    # AniList here directly meant search and genre browsing died outright
+    # whenever it answered 403, as it does during its "temporarily disabled"
+    # outages.
     data = {}
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.post("https://graphql.anilist.co", json={"query": query, "variables": variables})
-            res_data = resp.json().get("data", {}).get("Page", {})
-            if res_data:
-                data = {
-                    "data": {
-                        "animes": map_anilist_list(res_data.get("media", [])),
-                        "totalPages": res_data.get("pageInfo", {}).get("lastPage", 1),
-                        "hasNextPage": res_data.get("pageInfo", {}).get("hasNextPage", False),
-                        "currentPage": res_data.get("pageInfo", {}).get("currentPage", 1)
-                    }
+    try:
+        result = await anime_meta.search_media(
+            query=q or "", page=page, per_page=24, genres=mapped_genres or None
+        )
+        media = result.get("media", []) if isinstance(result, dict) else (result or [])
+        info = result.get("pageInfo", {}) if isinstance(result, dict) else {}
+        if media:
+            data = {
+                "data": {
+                    "animes": map_anilist_list(media),
+                    "totalPages": info.get("lastPage", 1),
+                    "hasNextPage": info.get("hasNextPage", False),
+                    "currentPage": info.get("currentPage", page),
                 }
-        except Exception as e:
-            print("Search Error:", e)
-            data = {}
+            }
+    except Exception as e:
+        print("Search Error:", e)
+        data = {}
 
     return templates.TemplateResponse(
         request=request, 
@@ -341,8 +349,10 @@ async def anime_detail(request: Request, anime_id: str):
     '''
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.post("https://graphql.anilist.co", json={'query': query, 'variables': {'id': int(anime_id)}})
-            media = resp.json().get("data", {}).get("Media", {})
+            # anime_meta keeps this page alive when AniList is 403ing: it
+            # falls back to Kitsu and re-keys onto the same AniList id, so the
+            # episode links below still resolve.
+            media = await anime_meta.fetch_media(anime_id, client) or {}
             if not media:
                 raise Exception("Not found")
             
@@ -404,8 +414,10 @@ async def watch_episode(request: Request, anime_id: str, ep_num: int):
     
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.post("https://graphql.anilist.co", json={'query': query, 'variables': {'id': int(anime_id)}})
-            media = resp.json().get("data", {}).get("Media", {})
+            # anime_meta keeps this page alive when AniList is 403ing: it
+            # falls back to Kitsu and re-keys onto the same AniList id, so the
+            # episode links below still resolve.
+            media = await anime_meta.fetch_media(anime_id, client) or {}
             if media:
                 anime_info["name"] = media["title"].get("english") or media["title"].get("romaji")
                 anime_info["poster"] = media["coverImage"]["large"]
