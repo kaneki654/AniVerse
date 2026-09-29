@@ -161,7 +161,15 @@ class AniWatchProvider(BaseProvider):
 
             def agrees(cand) -> bool:
                 for alias in (cand["display"], cand["slug"].replace("-", " ")):
-                    if not alias or self.season_of(alias) != want_season:
+                    if not alias:
+                        continue
+                    if self.season_of(alias) != want_season:
+                        # "...Tough for Mobs 2": a season written as a bare
+                        # closing number. This matcher never went through
+                        # series_matches(), so it never got that fallback and
+                        # rejected the right page it had found.
+                        if self._sequel_number_matches(alias, norm_titles, want_season, want_part):
+                            return True
                         continue
                     # A titled part only matches the part AniList asked for.
                     # When AniList names no part the entry is the first one, but

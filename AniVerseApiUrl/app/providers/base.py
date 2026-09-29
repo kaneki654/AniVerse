@@ -22,6 +22,9 @@ class BaseProvider(abc.ABC):
         title = re.sub(r'[^\w\s]', '', title)
         title = re.sub(r'\b(?:season|part|s)\s*\d+\b', '', title)
         title = re.sub(r'\b\d+(?:st|nd|rd|th)\s+season\b', '', title)
+        # "Kensei ni Naru II" is season 2, the same as "... Season 2"; strip it
+        # the same way so the two spellings reduce to one base title.
+        title = self.ROMAN_SEASON_RE.sub('', title)
         title = re.sub(r'\b(?:ova|ona|special|movie|the\s+movie|film|films?)\b', '', title)
         title = re.sub(r'\s+', ' ', title)
         return title.strip()
@@ -113,6 +116,14 @@ class BaseProvider(abc.ABC):
     SEASON_RE = re.compile(
         r'\b(?:season\s*(\d+)|(\d+)(?:st|nd|rd|th)\s+season|s(\d+)\b)', re.I)
 
+    # A closing Roman numeral II-IV is a sequel marker: AniList calls the
+    # Bumpkin swordsman's second season "Katainaka no Ossan, Kensei ni Naru II"
+    # while the site lists "...Master Swordsman Season 2". Unread, the request
+    # became "season 1" and the correct season-2 page was rejected. Unlike a
+    # closing digit ("Kaiju No. 8", "Mob Psycho 100") a Roman numeral there is
+    # not part of a title, so it is safe to read on both sides of a match.
+    ROMAN_SEASON_RE = re.compile(r'\s+(ii|iii|iv)\s*$', re.I)
+
     def season_of(self, title: str) -> int:
         """Season number a title refers to; 1 when it carries no season marker.
 
@@ -121,7 +132,8 @@ class BaseProvider(abc.ABC):
         """
         m = self.SEASON_RE.search(title or "")
         if not m:
-            return 1
+            roman = self.ROMAN_SEASON_RE.search(title or "")
+            return self._ROMAN[roman.group(1).lower()] if roman else 1
         for g in m.groups():
             if g:
                 try:
