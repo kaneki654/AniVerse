@@ -1,7 +1,45 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Updates must use the key that signed the installed app. Never silently use
+// this computer's debug key for releases: it can produce an incompatible APK.
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
+}
+val requiredSigningProperties = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+val missingSigningProperties = requiredSigningProperties.filter {
+    keystoreProperties.getProperty(it).isNullOrBlank()
+}
+val releaseKeystore = keystoreProperties.getProperty("storeFile")
+    ?.takeIf { it.isNotBlank() }?.let { file(it) }
+val releaseSigningError = when {
+    !keystorePropertiesFile.isFile ->
+        "Missing android/key.properties."
+    missingSigningProperties.isNotEmpty() ->
+        "Missing signing properties: ${missingSigningProperties.joinToString()} in android/key.properties."
+    releaseKeystore?.isFile != true ->
+        "The storeFile in android/key.properties does not point to an existing keystore (relative paths start at android/app/)."
+    else -> null
+}
+
+// Keep debug builds usable without release credentials, but block both release
+// APK and app-bundle builds before they can bypass explicit signing setup.
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    doFirst {
+        check(releaseSigningError == null) {
+            "$releaseSigningError Restore the keystore that signed the installed AniVerse APK " +
+                "and configure android/key.properties; see SETUP.md, Signing. " +
+                "Generating a new key cannot fix updates for existing installations."
+        }
+    }
 }
 
 android {
@@ -29,11 +67,20 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (releaseSigningError == null) {
+            create("release") {
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = releaseKeystore
+                storePassword = keystoreProperties.getProperty("storePassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 }

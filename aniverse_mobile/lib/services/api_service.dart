@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -115,7 +116,7 @@ class ApiService {
   /// Free trycloudflare URLs change every time the tunnel restarts. When that
   /// happens, update this one line and rebuild.
   static const String defaultHost =
-      'https://writes-hindu-pediatric-creates.trycloudflare.com';
+      'https://webcams-neck-input-artwork.trycloudflare.com';
 
   /// API endpoints live under the web app's /api/anime/ passthrough.
   static String get baseUrl => '$_host/api';
@@ -207,14 +208,18 @@ class ApiService {
   ///
   /// Returns `{'sources': [...], 'intro': ..., 'outro': ...}` where each source
   /// has an absolute, proxied `url` that can be handed straight to the player.
+  /// When nothing was found, `error` says why, so the player can tell a dead
+  /// connection apart from an episode no provider has.
   static Future<Map<String, dynamic>> getSources(
       String id, int epNum, String category) async {
     try {
-      final response = await http.get(
-        Uri.parse('$webUrl/api/source?episode_id=$id/$epNum&category=$category'),
-      );
+      // A cold resolve fans out across every provider and can take a couple
+      // of minutes; the web app itself waits up to 180s for the backend.
+      final response = await http
+          .get(Uri.parse('$webUrl/api/source?episode_id=$id/$epNum&category=$category'))
+          .timeout(const Duration(seconds: 200));
       if (response.statusCode != 200) {
-        return {'sources': []};
+        return {'sources': [], 'error': 'The server returned an error (HTTP ${response.statusCode}).'};
       }
 
       final body = json.decode(response.body) as Map<String, dynamic>;
@@ -238,10 +243,13 @@ class ApiService {
         'intro': data['intro'],
         'outro': data['outro'],
         'hasDub': data['hasDub'],
+        'error': data['error'],
       };
+    } on TimeoutException {
+      return {'sources': [], 'error': 'The server took too long to find a stream.'};
     } catch (e) {
       print('getSources failed: $e');
-      return {'sources': []};
+      return {'sources': [], 'error': "Can't reach the AniVerse server.", 'offline': true};
     }
   }
 }

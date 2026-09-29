@@ -16,7 +16,13 @@ from selectolax.parser import HTMLParser
 from .base import BaseProvider
 from ..services import anilist_media
 
-BYSE_HOSTS = {"gn1r5n.org", "playmogo.com"}
+# Byse rotates its embed domain: this used to hold an allowlist of them
+# (gn1r5n.org, playmogo.com), and once the site moved to mfw09.org every server
+# it offered was skipped and every episode resolved to nothing. There is no
+# list any more -- a host is confirmed as Byse by whether it answers with a
+# proof-of-work challenge, which costs one request and also rejects the
+# lookalikes (playmogo.com now redirects to DoodStream, whose /e/<code> URLs
+# are shaped identically).
 BYSE_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 
@@ -518,11 +524,13 @@ class AniWatchOneProvider(BaseProvider):
         # server is now affordable when the first one yields nothing.
         pow_budget_ends = time.monotonic() + 45.0
 
+        # The site lists its own servers live-first, which beats any ordering
+        # of ours based on which domain Byse happened to use last.
         for server in servers:
             try:
                 embed_url = server["url"]
                 host = urllib.parse.urlparse(embed_url).netloc
-                if host not in BYSE_HOSTS:
+                if not host:
                     continue
                 pow_left = pow_budget_ends - time.monotonic()
                 if streams or pow_left < 5.0:
@@ -585,7 +593,16 @@ class AniWatchOneProvider(BaseProvider):
                                         headers=headers, json={"fingerprint": fingerprint})
             if captcha.status_code != 200:
                 return None
-            cj = captcha.json()
+            try:
+                cj = captcha.json()
+            except Exception:
+                return None
+            # Only a Byse host answers with a proof-of-work challenge. Checking
+            # here is what makes it safe to try an unknown host: a lookalike
+            # embed costs this one request instead of a 45s solve budget.
+            if not isinstance(cj, dict) or not cj.get("pow_nonce") or not cj.get("pow_token"):
+                print(f"AniWatchOne: {host} is not a Byse host -> skipped")
+                return None
 
             # Serialize the CPU-bound solve. The orchestrator fans out eight
             # provider calls at once; letting each start its own thread pool

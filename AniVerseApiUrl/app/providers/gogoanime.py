@@ -134,12 +134,43 @@ class GogoAnimeProvider(BaseProvider):
             want_part = max(self.part_of(title_ro), self.part_of(title_en))
 
             candidates = {}
-            seen_keywords = set()
-            for raw in (title_ro, title_en):
-                t = self.clean_title(raw)
-                if not t or t.lower() in seen_keywords:
-                    continue
-                seen_keywords.add(t.lower())
+            wanted_dub = category == "dub"
+
+            def pick() -> str:
+                """The candidate that is this entry, or "" if none is yet."""
+                # Keep only entries whose audio matches what was asked for.
+                pool = []
+                for slug, title in candidates.items():
+                    is_dub = bool(self._DUB_SUFFIX_RE.search(title)) or slug.lower().endswith("-dub")
+                    if is_dub != wanted_dub:
+                        continue
+                    base_title = self._DUB_SUFFIX_RE.sub("", title)
+                    # A season marker survives here but not in normalize_title, so
+                    # capture it before the season words are stripped away.
+                    if self.season_of(base_title) != want_season:
+                        continue
+                    # Same for "Part N": without this every part of a season looks
+                    # identical and the first search hit wins, which is how season 3
+                    # ended up playing the Final Season's part 2.
+                    part = max(self.part_of(base_title), self.part_of(slug.replace("-", " ")))
+                    if want_part and part != want_part:
+                        continue
+                    pool.append((slug, self.normalize_title(self.clean_title(base_title)), part))
+
+                # When AniList names no part, the unqualified entry is the one it
+                # means, so prefer the lowest part number over search order.
+                pool.sort(key=lambda e: abs(e[2] - want_part))
+                for slug, norm, _part in pool:
+                    for nt in norm_titles:
+                        if self.titles_agree(norm, nt):
+                            return slug
+                return ""
+
+            # Most faithful keyword first; looser ones (season words dropped,
+            # subtitle cut) only when the tighter ones found nothing that
+            # matches. Capped: each is a request, and past this point the site
+            # does not have the show under any name we can derive.
+            for t in self._search_variants(title_ro, title_en)[:6]:
                 search_url = f"{self._base_url}/search.html?keyword={urllib.parse.quote(t)}"
                 search_resp = await client.get(search_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
                 if search_resp.status_code != 200:
@@ -155,45 +186,16 @@ class GogoAnimeProvider(BaseProvider):
                     slug = m.group(1)
                     title = (a.attributes.get("title") or a.text(strip=True) or "").strip()
                     candidates.setdefault(slug, title)
+                found = pick()
+                if found:
+                    return found
 
             if not candidates:
                 return ""
 
-            # Keep only entries whose audio matches what was asked for.
-            wanted_dub = category == "dub"
-            pool = []
-            for slug, title in candidates.items():
-                is_dub = bool(self._DUB_SUFFIX_RE.search(title)) or slug.lower().endswith("-dub")
-                if is_dub != wanted_dub:
-                    continue
-                base_title = self._DUB_SUFFIX_RE.sub("", title)
-                # A season marker survives here but not in normalize_title, so
-                # capture it before the season words are stripped away.
-                if self.season_of(base_title) != want_season:
-                    continue
-                # Same for "Part N": without this every part of a season looks
-                # identical and the first search hit wins, which is how season 3
-                # ended up playing the Final Season's part 2.
-                part = max(self.part_of(base_title), self.part_of(slug.replace("-", " ")))
-                if want_part and part != want_part:
-                    continue
-                pool.append((slug, self.normalize_title(self.clean_title(base_title)), part))
-
-            if not pool:
-                return ""
-
-            # When AniList names no part, the unqualified entry is the one it
-            # means, so prefer the lowest part number over search order.
-            pool.sort(key=lambda e: abs(e[2] - want_part))
-
-            for slug, norm, _part in pool:
-                for nt in norm_titles:
-                    if self.titles_agree(norm, nt):
-                        return slug
-
             print(f"Gogo map: no candidate matched {norm_titles[0]!r} "
                   f"(season {want_season}, part {want_part}); "
-                  f"{[s for s, _, _ in pool][:4]} -> rejected")
+                  f"{list(candidates)[:4]} -> rejected")
             return ""
 
         except Exception as e:
@@ -284,7 +286,16 @@ class GogoAnimeProvider(BaseProvider):
             
             for li in links:
                 embed_link = li.attributes.get("data-video")
-                server_name = li.text(strip=True).replace("Choose this server", "")
+                # text() also walks into the date and "Choose this server"
+                # spans and joins them with no separator, which is how the
+                # player's Source menu ended up listing "HD-1September 4, 2024".
+                # The name is the link's own text, not its children's.
+                server_name = li.text(deep=False, strip=True)
+                if not server_name:
+                    parts = [x.strip() for x
+                             in li.text(separator="|", strip=True).split("|")
+                             if x.strip() and x.strip() != "Choose this server"]
+                    server_name = parts[0] if parts else "GogoAnime"
                 if embed_link:
                     if embed_link.startswith("//"):
                         embed_link = "https:" + embed_link

@@ -25,18 +25,72 @@ class BaseProvider(abc.ABC):
         title = re.sub(r'\s+', ' ', title)
         return title.strip()
 
+    BRACKETED_RE = re.compile(r'[\(\[][^\)\]]*[\)\]]')
+
+    def _tidy(self, t: str) -> str:
+        """Normalise the separators AniList uses and collapse whitespace."""
+        for sign in ("×", "✕", "✖"):
+            t = t.replace(sign, " x ")
+        return re.sub(r'\s+', ' ', t).strip(" -:")
+
     def clean_title(self, title: str) -> str:
         """Drop bracketed qualifiers and normalise the separators AniList uses.
 
         AniList writes "HUNTER×HUNTER (2011)"; catalogue sites index it as
         "Hunter x Hunter", so the raw title matches nothing.
+
+        Some titles are bracketed in full, though -- AniList calls Oshi no Ko's
+        second season "[Oshi no Ko] 2nd Season". Dropping the brackets there
+        left "2nd Season", which normalize_title() strips down to the empty
+        string, so the entry could never match anything and every episode of it
+        failed to resolve. When nothing survives, the brackets held the title
+        itself, so only the brackets themselves are removed.
         """
         if not title:
             return ""
-        t = re.sub(r'[\(\[][^\)\]]*[\)\]]', ' ', title)
-        for sign in ("×", "✕", "✖"):
-            t = t.replace(sign, " x ")
-        return re.sub(r'\s+', ' ', t).strip(" -:")
+        stripped = self._tidy(self.BRACKETED_RE.sub(' ', title))
+        if not self.normalize_title(stripped):
+            stripped = self._tidy(re.sub(r'[\(\[\)\]]', ' ', title))
+        return stripped
+
+    def _search_variants(self, title_ro: str, title_en: str) -> List[str]:
+        """Ordered, deduped search keywords, most specific first.
+
+        Falls back to progressively shorter forms so a title a site indexes
+        without its season/part qualifier is still reachable. Shared because
+        every catalogue has this problem: GoGoAnime lists Oshi no Ko's second
+        season as "[Oshi No Ko] Season 2", which its search only finds for the
+        bare "Oshi no Ko".
+        """
+        cleaned = [self.clean_title(t) for t in (title_ro, title_en)]
+
+        def flatten(v: str) -> str:
+            # "Naruto: Shippuden" -> "Naruto Shippuden" (AniWatch drops the colon).
+            return re.sub(r'\s+', ' ', re.sub(r'[:/–—-]', ' ', v)).strip()
+
+        def strip_season(v: str) -> str:
+            v = re.sub(r'\s+(?:season|part|cour|s)\s*\d+\s*$', '', v, flags=re.I)
+            return re.sub(r'\s+\d+(?:st|nd|rd|th)\s+season\s*$', '', v, flags=re.I)
+
+        # Tiers, most faithful first: a looser tier is only reached when the
+        # tighter ones return nothing, so the lossy prefix-split stays last.
+        tiers = [
+            cleaned,
+            [flatten(c) for c in cleaned],
+            [strip_season(c) for c in cleaned],
+            [strip_season(flatten(c)) for c in cleaned],
+            [re.split(r'\s*[:–—-]\s+', c)[0] for c in cleaned],
+        ]
+
+        variants: List[str] = []
+        seen = set()
+        for tier in tiers:
+            for v in tier:
+                v = (v or "").strip(" -:")
+                if v and v.lower() not in seen:
+                    seen.add(v.lower())
+                    variants.append(v)
+        return variants
 
     SEASON_RE = re.compile(
         r'\b(?:season\s*(\d+)|(\d+)(?:st|nd|rd|th)\s+season|s(\d+)\b)', re.I)

@@ -2,10 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 
-/// The ANIVERSE wordmark with a soft red bloom behind it.
-///
-/// Plain red text on near-black reads flat; the glow is what makes it look lit
-/// rather than printed, and it sets the tone the rest of the theme follows.
+/// The crimson orbital emblem and illuminated ANIVERSE wordmark.
 class AniVerseLogo extends StatelessWidget {
   final double fontSize;
 
@@ -13,34 +10,54 @@ class AniVerseLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        // Bloom layer: same glyphs, blurred, sitting behind the crisp text.
-        Text(
-          'ANIVERSE',
-          style: TextStyle(
-            fontSize: fontSize,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 2,
-            foreground: Paint()
-              ..color = AniVerseTheme.red
-              ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
-          ),
+    return Semantics(
+      label: 'AniVerse',
+      excludeSemantics: true,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/icon/aniverse_icon.png',
+              width: fontSize * 2.3,
+              height: fontSize * 2.3,
+              filterQuality: FilterQuality.high,
+            ),
+            const SizedBox(width: 4),
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                // Bloom layer: same glyphs, blurred, sitting behind the crisp text.
+                Text(
+                  'ANIVERSE',
+                  style: TextStyle(
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 2,
+                    foreground: Paint()
+                      ..color = AniVerseTheme.red
+                      ..maskFilter =
+                          const MaskFilter.blur(BlurStyle.normal, 12),
+                  ),
+                ),
+                Text(
+                  'ANIVERSE',
+                  style: TextStyle(
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 2,
+                    color: AniVerseTheme.red,
+                    shadows: const [
+                      Shadow(color: Color(0x99E50914), blurRadius: 18),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
-        Text(
-          'ANIVERSE',
-          style: TextStyle(
-            fontSize: fontSize,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 2,
-            color: AniVerseTheme.red,
-            shadows: const [
-              Shadow(color: Color(0x99E50914), blurRadius: 18),
-            ],
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

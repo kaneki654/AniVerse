@@ -252,42 +252,6 @@ class AniWatchProvider(BaseProvider):
             print(f"AniWatch Map error: {type(e).__name__}: {e}")
         return ""
 
-    def _search_variants(self, title_ro: str, title_en: str) -> List[str]:
-        """Ordered, deduped search keywords, most specific first.
-
-        Falls back to progressively shorter forms so a title AniWatch indexes
-        without its season/part qualifier is still reachable.
-        """
-        cleaned = [self.clean_title(t) for t in (title_ro, title_en)]
-
-        def flatten(v: str) -> str:
-            # "Naruto: Shippuden" -> "Naruto Shippuden" (AniWatch drops the colon).
-            return re.sub(r'\s+', ' ', re.sub(r'[:/–—-]', ' ', v)).strip()
-
-        def strip_season(v: str) -> str:
-            v = re.sub(r'\s+(?:season|part|cour|s)\s*\d+\s*$', '', v, flags=re.I)
-            return re.sub(r'\s+\d+(?:st|nd|rd|th)\s+season\s*$', '', v, flags=re.I)
-
-        # Tiers, most faithful first: a looser tier is only reached when the
-        # tighter ones return nothing, so the lossy prefix-split stays last.
-        tiers = [
-            cleaned,
-            [flatten(c) for c in cleaned],
-            [strip_season(c) for c in cleaned],
-            [strip_season(flatten(c)) for c in cleaned],
-            [re.split(r'\s*[:–—-]\s+', c)[0] for c in cleaned],
-        ]
-
-        variants: List[str] = []
-        seen = set()
-        for tier in tiers:
-            for v in tier:
-                v = (v or "").strip(" -:")
-                if v and v.lower() not in seen:
-                    seen.add(v.lower())
-                    variants.append(v)
-        return variants
-
     def _fuzz_score(self, a: str, b: str) -> int:
         try:
             from rapidfuzz import fuzz

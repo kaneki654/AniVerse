@@ -111,7 +111,10 @@ class CustomPlayer {
                 if (!resp.ok) throw new Error(`HTTP error! status: ${resp.status}`);
                 const data = await resp.json();
                 
-                if(!data.data || !data.data.sources || data.data.sources.length === 0) throw new Error("No sources found");
+                if(!data.data || !data.data.sources || data.data.sources.length === 0) {
+                    // Say which upstream step failed when the backend told us.
+                    throw new Error(data.data && data.data.error ? data.data.error : "No sources found");
+                }
                 
                 // Cache them so we can switch quickly
                 this._cachedSources = data.data.sources;

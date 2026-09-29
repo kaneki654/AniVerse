@@ -15,8 +15,11 @@ from fastapi.templating import Jinja2Templates
 import httpx
 
 import anime_meta
+from app import accounts
 
 app = FastAPI()
+# Sign-in and per-account watch history for the mobile app.
+app.include_router(accounts.router)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -456,56 +459,66 @@ async def watch_episode(request: Request, anime_id: str, ep_num: int):
     )
 
 # --- Mobile app self-update -------------------------------------------------
-# The phone reaches this server anyway, so the APK is published here and the app
-# updates itself rather than being sideloaded again for every change.
-_APK_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "aniverse_mobile", "build", "app", "outputs", "flutter-apk", "app-release.apk",
-)
-_PUBSPEC_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "aniverse_mobile", "pubspec.yaml",
-)
+# Only a verified, completely copied APK is advertised. Editing pubspec or
+# starting a build cannot send phones an update prompt for an unfinished build.
+_RELEASES_DIR = pathlib.Path(__file__).resolve().parent.parent / "data" / "releases"
+_UPDATE_HEADERS = {"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"}
 
 
-def _apk_version():
-    """(versionName, versionCode) from pubspec's `version: 1.2.3+45` line."""
+def _read_published_release():
+    """Return the atomically published manifest and its existing APK, or None."""
     try:
-        with open(_PUBSPEC_PATH) as f:
-            for line in f:
-                if line.startswith("version:"):
-                    raw = line.split(":", 1)[1].strip()
-                    name, _, code = raw.partition("+")
-                    return name.strip(), int(code or 1)
-    except Exception as e:
-        print(f"apk version read failed: {e}")
-    return "0.0.0", 0
+        release = json.loads((_RELEASES_DIR / "current.json").read_text())
+        filename = release["file"]
+        if not isinstance(filename, str) or pathlib.Path(filename).name != filename:
+            return None
+        apk = (_RELEASES_DIR / filename).resolve()
+        if apk.parent != _RELEASES_DIR.resolve() or apk.suffix != ".apk":
+            return None
+        if (type(release["versionCode"]) is not int or release["versionCode"] <= 0
+                or not isinstance(release["versionName"], str) or not release["versionName"]
+                or type(release["size"]) is not int or release["size"] <= 0
+                or not re.fullmatch(r"[0-9a-f]{64}", release["sha256"])):
+            return None
+        if not apk.is_file() or apk.stat().st_size != release["size"]:
+            return None
+        return release, apk
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 @app.get("/app/version.json")
-async def app_version():
+async def app_version(response: Response):
     """What the installed app compares itself against."""
-    name, code = _apk_version()
-    exists = os.path.exists(_APK_PATH)
-    return {
-        "versionName": name,
-        "versionCode": code,
+    response.headers.update(_UPDATE_HEADERS)
+    published = _read_published_release()
+    result = {
+        "versionName": "0.0.0",
+        "versionCode": 0,
         "url": "/app/aniverse.apk",
-        "size": os.path.getsize(_APK_PATH) if exists else 0,
-        "available": exists,
+        "size": 0,
+        "available": False,
     }
+    if published:
+        release, _ = published
+        result.update({key: release[key] for key in ("versionName", "versionCode", "size", "sha256")})
+        result["available"] = True
+    return result
 
 
 @app.get("/app/aniverse.apk")
 async def app_apk():
     from fastapi.responses import FileResponse
-    if not os.path.exists(_APK_PATH):
-        return Response(content='{"detail":"apk not built"}', status_code=404,
-                        media_type="application/json")
+    published = _read_published_release()
+    if not published:
+        return Response(content='{"detail":"no published APK available"}', status_code=404,
+                        media_type="application/json", headers=_UPDATE_HEADERS)
+    _, apk = published
     return FileResponse(
-        _APK_PATH,
+        apk,
         media_type="application/vnd.android.package-archive",
         filename="aniverse.apk",
+        headers=_UPDATE_HEADERS,
     )
 
 
@@ -591,7 +604,11 @@ async def get_source(episode_id: str, server: str = "Auto", category: str = "sub
                     "headers": data.get("headers", {}),
                     "hasDub": data.get("hasDub", None),
                     "intro": data.get("intro"),
-                    "outro": data.get("outro")
+                    "outro": data.get("outro"),
+                    # Pass the backend's reason through: without it an episode
+                    # that no provider could resolve is indistinguishable from
+                    # a bug in the player.
+                    "error": data.get("error")
                 }
             }
     except Exception as e:

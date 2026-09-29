@@ -13,3 +13,6 @@ logs/
 # One-off provider-debugging scratch scripts kept out of the tree.
 AniVerseApiUrl/debug_*.py
 AniVerseApiUrl/debug_*.txt
+
+# Account database (password hashes, session tokens) and the Google client ID.
+data/

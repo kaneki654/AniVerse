@@ -131,10 +131,18 @@ class ResolverOrchestrator:
         
         valid_results = []
         for idx, r in enumerate(results):
+            name = self.providers[idx].__class__.__name__
             if isinstance(r, Exception):
-                print(f"Provider {self.providers[idx].__class__.__name__} failed with exception: {r}")
+                print(f"Provider {name} failed with exception: {r}")
             elif "error" in r:
-                print(f"Provider {self.providers[idx].__class__.__name__} returned error: {r['error']}")
+                print(f"Provider {name} returned error: {r['error']}")
+            elif not r.get("streams"):
+                # A provider that mapped and fetched but extracted nothing is a
+                # failure, not a result. Counting it as valid used to send back
+                # a 200 with an empty stream list and no error, so the player
+                # reported "no video resources" with nothing in the log to say
+                # why -- and the empty answer was then cached for 10 minutes.
+                print(f"Provider {name} returned no streams ({category})")
             else:
                 valid_results.append(r)
         
@@ -207,8 +215,11 @@ class ResolverOrchestrator:
                     unique_subs_final.append(sub)
             final_result["subtitles"] = unique_subs_final
         
-        # Cache for 1 hour
-        cache.set(cache_key, final_result, ttl_seconds=600)
+        # Only a result that can actually play is worth remembering: caching an
+        # empty one turns a momentary upstream failure into ten minutes of an
+        # unplayable episode, long after the provider has recovered.
+        if final_result.get("streams"):
+            cache.set(cache_key, final_result, ttl_seconds=600)
         
         return final_result
 

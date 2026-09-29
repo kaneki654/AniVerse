@@ -25,6 +25,11 @@ class AniVersePlayerControls extends StatefulWidget {
   final bool isFullscreen;
   final VoidCallback? onToggleFullscreen;
 
+  /// Hide the centre play/seek buttons. The buffering circle sits in the same
+  /// spot, and a play button on top of it reads as "press to fix" when the
+  /// player is really just waiting for data.
+  final bool hideTransport;
+
   const AniVersePlayerControls({
     super.key,
     required this.controller,
@@ -36,6 +41,7 @@ class AniVersePlayerControls extends StatefulWidget {
     this.onToggleCategory,
     this.isFullscreen = false,
     this.onToggleFullscreen,
+    this.hideTransport = false,
   });
 
   @override
@@ -213,6 +219,7 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
                   ),
 
                   // Centre transport: back 10 / play / forward 10.
+                  if (!widget.hideTransport)
                   Center(
                     child: Row(
                       mainAxisSize: MainAxisSize.min,

@@ -4,9 +4,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
+import '../services/history_service.dart';
 import '../theme.dart';
 import '../widgets/aniverse_loader.dart';
 import '../widgets/aniverse_logo.dart';
+import '../widgets/continue_watching.dart';
 import 'watch_screen.dart';
 
 class DetailScreen extends StatefulWidget {
@@ -35,6 +37,20 @@ class _DetailScreenState extends State<DetailScreen> {
     setState(() {
       anime = data;
     });
+  }
+
+  void _openEpisode(int number) {
+    Navigator.push(
+      context,
+      FadeScaleRoute(
+        page: WatchScreen(
+          animeId: widget.id,
+          epNum: number,
+          title: _title,
+          cover: _cover,
+        ),
+      ),
+    );
   }
 
   String get _title {
@@ -163,6 +179,12 @@ class _DetailScreenState extends State<DetailScreen> {
                     ),
                     const SizedBox(height: 24),
                   ],
+                  if (released)
+                    _ResumeBanner(
+                      animeId: widget.id,
+                      episodeCount: epCount is num ? epCount.toInt() : 12,
+                      onOpen: _openEpisode,
+                    ),
                   const SectionHeader(title: 'Episodes'),
                 ],
               ),
@@ -181,32 +203,33 @@ class _DetailScreenState extends State<DetailScreen> {
               ),
             )
           else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
-              sliver: SliverGrid(
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 4,
-                  childAspectRatio: 2,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                ),
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => _EpisodeTile(
-                    number: index + 1,
-                    onTap: () => Navigator.push(
-                      context,
-                      FadeScaleRoute(
-                        page: WatchScreen(
-                          animeId: widget.id,
-                          epNum: index + 1,
-                        ),
+            // Rebuilt from history so tiles pick up progress made in the
+            // player the moment the user comes back to this screen.
+            ValueListenableBuilder<int>(
+              valueListenable: HistoryService.changes,
+              builder: (context, _, __) {
+                final watched = HistoryService.episodesOf(widget.id);
+                return SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 28),
+                  sliver: SliverGrid(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 4,
+                      childAspectRatio: 2,
+                      crossAxisSpacing: 8,
+                      mainAxisSpacing: 8,
+                    ),
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => _EpisodeTile(
+                        number: index + 1,
+                        progress: watched[index + 1],
+                        onTap: () => _openEpisode(index + 1),
                       ),
+                      childCount: epCount is num ? epCount.toInt() : 12,
                     ),
                   ),
-                  childCount: epCount is num ? epCount.toInt() : 12,
-                ),
-              ),
+                );
+              },
             ),
         ],
       ),
@@ -385,31 +408,138 @@ class _Header extends StatelessWidget {
 }
 
 class _EpisodeTile extends StatelessWidget {
-  const _EpisodeTile({required this.number, required this.onTap});
+  const _EpisodeTile({required this.number, required this.onTap, this.progress});
 
   final int number;
   final VoidCallback onTap;
 
+  /// How far the user got, if they have started this episode.
+  final HistoryEntry? progress;
+
   @override
   Widget build(BuildContext context) {
+    final p = progress;
+    final finished = p?.finished ?? false;
     return Material(
-      color: AniVerseTheme.surfaceHigh,
+      color: finished
+          ? AniVerseTheme.redDark.withValues(alpha: 0.45)
+          : AniVerseTheme.surfaceHigh,
       borderRadius: BorderRadius.circular(8),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
         splashColor: AniVerseTheme.red.withValues(alpha: 0.25),
-        child: Center(
-          child: Text(
-            '$number',
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (finished) ...[
+                    const Icon(Icons.check, size: 13, color: Colors.white70),
+                    const SizedBox(width: 3),
+                  ],
+                  Text(
+                    '$number',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: finished ? Colors.white70 : Colors.white,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+            if (p != null && !finished)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: ProgressStrip(fraction: p.fraction, height: 3),
+              ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+/// "Continue EP 5 · 12:30 left" above the episode grid when the user has
+/// started this anime -- or "Next: EP 6" once the last one they watched is done.
+class _ResumeBanner extends StatelessWidget {
+  final String animeId;
+  final int episodeCount;
+  final void Function(int episode) onOpen;
+
+  const _ResumeBanner({
+    required this.animeId,
+    required this.episodeCount,
+    required this.onOpen,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: HistoryService.changes,
+      builder: (context, _, __) {
+        final eps = HistoryService.episodesOf(animeId).values.toList()
+          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+        if (eps.isEmpty) return const SizedBox.shrink();
+        final last = eps.first;
+        final next = last.finished ? last.episode + 1 : last.episode;
+        // Finished the final episode: there is nothing to continue.
+        if (next > episodeCount) return const SizedBox.shrink();
+        final String detail;
+        if (last.finished) {
+          detail = 'You finished episode ${last.episode}';
+        } else if (last.durationMs > 0) {
+          final left = last.duration - last.position;
+          detail = '${left.inMinutes} min left';
+        } else {
+          detail = 'Pick up where you stopped';
+        }
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 20),
+          child: Material(
+            color: AniVerseTheme.surface,
+            borderRadius: BorderRadius.circular(12),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => onOpen(next),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.play_circle_fill, color: AniVerseTheme.red, size: 34),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                last.finished ? 'Next: Episode $next' : 'Continue Episode $next',
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(detail,
+                                  style: const TextStyle(
+                                      fontSize: 11, color: AniVerseTheme.textDim)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!last.finished) ProgressStrip(fraction: last.fraction),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

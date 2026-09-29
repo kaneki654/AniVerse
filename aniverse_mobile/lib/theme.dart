@@ -30,7 +30,11 @@ class AniVerseTheme {
       primaryColor: red,
       colorScheme: const ColorScheme.dark(
         primary: red,
+        // ColorScheme.dark defaults these to black, which put black text on
+        // every red filled button.
+        onPrimary: Colors.white,
         secondary: red,
+        onSecondary: Colors.white,
         surface: surface,
       ),
       textTheme: GoogleFonts.orbitronTextTheme(
@@ -42,7 +46,12 @@ class AniVerseTheme {
         centerTitle: true,
       ),
       dialogTheme: const DialogThemeData(backgroundColor: surface),
-      snackBarTheme: const SnackBarThemeData(backgroundColor: surfaceHigh),
+      // The dark background needs light text: left to the default, SnackBar
+      // text is the inverse-surface colour and came out dark grey on dark grey.
+      snackBarTheme: const SnackBarThemeData(
+        backgroundColor: surfaceHigh,
+        contentTextStyle: TextStyle(color: Colors.white),
+      ),
       progressIndicatorTheme: const ProgressIndicatorThemeData(color: red),
     );
   }

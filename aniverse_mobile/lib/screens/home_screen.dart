@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
+import '../services/auth_service.dart';
 import '../services/update_service.dart';
 import '../theme.dart';
 import '../widgets/aniverse_logo.dart';
+import '../widgets/continue_watching.dart';
 import '../widgets/hero_spotlight.dart';
 import '../widgets/poster_card.dart';
+import 'account_screen.dart';
 import 'detail_screen.dart';
 import 'genres_screen.dart';
+import 'history_screen.dart';
 import 'search_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -99,6 +103,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _openHistory() => Navigator.push(
+        context,
+        FadeScaleRoute(page: const HistoryScreen()),
+      );
+
   Future<void> _loadData() async {
     final data = await ApiService.getHomeData();
     setState(() {
@@ -151,6 +160,19 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const AniVerseLogo(fontSize: 22),
         centerTitle: true,
+        leading: ValueListenableBuilder<AuthUser?>(
+          valueListenable: AuthService.user,
+          builder: (context, user, _) => IconButton(
+            tooltip: user == null ? 'Sign in' : 'Account',
+            icon: user == null
+                ? const Icon(Icons.account_circle_outlined, color: Colors.white70)
+                : UserAvatar(user: user, size: 28),
+            onPressed: () => Navigator.push(
+              context,
+              FadeScaleRoute(page: const AccountScreen()),
+            ),
+          ),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.category_outlined, color: Colors.white70),
@@ -178,22 +200,25 @@ class _HomeScreenState extends State<HomeScreen> {
       body: homeData == null
           ? ListView(
               padding: const EdgeInsets.all(16),
-              children: const [
-                HeroSkeleton(),
-                SizedBox(height: 24),
-                SectionHeader(title: 'Trending Now'),
-                SectionSkeleton(),
-                SizedBox(height: 24),
-                SectionHeader(title: 'Popular'),
-                SectionSkeleton(),
-                SizedBox(height: 24),
-                SectionHeader(title: 'Latest Episodes'),
-                SectionSkeleton(),
+              children: [
+                // History is local, so it can show while the server answers.
+                ContinueWatchingRow(onSeeAll: _openHistory),
+                const HeroSkeleton(),
+                const SizedBox(height: 24),
+                const SectionHeader(title: 'Trending Now'),
+                const SectionSkeleton(),
+                const SizedBox(height: 24),
+                const SectionHeader(title: 'Popular'),
+                const SectionSkeleton(),
+                const SizedBox(height: 24),
+                const SectionHeader(title: 'Latest Episodes'),
+                const SectionSkeleton(),
               ],
             )
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                ContinueWatchingRow(onSeeAll: _openHistory),
                 HeroSpotlight(
                   animes: (homeData!['trending'] as List<dynamic>?) ?? const [],
                   onTap: (anime) => Navigator.push(
