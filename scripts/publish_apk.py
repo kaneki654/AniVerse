@@ -20,6 +20,23 @@ DEFAULT_RELEASES_DIR = ROOT / "data" / "releases"
 EXPECTED_PACKAGE = "com.example.aniverse_mobile"
 
 
+def _fsync_directory(path):
+    """Flush a directory entry to disk where the platform allows it.
+
+    Windows refuses to open a directory this way (PermissionError). That came
+    after os.replace() had already switched current.json, so a successful
+    publish was reported as "Publication failed" -- the release was live while
+    the tool said it was not. The rename itself is already atomic there.
+    """
+    if os.name == "nt":
+        return
+    directory_fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
 def find_android_tool(name):
     """Use PATH or the installed Android SDK's newest build-tools directory."""
     on_path = shutil.which(name)
@@ -34,10 +51,14 @@ def find_android_tool(name):
     for sdk_root in filter(None, roots):
         versions = list((Path(sdk_root) / "build-tools").glob("*"))
         versions.sort(key=lambda p: tuple(map(int, re.findall(r"\d+", p.name))), reverse=True)
+        # The SDK ships aapt.exe and apksigner.bat on Windows; looking only for
+        # the bare name meant the tool could never find them there.
+        names = [name, name + ".exe", name + ".bat"] if os.name == "nt" else [name]
         for version in versions:
-            candidate = version / name
-            if candidate.is_file() and os.access(candidate, os.X_OK):
-                return candidate
+            for filename in names:
+                candidate = version / filename
+                if candidate.is_file() and os.access(candidate, os.X_OK):
+                    return candidate
     raise ValueError(f"Cannot find {name}; set ANDROID_SDK_ROOT or pass --{name}.")
 
 
@@ -111,11 +132,7 @@ def publish_apk(source, releases_dir, aapt, apksigner, expected_package=EXPECTED
             os.fsync(manifest.fileno())
         os.replace(manifest_path, current_path)
         manifest_path = None
-        directory_fd = os.open(releases_dir, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+        _fsync_directory(releases_dir)
         return release
     finally:
         for temporary in (staged_path, manifest_path):
