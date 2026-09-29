@@ -326,7 +326,16 @@ class AniWatchOneProvider(BaseProvider):
             seen_routes = set()
             seen_keywords = set()
 
-            for t in titles_to_try:
+            # Both full titles first, exactly as before. Only when neither finds
+            # anything does it fall back to the shorter forms AniWatch already
+            # uses (no season suffix, no accents, the part before a colon): the
+            # site's search found nothing for "Trapped in a Dating Sim: The World
+            # of Otome Games is Tough for Mobs Season 2", but does for the prefix.
+            fallbacks = [v for v in self._search_variants(title_ro, title_en)
+                         if v not in titles_to_try]
+            for t in titles_to_try + fallbacks:
+                if t in fallbacks and candidates:
+                    break
                 if not t or t.lower() in seen_keywords:
                     continue
                 seen_keywords.add(t.lower())

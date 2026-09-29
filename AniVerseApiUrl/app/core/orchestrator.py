@@ -82,6 +82,77 @@ class ResolverOrchestrator:
     # others' streams are worth more than one slow provider's.
     PROVIDER_TIMEOUT_SECONDS = 60
 
+    # ...unless nothing else found anything. Byse (AniWatchOne) solves a
+    # proof-of-work per stream, one at a time across every request, so when a
+    # few episodes resolve at once it queues well past 60s -- and for plenty of
+    # mainstream shows it is the only source. A 100-title sweep lost Mob Psycho
+    # 100, Konosuba, The Promised Neverland and eight more exactly that way.
+    # The extra time is only spent when the episode would otherwise fail, so it
+    # costs nothing on any episode that already has a stream.
+    LAST_RESORT_EXTRA_SECONDS = 75
+
+    async def _run(self, provider: BaseProvider, anilist_id: str,
+                   episode_number: int, category: str) -> Dict[str, Any]:
+        """provider.resolve() with any exception turned into an error result."""
+        try:
+            return await provider.resolve(anilist_id, episode_number, category)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001 - one provider must not sink the rest
+            return {"error": f"{provider.__class__.__name__}: {type(e).__name__}: {e}"}
+
+    async def _resolve_requested(self, anilist_id: str, episode_number: int,
+                                 category: str) -> List[Dict[str, Any]]:
+        """Every provider's result for the requested category, in provider order.
+
+        Waits for all of them up to PROVIDER_TIMEOUT_SECONDS, as before. If by
+        then nothing has produced a stream and some are still working, those get
+        LAST_RESORT_EXTRA_SECONDS more, and the wait ends the moment one of them
+        delivers. Anything still running after that is cancelled, which also
+        stops a proof-of-work solve mid-way (its cancel flag is set on the way
+        out).
+        """
+        loop = asyncio.get_running_loop()
+        tasks = [asyncio.create_task(self._run(p, anilist_id, episode_number, category))
+                 for p in self.providers]
+        deadline = loop.time() + self.PROVIDER_TIMEOUT_SECONDS
+        extended = False
+        pending = set(tasks)
+
+        def playable() -> bool:
+            return any(t.done() and not t.cancelled() and (t.result() or {}).get("streams")
+                       for t in tasks)
+
+        while pending:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                if extended or playable():
+                    break
+                extended = True
+                deadline = loop.time() + self.LAST_RESORT_EXTRA_SECONDS
+                slow = ", ".join(p.__class__.__name__ for p, t in zip(self.providers, tasks)
+                                 if t in pending)
+                print(f"Nothing playable after {self.PROVIDER_TIMEOUT_SECONDS}s for "
+                      f"{anilist_id} ep {episode_number} ({category}); giving {slow} "
+                      f"{self.LAST_RESORT_EXTRA_SECONDS}s more")
+                continue
+            _, pending = await asyncio.wait(pending, timeout=remaining,
+                                            return_when=asyncio.FIRST_COMPLETED)
+            if extended and playable():
+                break
+
+        limit = self.PROVIDER_TIMEOUT_SECONDS + (self.LAST_RESORT_EXTRA_SECONDS if extended else 0)
+        results = []
+        for provider, task in zip(self.providers, tasks):
+            name = provider.__class__.__name__
+            if task in pending:
+                task.cancel()
+                print(f"Provider {name} timed out after {limit}s ({category})")
+                results.append({"error": f"{name} timed out"})
+            else:
+                results.append(task.result())
+        return results
+
     async def _resolve_one(self, provider: BaseProvider, anilist_id: str,
                            episode_number: int, category: str) -> Dict[str, Any]:
         try:
@@ -94,17 +165,22 @@ class ResolverOrchestrator:
             print(f"Provider {name} timed out after {self.PROVIDER_TIMEOUT_SECONDS}s ({category})")
             return {"error": f"{name} timed out"}
 
-    async def resolve_episode(self, anilist_id: str, episode_number: int, category: str = "sub") -> Dict[str, Any]:
+    async def resolve_episode(self, anilist_id: str, episode_number: int, category: str = "sub",
+                              fresh: bool = False) -> Dict[str, Any]:
         cache_key = self._generate_cache_key(anilist_id, episode_number, category)
-        cached_data = cache.get(cache_key)
-        
-        if cached_data:
-            return cached_data
 
-        tasks = [
-            self._resolve_one(provider, anilist_id, episode_number, category)
-            for provider in self.providers
-        ]
+        # `fresh` skips the cache. Stream URLs carry tokens that can die long
+        # before this ten-minute TTL does -- some are bound to the server's IP,
+        # so a router reconnect that changes it kills every cached link at once.
+        # Before this, a client whose stream had died got the same dead URL
+        # back for the rest of the TTL however many times it asked.
+        if not fresh:
+            cached_data = cache.get(cache_key)
+            if cached_data:
+                # Marked so the web layer knows this may be minutes old and
+                # checks the links still answer before handing them out.
+                return {**cached_data, "cached": True}
+
         
         # Resolve the opposite category in parallel:
         #  - for "dub": needed to decide if a dub genuinely exists (hasDub)
@@ -117,17 +193,16 @@ class ResolverOrchestrator:
         other_category = "sub" if category == "dub" else "dub"
         other_providers = [p for p in self.providers
                            if p.__class__.__name__ != "AniWatchOneProvider"]
-        other_tasks = [
+        # Started first so they run alongside the requested category; each is
+        # capped at PROVIDER_TIMEOUT_SECONDS and never extended -- hasDub is a
+        # menu hint, not worth making anyone wait for.
+        other_future = asyncio.gather(*[
             self._resolve_one(provider, anilist_id, episode_number, other_category)
             for provider in other_providers
-        ]
-            
-        all_tasks = tasks + other_tasks
-        
-        all_results = await asyncio.gather(*all_tasks, return_exceptions=True)
-        
-        results = all_results[:len(tasks)]
-        other_results = all_results[len(tasks):]
+        ], return_exceptions=True)
+
+        results = await self._resolve_requested(anilist_id, episode_number, category)
+        other_results = await other_future
         
         valid_results = []
         for idx, r in enumerate(results):

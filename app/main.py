@@ -62,7 +62,9 @@ import json
 import time
 import pathlib
 
-NEW_API_BASE = "http://localhost:8001"
+# Overridable so the frontend can front a backend on another port or host;
+# SETUP.md documents this, and it had been hardcoded back to 8001.
+NEW_API_BASE = os.getenv("ANIVERSE_API_BASE", "http://localhost:8001")
 
 # --- Home page resilience: disk cache + AniList direct fallback ---
 CACHE_DIR = pathlib.Path(__file__).resolve().parent.parent / ".cache"
@@ -545,41 +547,100 @@ async def anime_api_passthrough(path: str, request: Request):
         return Response(content='{"detail":"upstream unavailable"}',
                         status_code=502, media_type="application/json")
 
+def _stream_referer(stream: dict, data: dict) -> str:
+    """The Referer a stream's host will accept."""
+    abs_url = stream["url"]
+    # Providers that know which host token-locked the stream say so directly;
+    # only fall back to guessing from the URL when they don't.
+    if stream.get("referer"):
+        return stream["referer"]
+    if "premilkyway.com" in abs_url:
+        return "https://otakuhg.site/"
+    if "vibeplayer.site" in abs_url:
+        return "https://vibeplayer.site/"
+    if "cloudatacdn" in abs_url or "dood" in abs_url:
+        return "https://myvidplay.com/"
+    if "1anime.site" in abs_url:
+        return "https://my.1anime.site/"
+    if "watching.onl" in abs_url or "sugevideo.xyz" in abs_url:
+        return "https://megaplay.buzz/"
+    if "sprintcdn" in abs_url or "owphbf24.com" in abs_url:
+        return f"https://{urlparse(abs_url).netloc}/"
+    return data.get("headers", {}).get("Referer", "https://cloudnestra.com/")
+
+
+async def _upstream_alive(client: httpx.AsyncClient, url: str, referer: str, is_m3u8: bool) -> bool:
+    """Whether a stream's host still serves it, as the proxy would ask for it."""
+    headers = {"User-Agent": USER_AGENT}
+    if referer:
+        headers["Referer"] = referer
+        headers["Origin"] = referer.rstrip("/")
+    try:
+        if is_m3u8:
+            resp = await client.get(url, headers=headers)
+            return resp.status_code == 200 and "#EXTM3U" in resp.text[:4096]
+        # A file: the status line is enough. Streamed so a host that ignores
+        # the Range header cannot make this download a whole episode.
+        headers["Range"] = "bytes=0-1"
+        async with client.stream("GET", url, headers=headers) as resp:
+            return resp.status_code in (200, 206)
+    except Exception:
+        return False
+
+
+async def _fetch_resolve(client: httpx.AsyncClient, anilist_id: str, ep_num: str,
+                         category: str, fresh: bool) -> dict:
+    url = f"{NEW_API_BASE}/anime/resolve/{anilist_id}/{ep_num}?category={category}"
+    if fresh:
+        url += "&fresh=true"
+    # A cold resolve fans out across every provider and can include a Byse
+    # proof-of-work solve, which routinely runs past 30s; timing out here
+    # dropped the request before the backend ever answered.
+    resp = await client.get(url, timeout=180)
+    return resp.json()
+
+
+async def _drop_dead_streams(client: httpx.AsyncClient, data: dict) -> list:
+    """The cached streams that still answer upstream, in their original order."""
+    streams = data.get("streams", [])
+    checks = [
+        _upstream_alive(client, st["url"], _stream_referer(st, data), "m3u8" in st["url"])
+        for st in streams
+    ]
+    alive = await asyncio.gather(*checks)
+    for st, ok in zip(streams, alive):
+        if not ok:
+            print(f"Source: cached stream from {st.get('server')!r} no longer answers; dropping it")
+    return [st for st, ok in zip(streams, alive) if ok]
+
+
 @app.get("/api/source")
-async def get_source(episode_id: str, server: str = "Auto", category: str = "sub"):
+async def get_source(episode_id: str, server: str = "Auto", category: str = "sub",
+                     fresh: bool = False):
     try:
         anilist_id, ep_num = episode_id.split("/")
-        url = f"{NEW_API_BASE}/anime/resolve/{anilist_id}/{ep_num}?category={category}"
-        async with httpx.AsyncClient() as client:
-            # A cold resolve fans out across every provider and can include a
-            # Byse proof-of-work solve, which routinely runs past 30s; timing
-            # out here dropped the request before the backend ever answered.
-            resp = await client.get(url, timeout=180)
-            data = resp.json()
-            
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as check_client, \
+                httpx.AsyncClient() as client:
+            data = await _fetch_resolve(client, anilist_id, ep_num, category, fresh)
+
+            # A cached answer can be up to ten minutes old, and stream URLs carry
+            # tokens that die sooner -- some are bound to the server's IP, so a
+            # router reconnect kills them all at once. Handing those out left the
+            # app replaying "none of the streams would play" for the rest of the
+            # TTL. Check them, keep the live ones, and resolve afresh if none are.
+            if data.get("cached") and data.get("streams"):
+                alive = await _drop_dead_streams(check_client, data)
+                if alive:
+                    data["streams"] = alive
+                else:
+                    print(f"Source: every cached stream for {episode_id} ({category}) is dead; resolving afresh")
+                    data = await _fetch_resolve(client, anilist_id, ep_num, category, fresh=True)
+
             sources = []
             for stream in data.get("streams", []):
-                # Always proxy the master m3u8 to bypass IP-locked streams like premilkyway.com
                 abs_url = stream["url"]
-                referer = data.get("headers", {}).get("Referer", "https://cloudnestra.com/")
+                referer = _stream_referer(stream, data)
 
-                # Providers that know which host token-locked the stream say so
-                # directly; only fall back to guessing from the URL when they don't.
-                if stream.get("referer"):
-                    referer = stream["referer"]
-                elif "premilkyway.com" in abs_url:
-                    referer = "https://otakuhg.site/"
-                elif "vibeplayer.site" in abs_url:
-                    referer = "https://vibeplayer.site/"
-                elif "cloudatacdn" in abs_url or "dood" in abs_url:
-                    referer = "https://myvidplay.com/"
-                elif "1anime.site" in abs_url:
-                    referer = "https://my.1anime.site/"
-                elif "watching.onl" in abs_url or "sugevideo.xyz" in abs_url:
-                    referer = "https://megaplay.buzz/"
-                elif "sprintcdn" in abs_url or "owphbf24.com" in abs_url:
-                    referer = f"https://{urlparse(abs_url).netloc}/"
-                    
                 # Do NOT proxy premilkyway.com streams because they use tokenized IPs/Cookies
                 if "premilkyway.com" in abs_url:
                     proxy_url = abs_url
@@ -589,14 +650,13 @@ async def get_source(episode_id: str, server: str = "Auto", category: str = "sub
                     # It's an mp4 like Doodstream, proxy it using our stream endpoint!
                     proxy_url = f"/proxy/stream?url={quote(abs_url, safe='')}&referer={quote(referer, safe='')}"
 
-                    
                 sources.append({
                     "url": proxy_url,
                     "isM3U8": "m3u8" in abs_url,
                     "quality": stream.get("quality", "auto"),
                     "serverName": stream.get("server", "Auto")
                 })
-                
+
             return {
                 "data": {
                     "sources": sources,

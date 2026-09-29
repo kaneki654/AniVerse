@@ -19,6 +19,12 @@ class BufferOverlay extends StatefulWidget {
   final VoidCallback? onRetry;
   final double size;
 
+  /// Where the water starts. The loading stage and the player each draw their
+  /// own orb, so when one hands over to the other the new orb must pick up at
+  /// the old one's level -- starting from empty looked like the load had
+  /// suddenly drained away just as the video was about to play.
+  final double? initialLevel;
+
   const BufferOverlay({
     super.key,
     required this.label,
@@ -27,6 +33,7 @@ class BufferOverlay extends StatefulWidget {
     this.detail,
     this.onRetry,
     this.size = 136,
+    this.initialLevel,
   });
 
   @override
@@ -39,11 +46,12 @@ class _BufferOverlayState extends State<BufferOverlay>
 
   /// The level actually drawn. It chases the target rather than jumping, so the
   /// water visibly flows up as buffer arrives in chunks.
-  double _level = 0.08;
+  late double _level;
 
   @override
   void initState() {
     super.initState();
+    _level = (widget.initialLevel ?? 0.08).clamp(0.0, 1.0);
     _wave = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2400),

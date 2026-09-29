@@ -67,12 +67,13 @@ async def resolve_by_name(query: str, episode_number: int, category: str = "sub"
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/resolve/{anilist_id}/{episode_number}")
-async def resolve(anilist_id: str, episode_number: int, category: str = "sub"):
+async def resolve(anilist_id: str, episode_number: int, category: str = "sub", fresh: bool = False):
     """
-    Direct resolution using AniList ID.
+    Direct resolution using AniList ID. `fresh=true` bypasses the cache, for a
+    client whose cached stream has stopped working.
     """
     try:
-        result = await orchestrator.resolve_episode(anilist_id, episode_number, category)
+        result = await orchestrator.resolve_episode(anilist_id, episode_number, category, fresh=fresh)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

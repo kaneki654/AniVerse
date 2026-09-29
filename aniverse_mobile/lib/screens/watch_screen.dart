@@ -68,6 +68,10 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   String? _failReason;
   bool _secondLook = false;
 
+  /// Set while asking the server for a new link because the one it gave us
+  /// would not play.
+  bool _refreshing = false;
+
   /// Bumped whenever earlier async work must stop mattering (new episode
   /// load, category switch, dispose), so a late reply cannot attach a player.
   int _generation = 0;
@@ -108,6 +112,24 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
 
   final NetSpeedMeter _speed = NetSpeedMeter();
 
+  /// How far the stream being opened is toward playing, 0..1, measured from
+  /// what is really arriving. Drives the orb on the loading and reconnecting
+  /// screens, which used to be handed no progress at all and so idled at a
+  /// quarter full however much had downloaded.
+  final ValueNotifier<double> _openProgress = ValueNotifier<double>(0);
+  Timer? _openTicker;
+
+  /// Whether a stream is being opened right now, rather than waiting on the
+  /// server or a retry timer -- only then does the orb have something real to
+  /// show.
+  bool _openingStream = false;
+
+  /// While the loading stage hands its orb to the player: the level the
+  /// player's orb starts from, so it tops off from where the load had got to
+  /// instead of starting empty.
+  double? _bufferStartLevel;
+  String _bufferLabel = 'BUFFERING';
+
   bool _immersive = false;
   bool _awake = false;
 
@@ -122,6 +144,14 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   static const _stallTimeout = Duration(seconds: 20);
 
   static const _retryDelays = [1, 2, 4, 8, 10];
+
+  /// What ExoPlayer holds before it first starts (DefaultLoadControl's
+  /// bufferForPlaybackMs).
+  static const _startBuffer = Duration(milliseconds: 2500);
+
+  /// Media seconds' worth of bytes a stream typically downloads before it can
+  /// start: the playlists, then most of the first segment.
+  static const _startupMediaSeconds = 6.0;
 
   @override
   void initState() {
@@ -149,6 +179,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       _phase = _Phase.resolving;
       _failReason = null;
       _secondLook = false;
+      _refreshing = false;
     });
 
     var data = await ApiService.getSources(widget.animeId, widget.epNum, category);
@@ -175,12 +206,43 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
         : Duration.zero;
 
     setState(() => _phase = _Phase.opening);
-    final opened = await _openFirstWorking(start: start, gen: gen);
+    var opened = await _openFirstWorking(start: start, gen: gen);
     if (gen != _generation || !mounted) return;
+
+    if (!opened) {
+      // The server can answer from a cache whose links have died since -- their
+      // tokens expire, and some are tied to the server's IP, so a router
+      // reconnect kills them all. That is exactly the "Wi-Fi dropped, came
+      // back, now nothing plays" case, and it used to end here with an error.
+      // Ask for new links before telling the user anything.
+      final tried = _sources.length;
+      setState(() {
+        _phase = _Phase.resolving;
+        _refreshing = true;
+      });
+      final fresh = await ApiService.getSources(
+          widget.animeId, widget.epNum, category, fresh: true);
+      if (gen != _generation || !mounted) return;
+      if ((fresh['sources'] as List).isEmpty) {
+        return _fail(fresh['offline'] == true
+            ? _explain(fresh)
+            : 'The server found $tried stream${tried == 1 ? '' : 's'}, but none '
+                'of them would play, and a fresh search found nothing new. '
+                'Try again in a moment.');
+      }
+      _applySourceData(fresh);
+      setState(() {
+        _phase = _Phase.opening;
+        _refreshing = false;
+      });
+      opened = await _openFirstWorking(start: start, gen: gen);
+      if (gen != _generation || !mounted) return;
+    }
+
     if (!opened) {
       return _fail('The server found ${_sources.length} stream'
-          '${_sources.length == 1 ? '' : 's'}, but none of them would play. '
-          'Try again in a moment.');
+          '${_sources.length == 1 ? '' : 's'}, but none of them would play, '
+          'even with fresh links. Try again in a moment.');
     }
     if (start > Duration.zero) _offerStartOver(start);
   }
@@ -253,22 +315,96 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       Uri.parse(url),
       formatHint: isHls ? VideoFormat.hls : null,
     );
+
+    final rx0 = _speed.totalBytes;
+    final began = DateTime.now();
+    _openProgress.value = 0.03;
+    _openingStream = true;
+    _openTicker?.cancel();
+    _openTicker = Timer.periodic(
+        const Duration(milliseconds: 250), (_) => _trackOpening(c, start, rx0, began));
     try {
       // initialize() waits for the first frames, and on a dead connection it
       // can wait forever -- the bound is what lets the next source get a turn.
       await c.initialize().timeout(const Duration(seconds: 45));
       if (start > Duration.zero && start < c.value.duration) {
         await c.seekTo(start);
+        await _waitUntilPlayable(c);
       }
+      _trackOpening(c, start, rx0, began);
       return c;
     } catch (e) {
       debugPrint('source ${source['serverName']} failed: $e');
       await c.dispose();
       return null;
+    } finally {
+      _openTicker?.cancel();
+      _openTicker = null;
+      _openingStream = false;
+    }
+  }
+
+  /// Moves the loading orb from what is really arriving for the stream being
+  /// opened. Two measures, whichever is further along:
+  ///  - bytes received since the attempt began, which move from the first
+  ///    playlist request on, long before the player reports anything;
+  ///  - once the player reports video buffered where it will start, how much
+  ///    of the start-up buffer it already holds -- the direct measure.
+  /// It only ever rises, and stops short of full: only the video actually
+  /// starting tops it off.
+  void _trackOpening(VideoPlayerController c, Duration start, int? rx0, DateTime began) {
+    if (!mounted) return;
+    final resuming = start > Duration.zero;
+
+    double byBytes = 0;
+    final rx = _speed.totalBytes;
+    if (rx != null && rx0 != null) {
+      // A resume downloads twice: the opening, then again at the saved spot.
+      final expected = _bytesPerMediaSecond * _startupMediaSeconds * (resuming ? 2 : 1);
+      byBytes = 1 - math.exp(-math.max(0, rx - rx0) / expected);
+    }
+
+    double byBuffer = 0;
+    final v = c.value;
+    // Before the resume seek the buffer is at the opening, which is not where
+    // playback will start, so it only counts once the seek has happened.
+    if (!resuming || v.position >= start - const Duration(seconds: 1)) {
+      var end = Duration.zero;
+      for (final r in v.buffered) {
+        if (r.start <= v.position + const Duration(seconds: 1) && r.end > end) end = r.end;
+      }
+      final ahead = (end - v.position).inMilliseconds / _startBuffer.inMilliseconds;
+      byBuffer = ahead.clamp(0.0, 1.0).toDouble();
+    }
+
+    // Devices that do not report traffic still see the orb creep, rather than
+    // freeze at the start for a load that is going fine.
+    final secs = DateTime.now().difference(began).inMilliseconds / 1000;
+    final byTime = 0.5 * (1 - math.exp(-secs / 15));
+
+    final p = (0.03 + 0.92 * math.max(byBytes, math.max(byBuffer, byTime))).clamp(0.0, 0.95);
+    if (p > _openProgress.value) _openProgress.value = p;
+  }
+
+  /// After a resume seek ExoPlayer drops what it buffered at the opening and
+  /// buffers again at the saved position. Handing the player over before that
+  /// finished meant a second, separate load behind the orb -- which then
+  /// looked like the loading had gone backwards. Bounded, so a player that
+  /// never reports its state cannot hold the screen.
+  Future<void> _waitUntilPlayable(VideoPlayerController c) async {
+    // Long enough for the seek to register as buffering.
+    await Future.delayed(const Duration(milliseconds: 400));
+    final deadline = DateTime.now().add(const Duration(seconds: 20));
+    while (mounted && DateTime.now().isBefore(deadline)) {
+      final v = c.value;
+      if (v.hasError) throw StateError(v.errorDescription ?? 'playback error after seek');
+      if (!v.isBuffering) return;
+      await Future.delayed(const Duration(milliseconds: 200));
     }
   }
 
   void _attach(VideoPlayerController c, int index) {
+    final from = _phase;
     final old = _controller;
     old?.removeListener(_onValue);
     _controller = c;
@@ -284,11 +420,36 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       _attempt = 0;
       _retryAt = null;
     });
+    if (from == _Phase.opening || from == _Phase.reconnecting) _handOffOrb();
     // The frozen frame has done its job once the new player is up.
     final stale = _stale;
     _stale = null;
     if (old != null && old != stale) old.dispose();
     stale?.dispose();
+  }
+
+  /// Carry the loading orb into the player so it visibly fills to the top and
+  /// fades as the video starts. It used to vanish the instant the player
+  /// opened, at whatever level it had reached, so the fill never completed.
+  void _handOffOrb() {
+    _bufferShowTimer?.cancel();
+    _bufferHideTimer?.cancel();
+    setState(() {
+      _bufferStartLevel = _openProgress.value;
+      _bufferLabel = 'LOADING VIDEO';
+      _bufferVisible = true;
+      _bufferFinishing = true;
+    });
+    _bufferHideTimer = Timer(const Duration(milliseconds: 700), () {
+      if (!mounted) return;
+      setState(() {
+        _bufferStartLevel = null;
+        _bufferLabel = 'BUFFERING';
+        _bufferFinishing = false;
+        // A real stall that began meanwhile keeps the orb up, now measuring it.
+        _bufferVisible = _wasBuffering;
+      });
+    });
   }
 
   void _offerStartOver(Duration from) {
@@ -390,6 +551,10 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     _bufferingSince = DateTime.now();
     _bufferProgressAt = DateTime.now();
     _rxAtBufferAdvance ??= _speed.totalBytes;
+    // Mid hand-off from the loading stage: let it finish. It checks for a
+    // stall when it does and keeps the orb up if there is one; switching to
+    // measuring now would drain the water it is topping off.
+    if (_bufferStartLevel != null) return;
     _bufferHideTimer?.cancel();
     if (_bufferVisible) {
       setState(() => _bufferFinishing = false);
@@ -405,7 +570,8 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   void _bufferingEnded() {
     _bufferingSince = null;
     _bufferShowTimer?.cancel();
-    if (!_bufferVisible) return;
+    // The hand-off's own timer hides the orb.
+    if (!_bufferVisible || _bufferStartLevel != null) return;
     // Let the water top off before the circle fades, rather than vanishing
     // half full.
     setState(() => _bufferFinishing = true);
@@ -513,9 +679,11 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
         }
       } else {
         // Stream URLs carry tokens that expire, and the source itself may have
-        // gone, so ask the server afresh and try everything it offers.
-        final data =
-            await ApiService.getSources(widget.animeId, widget.epNum, category);
+        // gone, so ask the server afresh and try everything it offers. It has
+        // to be a fresh resolve: a plain request can be answered from the
+        // server's cache, which hands back the very link that just died.
+        final data = await ApiService.getSources(
+            widget.animeId, widget.epNum, category, fresh: true);
         if (gen != _generation || !mounted || _phase != _Phase.reconnecting) return;
         if ((data['sources'] as List).isNotEmpty) {
           _applySourceData(data);
@@ -632,6 +800,8 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     _retryTimer?.cancel();
     _bufferShowTimer?.cancel();
     _bufferHideTimer?.cancel();
+    _openTicker?.cancel();
+    _openProgress.dispose();
     _speed.dispose();
     _controller?.removeListener(_onValue);
     _controller?.dispose();
@@ -668,27 +838,24 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       case _Phase.resolving:
         body = _stage(
           fullscreen,
-          AniVerseLoader(
+          (_) => AniVerseLoader(
             size: 72,
-            label: _secondLook ? 'STILL LOOKING' : 'FINDING SOURCES',
+            label: _refreshing
+                ? 'GETTING A FRESH LINK'
+                : _secondLook
+                    ? 'STILL LOOKING'
+                    : 'FINDING SOURCES',
           ),
         );
       case _Phase.opening:
-        body = _stage(
-          fullscreen,
-          ValueListenableBuilder<double?>(
-            valueListenable: _speed.mbps,
-            builder: (_, mbps, __) =>
-                BufferOverlay(label: 'LOADING VIDEO', mbps: mbps),
-          ),
-        );
+        body = _stage(fullscreen, (size) => _loadingOrb('LOADING VIDEO', size));
       case _Phase.reconnecting:
-        body = _stage(fullscreen, _reconnectOverlay(), behind: _stale);
+        body = _stage(fullscreen, _reconnectOverlay, behind: _stale);
       case _Phase.failed:
         body = _failure();
       case _Phase.playing:
         body = controller == null
-            ? _stage(fullscreen, const SizedBox())
+            ? _stage(fullscreen, (_) => const SizedBox())
             : _player(controller, fullscreen);
     }
 
@@ -747,8 +914,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
               child: _bufferVisible
                   ? Center(
                       key: const ValueKey('buffer'),
-                      child: _bufferOverlay(
-                          controller, (box.maxHeight * 0.36).clamp(72.0, 136.0)),
+                      child: _bufferOverlay(controller, _orbSize(box)),
                     )
                   : const SizedBox.shrink(),
             ),
@@ -774,8 +940,9 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
         builder: (_, mbps, __) => BufferOverlay(
           // Not v.isPlaying: ExoPlayer reports "not playing" for the whole of a
           // stall, so that would always read LOADING.
-          label: 'BUFFERING',
+          label: _bufferLabel,
           progress: _bufferFinishing ? 1.0 : _bufferFill(v),
+          initialLevel: _bufferStartLevel,
           mbps: mbps,
           size: size,
         ),
@@ -783,7 +950,28 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _reconnectOverlay() {
+  /// The orb for a stream being opened, filling from [_openProgress]. [measured]
+  /// false means there is nothing real to show yet (waiting on the server or a
+  /// retry timer), and the water idles rather than pretending.
+  Widget _loadingOrb(String label, double size,
+      {String? detail, VoidCallback? onRetry, bool measured = true}) {
+    return ValueListenableBuilder<double>(
+      valueListenable: _openProgress,
+      builder: (_, progress, __) => ValueListenableBuilder<double?>(
+        valueListenable: _speed.mbps,
+        builder: (_, mbps, __) => BufferOverlay(
+          label: label,
+          progress: measured ? progress : null,
+          mbps: mbps,
+          size: size,
+          detail: detail,
+          onRetry: onRetry,
+        ),
+      ),
+    );
+  }
+
+  Widget _reconnectOverlay(double size) {
     final retryAt = _retryAt;
     final String detail;
     if (retryAt != null) {
@@ -792,21 +980,27 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     } else {
       detail = _attempt <= 2 ? 'Reconnecting to the stream…' : 'Looking for the stream again…';
     }
-    return ValueListenableBuilder<double?>(
-      valueListenable: _speed.mbps,
-      builder: (_, mbps, __) => BufferOverlay(
-        label: 'RECONNECTING',
-        mbps: mbps,
-        detail: '$detail\nYou\'ll continue from ${_fmt(_resumeAt)}',
-        onRetry: retryAt != null ? _retryNow : null,
-      ),
+    return _loadingOrb(
+      'RECONNECTING',
+      size,
+      measured: _openingStream,
+      detail: '$detail\nYou\'ll continue from ${_fmt(_resumeAt)}',
+      onRetry: retryAt != null ? _retryNow : null,
     );
   }
 
   /// A video-shaped stage for the non-playing states, with its own back button
   /// since the player controls are not there to provide one.
-  Widget _stage(bool fullscreen, Widget child, {VideoPlayerController? behind}) {
-    final frame = Stack(
+  /// One size for every orb, so the loading stage and the player draw it the
+  /// same and nothing jumps when one hands over to the other. Sized to the
+  /// video area, so it fits the short portrait player without covering the
+  /// title and seek bar.
+  static double _orbSize(BoxConstraints box) =>
+      (box.maxHeight * 0.36).clamp(72.0, 136.0).toDouble();
+
+  Widget _stage(bool fullscreen, Widget Function(double orbSize) child,
+      {VideoPlayerController? behind}) {
+    final frame = LayoutBuilder(builder: (_, box) => Stack(
       fit: StackFit.expand,
       children: [
         if (behind != null && behind.value.isInitialized)
@@ -819,7 +1013,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
             ),
           ),
         if (behind != null) const ColoredBox(color: Color(0x99000000)),
-        Center(child: child),
+        Center(child: child(_orbSize(box))),
         Positioned(
           top: 8,
           left: 8,
@@ -829,7 +1023,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
           ),
         ),
       ],
-    );
+    ));
     return fullscreen
         ? SizedBox.expand(child: frame)
         : AspectRatio(aspectRatio: 16 / 9, child: frame);

@@ -1,4 +1,5 @@
 import abc
+import unicodedata
 import re
 from typing import Dict, Any, List
 try:
@@ -17,7 +18,7 @@ class BaseProvider(abc.ABC):
         """
         Normalize title by removing punctuation, 'season', 'part', movies, etc.
         """
-        title = title.lower()
+        title = self.MULTIPART_RE.sub(' ', title.lower())
         title = re.sub(r'[^\w\s]', '', title)
         title = re.sub(r'\b(?:season|part|s)\s*\d+\b', '', title)
         title = re.sub(r'\b\d+(?:st|nd|rd|th)\s+season\b', '', title)
@@ -26,6 +27,15 @@ class BaseProvider(abc.ABC):
         return title.strip()
 
     BRACKETED_RE = re.compile(r'[\(\[][^\)\]]*[\)\]]')
+
+    # "Part 1 & 2", "Parts 1-2", "Cour 1 and 2": one entry covering several
+    # parts, i.e. the whole season. AniList titles Slime's fourth season
+    # "4th Season Part 1 & 2". Read as "Part 1", the "& 2" was left behind in
+    # the base title -- "tensei shitara slime datta ken 2" -- and every provider
+    # rejected the correct season-4 page it had found, so the #1 trending show
+    # could not be played at all.
+    MULTIPART_RE = re.compile(
+        r'\b(?:parts?|cours?)\s*\d+\s*(?:&|\+|and|to|-|–)\s*\d+\b', re.I)
 
     def _tidy(self, t: str) -> str:
         """Normalise the separators AniList uses and collapse whitespace."""
@@ -48,6 +58,7 @@ class BaseProvider(abc.ABC):
         """
         if not title:
             return ""
+        title = self.MULTIPART_RE.sub(' ', title)
         stripped = self._tidy(self.BRACKETED_RE.sub(' ', title))
         if not self.normalize_title(stripped):
             stripped = self._tidy(re.sub(r'[\(\[\)\]]', ' ', title))
@@ -72,10 +83,17 @@ class BaseProvider(abc.ABC):
             v = re.sub(r'\s+(?:season|part|cour|s)\s*\d+\s*$', '', v, flags=re.I)
             return re.sub(r'\s+\d+(?:st|nd|rd|th)\s+season\s*$', '', v, flags=re.I)
 
+        def fold(v: str) -> str:
+            # "PokéOki" -> "PokeOki": site search indexes the plain letters, and
+            # searching with the accent returned nothing at all.
+            return "".join(ch for ch in unicodedata.normalize("NFKD", v)
+                           if not unicodedata.combining(ch))
+
         # Tiers, most faithful first: a looser tier is only reached when the
         # tighter ones return nothing, so the lossy prefix-split stays last.
         tiers = [
             cleaned,
+            [fold(c) for c in cleaned],
             [flatten(c) for c in cleaned],
             [strip_season(c) for c in cleaned],
             [strip_season(flatten(c)) for c in cleaned],
@@ -124,6 +142,8 @@ class BaseProvider(abc.ABC):
         and the winner is decided by search order, which is how "Final Season"
         ended up playing Part 2.
         """
+        if self.MULTIPART_RE.search(title or ""):
+            return 0
         m = self.PART_RE.search(title or "")
         if not m:
             return 0
@@ -153,6 +173,22 @@ class BaseProvider(abc.ABC):
             return True
         return False
 
+    # A bare sequel number closing a title: "...Tough for Mobs 2", "Overlord
+    # II". Only 2-9 and II-IV, so "Mob Psycho 100", "Steins;Gate 0" and "86"
+    # keep their numbers.
+    TRAILING_SEQUEL_RE = re.compile(r'\s+(?:([2-9])|(ii|iii|iv))$')
+    _ROMAN = {"ii": 2, "iii": 3, "iv": 4}
+
+    def trailing_sequel(self, norm: str) -> int:
+        """Season a normalized title's closing sequel number stands for, else 0."""
+        m = self.TRAILING_SEQUEL_RE.search(norm or "")
+        if not m:
+            return 0
+        return int(m.group(1)) if m.group(1) else self._ROMAN[m.group(2)]
+
+    def strip_trailing_sequel(self, norm: str) -> str:
+        return self.TRAILING_SEQUEL_RE.sub("", norm or "").strip()
+
     def series_matches(self, alias: str, norm_titles: List[str],
                        want_season: int, want_part: int) -> bool:
         """Whether `alias` names the same entry as any of `norm_titles`.
@@ -164,7 +200,7 @@ class BaseProvider(abc.ABC):
         if not alias:
             return False
         if self.season_of(alias) != want_season:
-            return False
+            return self._sequel_number_matches(alias, norm_titles, want_season, want_part)
         alias_part = self.part_of(alias)
         if want_part:
             if alias_part != want_part:
@@ -177,6 +213,31 @@ class BaseProvider(abc.ABC):
             return False
         na = self.normalize_title(self.clean_title(alias))
         return any(self.titles_agree(na, nt) for nt in norm_titles)
+
+    def _sequel_number_matches(self, alias: str, norm_titles: List[str],
+                               want_season: int, want_part: int) -> bool:
+        """Fallback for a season written as a bare trailing number.
+
+        Sites and AniList both write sequels as "<title> 2" as often as "<title>
+        Season 2". Neither says "season", so season_of() read the site's
+        "Trapped in a Dating Sim ... for Mobs 2" as season 1, and a season 2
+        request rejected the very page it had found. This reads that number as
+        the season, only when it is the season asked for, so it can add a
+        match the strict rules missed but never take one away -- a blanket rule
+        would break titles that simply end in a digit, like "Kaiju No. 8".
+        """
+        if want_season < 2:
+            return False
+        # Same part rule as the strict path.
+        alias_part = self.part_of(alias)
+        if (alias_part != want_part) if want_part else (alias_part > 1):
+            return False
+        na = self.normalize_title(self.clean_title(alias))
+        if self.trailing_sequel(na) != want_season:
+            return False
+        base = self.strip_trailing_sequel(na)
+        return any(self.titles_agree(base, self.strip_trailing_sequel(nt))
+                   for nt in norm_titles)
 
     def match_title(self, a: str, b: str) -> bool:
         """

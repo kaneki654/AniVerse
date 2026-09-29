@@ -210,13 +210,18 @@ class ApiService {
   /// has an absolute, proxied `url` that can be handed straight to the player.
   /// When nothing was found, `error` says why, so the player can tell a dead
   /// connection apart from an episode no provider has.
+  /// [fresh] asks the server to resolve again instead of answering from its
+  /// cache. Use it once a stream the server handed out has failed to play:
+  /// stream links carry tokens that can die before the server's cache entry
+  /// does, and without this every retry got the same dead link back.
   static Future<Map<String, dynamic>> getSources(
-      String id, int epNum, String category) async {
+      String id, int epNum, String category, {bool fresh = false}) async {
     try {
       // A cold resolve fans out across every provider and can take a couple
       // of minutes; the web app itself waits up to 180s for the backend.
+      final query = 'episode_id=$id/$epNum&category=$category${fresh ? '&fresh=true' : ''}';
       final response = await http
-          .get(Uri.parse('$webUrl/api/source?episode_id=$id/$epNum&category=$category'))
+          .get(Uri.parse('$webUrl/api/source?$query'))
           .timeout(const Duration(seconds: 200));
       if (response.statusCode != 200) {
         return {'sources': [], 'error': 'The server returned an error (HTTP ${response.statusCode}).'};
