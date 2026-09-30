@@ -7,5 +7,5 @@
 /// down with it.
 ///
 /// Keep in step with `version:` in pubspec.yaml.
-const int kAppBuildNumber = 13;
-const String kAppVersionName = '1.5.2';
+const int kAppBuildNumber = 16;
+const String kAppVersionName = '1.7.1';

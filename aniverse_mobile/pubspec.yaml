@@ -1,7 +1,7 @@
 name: aniverse_mobile
 description: A new Flutter project.
 publish_to: 'none'
-version: 1.5.2+13
+version: 1.7.1+16
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -37,6 +37,19 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon/aniverse_icon.png
+    # The logo as pixel art, for the 2D UI (built by scripts/make_pixel_icon.py).
+    - assets/icon/aniverse_icon_pixel.png
+
+  # Pixel fonts for the 2D UI (lib/ui_2d), bundled so they render offline and
+  # never fall back to a smooth system font. Both are SIL OFL 1.1; the licence
+  # texts sit next to the font files.
+  fonts:
+    - family: PressStart2P
+      fonts:
+        - asset: assets/fonts/PressStart2P-Regular.ttf
+    - family: DotGothic16
+      fonts:
+        - asset: assets/fonts/DotGothic16-Regular.ttf
 
 flutter_launcher_icons:
   android: true

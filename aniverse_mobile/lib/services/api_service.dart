@@ -188,6 +188,33 @@ class ApiService {
     'Supernatural', 'Thriller',
   ];
 
+  static Map<String, Map<String, dynamic>>? _genreArt;
+
+  /// Background art for the genre tiles: each genre's top-rated anime, as
+  /// `{genre: {id, title, score, banner, cover}}`. Kept for the session once
+  /// it arrives. Returns {} on failure, which leaves the tiles plain.
+  static Future<Map<String, Map<String, dynamic>>> genreArt() async {
+    final cached = _genreArt;
+    if (cached != null) return cached;
+    try {
+      final response = await http
+          .get(Uri.parse('$baseUrl/anime/genres/top'
+              '?genres=${Uri.encodeQueryComponent(genres.join(','))}'))
+          .timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) return {};
+      final body = json.decode(response.body);
+      if (body is! Map) return {};
+      final art = {
+        for (final e in body.entries)
+          if (e.value is Map) e.key.toString(): Map<String, dynamic>.from(e.value as Map),
+      };
+      if (art.isNotEmpty) _genreArt = art;
+      return art;
+    } catch (_) {
+      return {};
+    }
+  }
+
   /// One page of anime in [genre]. Returns [] on failure or past the last page.
   static Future<List<dynamic>> byGenre(String genre, {int page = 1, int perPage = 24}) async {
     try {

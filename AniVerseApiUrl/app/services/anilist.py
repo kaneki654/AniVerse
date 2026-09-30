@@ -111,5 +111,67 @@ class AniListService:
     async def browse(cls, sort: str = "POPULARITY_DESC", page: int = 1, per_page: int = 20) -> List[Dict[str, Any]]:
         return await anime_meta.browse_media(sort, page, per_page)
 
+    # Art for the genre tiles changes slowly, and the query covers every genre
+    # at once, so half a day is plenty and keeps it to one AniList call.
+    _GENRE_TOP_TTL = 12 * 3600
+    # Enough candidates per genre that de-duplication always has one left.
+    _GENRE_TOP_CANDIDATES = 10
+    # Excludes high-scoring titles almost nobody has heard of, whose art would
+    # mean nothing on a tile.
+    _GENRE_TOP_MIN_POPULARITY = 20000
+
+    @classmethod
+    async def get_genre_top(cls, genres: List[str]) -> Dict[str, Dict[str, Any]]:
+        """The top-rated anime for each genre, for its tile's background art.
+
+        One aliased GraphQL request covers every genre. The strict top title
+        repeats a lot -- Gintama tops Action, Comedy, Drama and Sci-Fi -- so each
+        genre gets its highest-rated title not already used by an earlier one,
+        and the grid shows different art on every tile.
+        """
+        key = "anilist:genre-top:v1:" + "|".join(genres)
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+
+        # Genre names travel as variables, never spliced into the query text.
+        params = ", ".join(f"$g{i}: String" for i in range(len(genres)))
+        blocks = " ".join(
+            f"g{i}: Page(perPage: {cls._GENRE_TOP_CANDIDATES}) {{ media(type: ANIME, genre: $g{i}, "
+            f"sort: SCORE_DESC, isAdult: false, popularity_greater: {cls._GENRE_TOP_MIN_POPULARITY}) "
+            "{ id averageScore title { romaji english } bannerImage coverImage { extraLarge large } } }"
+            for i in range(len(genres))
+        )
+        data = await cls._execute_query(
+            f"query ({params}) {{ {blocks} }}",
+            {f"g{i}": g for i, g in enumerate(genres)},
+        )
+        if not data:
+            return {}
+
+        result: Dict[str, Dict[str, Any]] = {}
+        used = set()
+        for i, genre in enumerate(genres):
+            media = ((data.get(f"g{i}") or {}).get("media")) or []
+            if not media:
+                continue
+            pick = next((m for m in media if m.get("id") not in used), media[0])
+            used.add(pick.get("id"))
+            title = pick.get("title") or {}
+            cover = pick.get("coverImage") or {}
+            result[genre] = {
+                "id": pick.get("id"),
+                "title": title.get("english") or title.get("romaji") or "",
+                "score": pick.get("averageScore"),
+                "banner": pick.get("bannerImage"),
+                "cover": cover.get("extraLarge") or cover.get("large"),
+            }
+
+        # An empty answer is not cached: that would pin plain tiles in place
+        # for the whole TTL after one bad AniList moment.
+        if result:
+            cache.set(key, result, ttl_seconds=cls._GENRE_TOP_TTL)
+        return result
+
 
 anilist_service = AniListService()

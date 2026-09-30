@@ -91,6 +91,18 @@ async def upcoming_anime(page: int = 1, per_page: int = 12):
 async def genre_anime(genre: str, page: int = 1, per_page: int = 12):
     return await anilist_service.search_by_genre(genre, page, per_page)
 
+@router.get("/genres/top")
+async def genre_top(genres: str):
+    """Top-rated anime per genre, for the app's genre tile backgrounds.
+
+    `genres` is a comma-separated list, e.g. "Action,Adventure,Sci-Fi".
+    """
+    names = [g.strip() for g in genres.split(",") if g.strip()]
+    if not names or len(names) > 30 or any(len(g) > 40 for g in names):
+        raise HTTPException(status_code=400, detail="Give 1-30 genre names")
+    return await anilist_service.get_genre_top(names)
+
+
 @router.get("/browse")
 async def browse_anime(sort: str = "POPULARITY_DESC", page: int = 1, per_page: int = 12):
     return await anilist_service.browse(sort, page, per_page)

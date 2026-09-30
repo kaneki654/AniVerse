@@ -519,7 +519,7 @@ async def app_apk():
     return FileResponse(
         apk,
         media_type="application/vnd.android.package-archive",
-        filename="aniverse.apk",
+        filename="AniVerse-Pixel.apk",
         headers=_UPDATE_HEADERS,
     )
 
