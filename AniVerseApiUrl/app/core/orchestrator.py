@@ -1,18 +1,20 @@
 import asyncio
 import hashlib
-from typing import Any, Dict, List, Optional, Tuple
-from app.providers.base import BaseProvider
+from typing import Any
+
 from app.core.cache import cache
+from app.providers.base import BaseProvider
+
 
 class ResolverOrchestrator:
-    def __init__(self, providers: List[BaseProvider]):
+    def __init__(self, providers: list[BaseProvider]):
         self.providers = providers
 
     def _generate_cache_key(self, anilist_id: str, episode_number: int, category: str) -> str:
         raw = f"{anilist_id}:{episode_number}:{category}"
         return hashlib.md5(raw.encode()).hexdigest()
 
-    def normalize(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def normalize(self, results: list[dict[str, Any]]) -> dict[str, Any]:
         normalized_streams = []
         normalized_subtitles = []
         for res in results:
@@ -114,18 +116,21 @@ class ResolverOrchestrator:
     SETTLE_SECONDS = 15
 
     async def _run(self, provider: BaseProvider, anilist_id: str,
-                   episode_number: int, category: str) -> Dict[str, Any]:
+                   episode_number: int, category: str) -> dict[str, Any]:
         """provider.resolve() with any exception turned into an error result."""
         try:
             return await provider.resolve(anilist_id, episode_number, category)
         except asyncio.CancelledError:
             raise
-        except Exception as e:  # noqa: BLE001 - one provider must not sink the rest
+        # One provider must not sink the rest: whatever it raises becomes its
+        # error result, and the others' streams still go out.
+        except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
             return {"error": f"{provider.__class__.__name__}: {type(e).__name__}: {e}"}
 
     async def _resolve_requested(self, anilist_id: str, episode_number: int,
-                                 category: str) -> Tuple[List[Dict[str, Any]], Optional[float]]:
-        """Every provider's result for the requested category, in provider order,
+                                 category: str) -> tuple[list[dict[str, Any]], float | None]:
+        """
+        Every provider's result for the requested category, in provider order,
         and the loop time the settle cutoff fell at (None if nothing played).
 
         Waits for all of them up to PROVIDER_TIMEOUT_SECONDS, as before, except
@@ -189,19 +194,19 @@ class ResolverOrchestrator:
         return results, settle_at
 
     async def _resolve_one(self, provider: BaseProvider, anilist_id: str,
-                           episode_number: int, category: str) -> Dict[str, Any]:
+                           episode_number: int, category: str) -> dict[str, Any]:
         try:
             return await asyncio.wait_for(
                 provider.resolve(anilist_id, episode_number, category),
                 timeout=self.PROVIDER_TIMEOUT_SECONDS,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             name = provider.__class__.__name__
             print(f"Provider {name} timed out after {self.PROVIDER_TIMEOUT_SECONDS}s ({category})")
             return {"error": f"{name} timed out"}
 
     async def resolve_episode(self, anilist_id: str, episode_number: int, category: str = "sub",
-                              fresh: bool = False) -> Dict[str, Any]:
+                              fresh: bool = False) -> dict[str, Any]:
         cache_key = self._generate_cache_key(anilist_id, episode_number, category)
 
         # `fresh` skips the cache. Stream URLs carry tokens that can die long
@@ -248,7 +253,7 @@ class ResolverOrchestrator:
         # asyncio.wait never raises for a task's own failure or cancellation,
         # so neither can be mistaken for this request being cancelled.
         await asyncio.wait(other_tasks)
-        other_results = [
+        other_results: list[dict[str, Any] | BaseException] = [
             {"error": "timed out"} if t.cancelled() else (t.exception() or t.result())
             for t in other_tasks
         ]
@@ -270,7 +275,7 @@ class ResolverOrchestrator:
             else:
                 valid_results.append(r)
         
-        valid_other_results = [r for r in other_results if not isinstance(r, Exception) and "error" not in r]
+        valid_other_results = [r for r in other_results if isinstance(r, dict) and "error" not in r]
         
         # Only trust streams that carry the requested category tag. Providers that
         # silently fall back (e.g. dub -> sub) must not pollute a dub request.
@@ -284,7 +289,7 @@ class ResolverOrchestrator:
         # A provider that timed out proves nothing about whether a dub exists,
         # and reporting False there made the player hide a Dub that does exist.
         other_timed_out = any(
-            isinstance(r, Exception) or (isinstance(r, dict) and "timed out" in str(r.get("error", "")))
+            isinstance(r, BaseException) or "timed out" in str(r.get("error", ""))
             for r in other_results
         )
         if category == "dub" and valid_results:
@@ -347,10 +352,10 @@ class ResolverOrchestrator:
         
         return final_result
 
-from app.providers.vidsrc import VidSrcProvider
-from app.providers.gogoanime import GogoAnimeProvider
 from app.providers.aniwatch import AniWatchProvider
 from app.providers.aniwatchone import AniWatchOneProvider
+from app.providers.gogoanime import GogoAnimeProvider
+from app.providers.vidsrc import VidSrcProvider
 from app.providers.zokoanime import ZokoAnimeProvider
 
 # Instantiate orchestrator with the REAL VidSrc provider (Cloudflare Immune!)
