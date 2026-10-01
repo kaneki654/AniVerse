@@ -96,7 +96,7 @@ class ResolverOrchestrator:
 
     # A single provider must not be able to hold up the whole response; the
     # others' streams are worth more than one slow provider's.
-    PROVIDER_TIMEOUT_SECONDS = 60
+    PROVIDER_TIMEOUT_SECONDS: float = 60
 
     # ...unless nothing else found anything. Byse (AniWatchOne) solves a
     # proof-of-work per stream, one at a time across every request, so when a
@@ -105,7 +105,7 @@ class ResolverOrchestrator:
     # 100, Konosuba, The Promised Neverland and eight more exactly that way.
     # The extra time is only spent when the episode would otherwise fail, so it
     # costs nothing on any episode that already has a stream.
-    LAST_RESORT_EXTRA_SECONDS = 75
+    LAST_RESORT_EXTRA_SECONDS: float = 75
 
     # Once one provider has a stream, the rest get this much longer to add
     # theirs and are then cut off. Waiting the full PROVIDER_TIMEOUT_SECONDS
@@ -113,7 +113,7 @@ class ResolverOrchestrator:
     # a 60-title sweep took 60-135s on a third of them while a stream had been
     # ready within seconds -- and to the viewer a spinner that long reads as
     # "not available". The stragglers are fallbacks; the fast ones already are.
-    SETTLE_SECONDS = 15
+    SETTLE_SECONDS: float = 15
 
     async def _run(self, provider: BaseProvider, anilist_id: str,
                    episode_number: int, category: str) -> dict[str, Any]:

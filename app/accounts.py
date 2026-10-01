@@ -151,6 +151,13 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _inserted_id(cur: sqlite3.Cursor) -> int:
+    """The row id an INSERT just created; sqlite sets it on every one."""
+    if cur.lastrowid is None:
+        raise RuntimeError("INSERT did not report a row id")
+    return cur.lastrowid
+
+
 def _new_session(conn: sqlite3.Connection, user_id: int) -> str:
     token = secrets.token_urlsafe(32)
     now = int(time.time())
@@ -355,7 +362,7 @@ def register(body: Credentials, request: Request):
             )
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=409, detail="That username is taken")
-        user_id = cur.lastrowid
+        user_id = _inserted_id(cur)
         token = _new_session(conn, user_id)
         row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
         return {"token": token, "user": _user_json(row)}
@@ -400,7 +407,7 @@ def login_google(body: GoogleLogin):
                 " VALUES (?, ?, ?, ?, ?)",
                 (sub, email, name, picture, int(time.time())),
             )
-            user_id = cur.lastrowid
+            user_id = _inserted_id(cur)
         else:
             user_id = row["id"]
             conn.execute(

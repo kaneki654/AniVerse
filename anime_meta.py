@@ -246,7 +246,7 @@ def kitsu_to_media(
         "episodes": attrs.get("episodeCount"),
         "genres": [g for g in genres if g],
         "averageScore": score,
-        "status": _KITSU_STATUS.get(attrs.get("status"), "FINISHED"),
+        "status": _KITSU_STATUS.get(attrs.get("status") or "", "FINISHED"),
         # AniWatch rejects a candidate stream whose runtime is nowhere near the
         # expected one, so episodeLength has to survive the fallback -- without
         # it every show looks like the 24-minute default and the check goes

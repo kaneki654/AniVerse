@@ -4,7 +4,7 @@ A lightweight anime streaming application built with FastAPI, Jinja2, Vanilla JS
 
 ## Prerequisites
 
-- Python 3.9+
+- Python 3.12+ (the pinned numpy needs it)
 - Internet connection
 
 ## Setup
@@ -36,6 +36,26 @@ tunnel, and what to do when that URL changes -- are in **[SETUP.md](SETUP.md)**.
 > and holds only the frontend's packages -- every backend one is missing from
 > it. Install the requirements normally and keep it off `PYTHONPATH` on both
 > platforms.
+
+## Type checking
+
+The Python code is type-checked with [Pyright](https://github.com/microsoft/pyright).
+Settings live in `pyrightconfig.json`, which VS Code's Pylance also reads, so
+the editor underlines the same problems the command reports. Install it once:
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+```
+
+Then run it from the repo root before committing; it should report `0 errors`:
+
+```bash
+pyright
+```
+
+It checks the frontend (`app/`), the backend (`AniVerseApiUrl/app/`), the shared
+`anime_meta.py`, `scripts/` and the tests. The one-off `fix_*`/`patch_*` scripts
+in the root are left out.
 
 ## Features
 

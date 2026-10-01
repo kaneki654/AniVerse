@@ -11,6 +11,12 @@ app survives an AniList outage.
 import importlib.util as _util
 import os as _os
 import sys as _sys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    # What the loader below re-exports, spelled out for type checkers, which
+    # cannot follow a module loaded by path. Never runs.
+    from anime_meta import *  # noqa: F403
 
 _ROOT = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.dirname(
     _os.path.abspath(__file__)))))

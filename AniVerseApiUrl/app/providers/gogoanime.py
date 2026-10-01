@@ -25,7 +25,7 @@ class GogoAnimeProvider(BaseProvider):
     ]
 
     def __init__(self):
-        self._base_url: str = None
+        self._base_url: str | None = None
 
     @property
     def name(self) -> str:
@@ -179,7 +179,7 @@ class GogoAnimeProvider(BaseProvider):
                     a = li.css_first("p.name a")
                     if not a:
                         continue
-                    href = a.attributes.get("href", "")
+                    href = a.attributes.get("href") or ""
                     m = re.match(r'/category/(.+)$', href)
                     if not m:
                         continue
@@ -209,7 +209,7 @@ class GogoAnimeProvider(BaseProvider):
     _EP_IN_TITLE_RE = re.compile(r'\bepisode\s*(\d+)', re.I)
 
     async def _page_is_expected(self, client: httpx.AsyncClient, tree, anilist_id: str,
-                                episode_num: int, episode_id: str) -> bool:
+                                episode_num: int | None, episode_id: str) -> bool:
         """Confirm the episode page is the anime and episode that was requested."""
         heading = tree.css_first(".title_name") or tree.css_first("h1")
         heading = heading.text(strip=True) if heading else ""
@@ -249,7 +249,7 @@ class GogoAnimeProvider(BaseProvider):
         return False
 
     async def get_servers(self, client: httpx.AsyncClient, episode_id: str, category: str = "sub",
-                          anilist_id: str = None, episode_num: int = None) -> List[Dict[str, str]]:
+                          anilist_id: str | None = None, episode_num: int | None = None) -> List[Dict[str, str]]:
         """Scrape the episode page for iframe embed links (Vidstreaming/Goload)"""
         url = f"{self._base_url}/{episode_id}"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}

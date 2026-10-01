@@ -4,6 +4,7 @@ import re
 from urllib.parse import urljoin, quote, unquote, urlparse
 from datetime import date as dt
 import asyncio
+from typing import Any
 
 # Add libs to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'libs')))
@@ -33,7 +34,7 @@ MANGA_PROXY = "https://consumet-swart-nine.vercel.app/manga/mangadex/proxy?url="
 DEFAULT_REFERER = "https://hianime.to/"
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-def get_proxy_headers(referer: str = None):
+def get_proxy_headers(referer: str | None = None):
     return {
         "User-Agent": USER_AGENT,
         "Referer": referer if referer else DEFAULT_REFERER,
@@ -165,9 +166,10 @@ async def home(request: Request):
 
         stale_ok = cached and now - cached["written_at"] < HOME_CACHE_STALE_TTL
         for name in list(sections.keys()):
-            if fresh.get(name):
-                sections[name] = fresh[name]
-            elif stale_ok:
+            section = fresh.get(name)
+            if section:
+                sections[name] = section
+            elif stale_ok and cached:
                 sections[name] = cached["sections"].get(name, [])
 
         if any(sections.values()):
@@ -243,7 +245,7 @@ async def search_suggestion(q: str):
             return {"data": {"suggestions": []}}
 
 @app.get("/search", response_class=HTMLResponse)
-async def search(request: Request, q: str = "", genres: str = None, page: int = 1):
+async def search(request: Request, q: str = "", genres: str | None = None, page: int = 1):
     all_genres_list = [
         "Action", "Adventure", "Comedy", "Drama", "Ecchi", "Fantasy", 
         "Horror", "Mahou Shoujo", "Mecha", "Music", "Mystery", 
@@ -279,7 +281,7 @@ async def search(request: Request, q: str = "", genres: str = None, page: int = 
     }
     '''
     
-    variables = {"page": page}
+    variables: dict[str, Any] = {"page": page}
     if q:
         variables["search"] = q
         variables["sort"] = ["SEARCH_MATCH", "POPULARITY_DESC"]
@@ -327,7 +329,7 @@ async def search(request: Request, q: str = "", genres: str = None, page: int = 
     )
 
 @app.get("/anime/browse", response_class=HTMLResponse)
-async def browse(request: Request, page: int = 1, genres: str = None):
+async def browse(request: Request, page: int = 1, genres: str | None = None):
     # Just redirect browse to search without query, it does the exact same thing but correctly filters
     from fastapi.responses import RedirectResponse
     url = f"/search?page={page}"
@@ -414,7 +416,7 @@ async def watch_episode(request: Request, anime_id: str, ep_num: int):
       }
     }
     '''
-    anime_info = {"name": f"Anime {anime_id}", "poster": ""}
+    anime_info: dict[str, Any] = {"name": f"Anime {anime_id}", "poster": ""}
     episodes = []
     
     async with httpx.AsyncClient() as client:
@@ -957,7 +959,7 @@ async def manga_read(request: Request, manga_id: str, chapter_id: str):
 
 
 @app.api_route("/proxy/stream", methods=["GET", "HEAD"])
-async def proxy_stream(request: Request, url: str, referer: str = None):
+async def proxy_stream(request: Request, url: str, referer: str | None = None):
     headers = {"User-Agent": USER_AGENT}
     if referer:
         headers["Referer"] = referer
@@ -1003,7 +1005,7 @@ async def proxy_stream(request: Request, url: str, referer: str = None):
         return Response(status_code=500, content="Proxy Stream Error")
 
 @app.get("/proxy/m3u8")
-async def proxy_m3u8(url: str, referer: str = None):
+async def proxy_m3u8(url: str, referer: str | None = None):
     headers = {"User-Agent": USER_AGENT}
     if referer:
         headers["Referer"] = referer
@@ -1057,7 +1059,7 @@ async def proxy_m3u8(url: str, referer: str = None):
                             content="Proxy Error")
 
 @app.get("/proxy/ts")
-async def proxy_ts(url: str, referer: str = None):
+async def proxy_ts(url: str, referer: str | None = None):
     headers = {"User-Agent": USER_AGENT}
     if referer:
         headers["Referer"] = referer
@@ -1075,7 +1077,7 @@ async def proxy_ts(url: str, referer: str = None):
     return StreamingResponse(stream_ts(), media_type="video/mp2t")
 
 @app.get("/proxy/subtitle")
-async def proxy_subtitle(url: str, referer: str = None):
+async def proxy_subtitle(url: str, referer: str | None = None):
     headers = {"User-Agent": USER_AGENT}
     if referer:
         headers["Referer"] = referer

@@ -263,29 +263,12 @@ class BaseProvider(abc.ABC):
         norm_b = self.normalize_title(b)
         return fuzz.ratio(norm_a, norm_b) > 85
 
+    # resolve() is the whole contract: it is all the orchestrator calls. Each
+    # provider runs its own map -> episode -> servers -> extract steps inside
+    # it, and those cannot share one signature -- every step takes the
+    # provider's open client, and each site needs different extra arguments (a
+    # category, the AniList id, an expected runtime) -- so they are not
+    # declared here. Declared, no provider matched them and nothing called them.
     @abc.abstractmethod
     async def resolve(self, anilist_id: str, episode: int, category: str = "sub") -> Dict[str, Any]:
-        """
-        Full pipeline: Map -> Get Episode -> Get Servers -> Extract
-        """
-        pass
-
-    @abc.abstractmethod
-    async def map_anime(self, anilist_id: str) -> str:
-        """Map Anilist ID to Provider Anime ID"""
-        pass
-
-    @abc.abstractmethod
-    async def get_episode(self, anime_id: str, episode_num: int) -> str:
-        """Get Provider Episode ID"""
-        pass
-
-    @abc.abstractmethod
-    async def get_servers(self, episode_id: str) -> List[Dict[str, str]]:
-        """Get Episode Servers"""
-        pass
-
-    @abc.abstractmethod
-    async def extract(self, servers: List[Dict[str, str]]) -> Dict[str, Any]:
-        """Extract streams from servers using ExtractorEngine"""
-        pass
+        """Streams and subtitles for one episode, or {"error": reason}."""

@@ -67,7 +67,7 @@ class ZokoAnimeProvider(BaseProvider):
         async with httpx.AsyncClient(timeout=20.0, follow_redirects=True,
                                      headers={"User-Agent": UA}) as client:
             try:
-                mal_id = await self._mal_id(client, anilist_id)
+                mal_id = await self.map_anime(client, anilist_id)
                 if not mal_id:
                     return {"error": "No MyAnimeList ID for this anime"}
 
@@ -94,18 +94,8 @@ class ZokoAnimeProvider(BaseProvider):
             except (httpx.HTTPError, RuntimeError, ValueError) as e:
                 return {"error": f"ZokoAnime failed: {type(e).__name__}: {e}"}
 
-    async def map_anime(self, anilist_id: str) -> str:
-        """The AniList entry's MyAnimeList ID, or "" when it has none."""
-        async with httpx.AsyncClient(timeout=20.0, headers={"User-Agent": UA}) as client:
-            mal_id = await self._mal_id(client, anilist_id)
-        return str(mal_id) if mal_id else ""
-
-    async def _mal_id(self, client: httpx.AsyncClient, anilist_id: str) -> int | None:
-        """
-        The AniList entry's MyAnimeList ID -- the only mapping this needs.
-
-        Takes the caller's client so a resolve makes one connection, not two.
-        """
+    async def map_anime(self, client: httpx.AsyncClient, anilist_id: str) -> int | None:
+        """The AniList entry's MyAnimeList ID -- the only mapping this needs."""
         info = await anilist_media.get_media(client, anilist_id)
         mal = info.get("mal_id")
         try:
@@ -159,14 +149,3 @@ class ZokoAnimeProvider(BaseProvider):
             "intro": _skip(skip.get("intro")),
             "outro": _skip(skip.get("outro")),
         }
-
-    # BaseProvider's step-by-step hooks. This source needs no episode or server
-    # lookup -- the MAL-keyed address is the episode -- so they are trivial.
-    async def get_episode(self, anime_id: str, episode_num: int) -> str:
-        return str(episode_num)
-
-    async def get_servers(self, episode_id: str) -> list[dict[str, str]]:
-        return []
-
-    async def extract(self, servers: list[dict[str, str]]) -> dict[str, Any]:
-        return {"streams": [], "subtitles": []}

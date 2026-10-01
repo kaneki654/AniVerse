@@ -270,7 +270,7 @@ class AniWatchOneProvider(BaseProvider):
         self._byse_cache: Dict[str, Dict[str, Any]] = {}
         self._byse_cache_lock = threading.Lock()
 
-    def _headers(self, referer: str = None) -> Dict[str, str]:
+    def _headers(self, referer: str | None = None) -> Dict[str, str]:
         headers = {
             "User-Agent": BYSE_UA,
             "Accept": "application/json, text/html, */*",
@@ -350,7 +350,7 @@ class AniWatchOneProvider(BaseProvider):
                     a = item.css_first('a[href*="/watch/"]')
                     if not a:
                         continue
-                    href = a.attributes.get("href", "")
+                    href = a.attributes.get("href") or ""
                     m = re.search(r'/watch/(.+)-(\d+)$', href)
                     if not m:
                         continue
@@ -431,7 +431,7 @@ class AniWatchOneProvider(BaseProvider):
         return ""
 
     async def get_episode(self, client: httpx.AsyncClient, anime_id: str, episode_num: int,
-                          anilist_id: str = None) -> str:
+                          anilist_id: str | None = None) -> str:
         """Find the episode route for a given episode number.
 
         The record page names the anime it belongs to, so this is the last place

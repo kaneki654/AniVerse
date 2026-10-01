@@ -22,7 +22,7 @@ async def stream_proxy(url: str, headers: dict):
             yield b""
 
 @router.get("/m3u8")
-async def proxy_m3u8(url: str, request: Request, referer: str = None):
+async def proxy_m3u8(url: str, request: Request, referer: str | None = None):
     """
     Proxy an M3U8 playlist and rewrite all absolute URLs so the TS chunks 
     are forced through the backend stream proxy to bypass CORS/Cloudflare.
@@ -82,7 +82,7 @@ async def proxy_m3u8(url: str, request: Request, referer: str = None):
             raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/stream")
-async def proxy_stream(url: str, request: Request, referer: str = None):
+async def proxy_stream(url: str, request: Request, referer: str | None = None):
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
         
@@ -94,7 +94,7 @@ async def proxy_stream(url: str, request: Request, referer: str = None):
     return StreamingResponse(stream_proxy(url, headers), media_type="video/mp2t")
 
 @router.get("/subtitle")
-async def proxy_subtitle(url: str, referer: str = None):
+async def proxy_subtitle(url: str, referer: str | None = None):
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     if referer:
         headers["Referer"] = referer

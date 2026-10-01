@@ -26,7 +26,7 @@ class AniListService:
     _MAX_ATTEMPTS = 3
 
     @classmethod
-    async def _execute_query(cls, query: str, variables: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
+    async def _execute_query(cls, query: str, variables: Dict[str, Any] | None = None) -> Optional[Dict[str, Any]]:
         payload = {"query": query, "variables": variables or {}}
         async with httpx.AsyncClient(timeout=20) as client:
             for attempt in range(cls._MAX_ATTEMPTS):

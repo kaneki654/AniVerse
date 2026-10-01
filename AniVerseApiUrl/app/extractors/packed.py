@@ -20,7 +20,11 @@ class PackedExtractor(BaseExtractor):
         ctx = MiniRacer()
         ctx.eval(wrapper)
         unpacked = ctx.eval("unpack()")
-        
+        # The unpacked player script; anything else (undefined, a number) has
+        # no stream in it.
+        if not isinstance(unpacked, str):
+            return {"streams": [], "raw": unpacked}
+
         sources = []
         # Look for url: "https://..." or file: "https://..."
         match = re.search(r'(?:url|file):\s*["\'](https?://[^"\']+)["\']', unpacked)

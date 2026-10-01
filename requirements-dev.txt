@@ -1,0 +1,6 @@
+# Development tools, on top of requirements.txt and
+# AniVerseApiUrl/requirements.txt. See "Type checking" in README.md.
+#
+# The [nodejs] extra brings its own Node runtime, so pyright works the same on
+# Windows and Linux without Node installed.
+pyright[nodejs]>=1.1.414

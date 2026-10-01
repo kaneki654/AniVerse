@@ -37,16 +37,22 @@ DENSITIES = {"mdpi": 1, "hdpi": 1.5, "xhdpi": 2, "xxhdpi": 3, "xxxhdpi": 4}
 
 def pixelate() -> Image.Image:
     src = Image.open(SOURCE).convert("RGBA")
-    src = src.crop(src.getchannel("A").point(lambda v: 255 if v > 20 else 0).getbbox())
+    src = src.crop(src.getchannel("A").point([255 if v > 20 else 0 for v in range(256)]).getbbox())
     w, h = GRID, round(GRID * src.height / src.width)
-    small = src.resize((w, h), Image.BOX)
+    small = src.resize((w, h), Image.Resampling.BOX)
+
+    def rgba(x: int, y: int) -> tuple[int, ...]:
+        p = small.getpixel((x, y))
+        if not isinstance(p, tuple):  # an RGBA image's pixels are 4-tuples
+            raise TypeError(f"expected an RGBA pixel, got {p!r}")
+        return p
 
     def shade(rgb):
         return min(range(len(RAMP)),
                    key=lambda i: sum((a - b) ** 2 for a, b in zip(RAMP[i], rgb)))
 
     # Hard edges: a pixel is either logo or clear, never half-transparent.
-    grid = [[shade(small.getpixel((x, y))[:3]) if small.getpixel((x, y))[3] >= 128 else None
+    grid = [[shade(rgba(x, y)[:3]) if rgba(x, y)[3] >= 128 else None
              for x in range(w)] for y in range(h)]
 
     # A shade none of its four neighbours share is downsampling noise, not
@@ -66,8 +72,9 @@ def pixelate() -> Image.Image:
     art = Image.new("RGBA", (w + 2, h + 2), (0, 0, 0, 0))
     for y in range(h):
         for x in range(w):
-            if grid[y][x] is not None:
-                art.putpixel((x + 1, y + 1), RAMP[grid[y][x]] + (255,))
+            level = grid[y][x]
+            if level is not None:
+                art.putpixel((x + 1, y + 1), RAMP[level] + (255,))
 
     # One-pixel outline round the whole shape, as sprites are drawn.
     alpha = art.getchannel("A")
@@ -85,7 +92,7 @@ def placed(art: Image.Image, canvas: int, target: float) -> Image.Image:
     """[art] centred on a clear square canvas, scaled by a whole number so
     every art pixel is the same size, as close to [target] wide as that allows."""
     k = max(1, int(target // art.width))
-    big = art.resize((art.width * k, art.height * k), Image.NEAREST)
+    big = art.resize((art.width * k, art.height * k), Image.Resampling.NEAREST)
     out = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
     out.alpha_composite(big, ((canvas - big.width) // 2, (canvas - big.height) // 2))
     return out

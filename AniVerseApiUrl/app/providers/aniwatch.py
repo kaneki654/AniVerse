@@ -23,7 +23,7 @@ class AniWatchProvider(BaseProvider):
     def rest_url(self) -> str:
         return f"{self.base_url}/wp-json/hianime/v1"
 
-    def _headers(self, referer: str = None) -> Dict[str, str]:
+    def _headers(self, referer: str | None = None) -> Dict[str, str]:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "application/json, text/html, */*",
@@ -112,7 +112,7 @@ class AniWatchProvider(BaseProvider):
 
                 tree = HTMLParser(search_data["html"])
                 for link in tree.css('a[href*="/anime/"]'):
-                    anime_url = link.attributes.get("href", "")
+                    anime_url = link.attributes.get("href") or ""
                     m = re.search(r'/anime/([^/]+)/?$', anime_url)
                     if not m:
                         continue
@@ -337,7 +337,7 @@ class AniWatchProvider(BaseProvider):
             return None
 
     async def get_episode(self, client: httpx.AsyncClient, anime_id: str, episode_num: int,
-                          anilist_id: str = None) -> str:
+                          anilist_id: str | None = None) -> str:
         """AniWatch post ID for an episode, confirmed against Ani.zip's title.
 
         Matching on the site's own numbering alone is wrong whenever the record

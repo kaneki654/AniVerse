@@ -1,0 +1,29 @@
+{
+  // Type checking for the Python source: `pyright` from the repo root (see
+  // README). VS Code's Pylance reads this same file, so the editor and the
+  // command line report the same problems.
+  "include": [
+    "app",
+    "anime_meta.py",
+    "scripts",
+    "tests",
+    "AniVerseApiUrl/app",
+    "AniVerseApiUrl/tests",
+    "AniVerseApiUrl/run.py"
+  ],
+  "exclude": ["**/__pycache__"],
+
+  // The floor the pinned dependencies set: numpy>=2.5 needs 3.12.
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "standard",
+
+  // The frontend and the backend are both a top-level package called `app`,
+  // so each needs its own import root or `app` would mean the wrong one. The
+  // backend also sees the repo root, for the shared anime_meta module.
+  "executionEnvironments": [
+    { "root": "AniVerseApiUrl", "extraPaths": ["."] },
+    // Runs the backend's providers: it puts AniVerseApiUrl on sys.path itself.
+    { "root": "scripts/diagnose_mapping.py", "extraPaths": ["AniVerseApiUrl"] },
+    { "root": "." }
+  ]
+}
