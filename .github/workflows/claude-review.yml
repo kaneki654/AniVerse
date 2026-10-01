@@ -1,0 +1,34 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request. Check for bugs, security issues,
+            missing error handling, memory/resource leaks (C, Rust),
+            null-safety and lifecycle problems (Kotlin), performance
+            problems, and edge cases.
+
+            Output issues sorted by severity (critical / major / minor),
+            each with file:line, why it's a problem, and a fix.
+            Skip style nitpicks. End with a one-paragraph verdict.
