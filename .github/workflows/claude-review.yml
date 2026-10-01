@@ -32,3 +32,8 @@ jobs:
             Output issues sorted by severity (critical / major / minor),
             each with file:line, why it's a problem, and a fix.
             Skip style nitpicks. End with a one-paragraph verdict.
+
+            Use `gh pr diff` and `gh pr view` to read the PR, then post the
+            review as a single PR comment with `gh pr comment`.
+          claude_args: |
+            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
