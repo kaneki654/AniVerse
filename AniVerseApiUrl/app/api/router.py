@@ -79,6 +79,21 @@ async def resolve(anilist_id: str, episode_number: int, category: str = "sub", f
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/next/{anilist_id}/{episode_number}")
+async def next_episode(anilist_id: str, episode_number: int):
+    """The episode that follows `episode_number`, for the player's autoplay."""
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            media = await anilist_media.get_full_media(client, anilist_id)
+    except Exception:
+        pass
+    episodes = list(range(1, (media.get("episodes") or 0) + 1))
+    for i in range(len(episodes)):
+        if episodes[i] == episode_number:
+            return {"next": episodes[i + 1]}
+    return {"next": None}
+
+
 @router.get("/latest")
 async def latest_anime(page: int = 1, per_page: int = 12):
     return await anilist_service.get_recently_updated(page, per_page)

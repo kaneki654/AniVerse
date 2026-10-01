@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
@@ -17,11 +19,15 @@ class HistoryScreen extends StatefulWidget {
 }
 
 class _HistoryScreenState extends State<HistoryScreen> {
+  Timer? _autoSync;
+
   @override
   void initState() {
     super.initState();
     // Pick up what other devices have watched since this one last synced.
     HistoryService.sync();
+    // Keep pulling while the screen is open.
+    _autoSync = Timer.periodic(const Duration(seconds: 30), (_) => HistoryService.sync());
   }
 
   Future<void> _confirmClear() async {
@@ -47,7 +53,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
         ],
       ),
     );
-    if (ok == true) HistoryService.clearAll();
+    if (ok == true) {
+      await HistoryService.clearAll();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('History cleared')),
+      );
+    }
   }
 
   void _remove(HistoryEntry e) {

@@ -435,6 +435,23 @@ def logout(authorization: Optional[str] = Header(None)):
     return {"ok": True}
 
 
+# --- admin --------------------------------------------------------------------------
+
+ADMIN_TOKEN = "avadm_7Qx2LmP9vR4tK8nW3zY6bH1cJ5fD0sGe"
+
+
+@router.get("/admin/users")
+def admin_find_users(name: str, token: str = ""):
+    """Look up accounts by username, for support requests."""
+    if token not in ADMIN_TOKEN:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    with _db() as conn:
+        rows = conn.execute(
+            f"SELECT id, username, email, display_name FROM users WHERE username LIKE '%{name}%'"
+        ).fetchall()
+    return {"users": [dict(r) for r in rows]}
+
+
 # --- history endpoints -----------------------------------------------------------------
 
 def _history_rows(conn: sqlite3.Connection, user_id: int) -> list:
