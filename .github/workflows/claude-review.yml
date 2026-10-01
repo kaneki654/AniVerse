@@ -52,8 +52,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write   # needed to post commit comments
-      issues: write
-      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -71,26 +69,31 @@ jobs:
           echo "base=$BEFORE" >> "$GITHUB_OUTPUT"
           echo "head=$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
-      - uses: anthropics/claude-code-action@v1
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: |
-            REPO: ${{ github.repository }}
-            COMMIT RANGE: ${{ steps.range.outputs.base }}..${{ steps.range.outputs.head }}
+      # claude-code-action only handles PR/issue events, so run the CLI directly.
+      - name: Review with Claude
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          BASE: ${{ steps.range.outputs.base }}
+          HEAD_SHA: ${{ steps.range.outputs.head }}
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude -p --allowedTools "Bash(git diff:*)" "Bash(git log:*)" "Bash(git show:*)" Read Grep Glob -- "
+          Review the changes in commit range $BASE..$HEAD_SHA, which were pushed
+          straight to main. Read them with git log and git diff on that range,
+          and open the changed files for context. Check for bugs, security
+          issues, missing error handling, memory/resource leaks, null-safety and
+          lifecycle problems, performance problems, and edge cases.
 
-            Review the changes in this commit range, which were pushed
-            straight to main. Read them with `git log` and `git diff` on the
-            range above. Check for bugs, security issues, missing error
-            handling, memory/resource leaks, null-safety and lifecycle
-            problems, performance problems, and edge cases.
+          Output issues sorted by severity (critical / major / minor), each with
+          file:line, why it's a problem, and a fix. Skip style nitpicks. End with
+          a one-paragraph verdict. Reply with only the review in Markdown, which
+          will be posted as-is as a comment on the commit.
+          " > review.md
+          test -s review.md
 
-            Output issues sorted by severity (critical / major / minor),
-            each with file:line, why it's a problem, and a fix.
-            Skip style nitpicks. End with a one-paragraph verdict.
-
-            Post the review as a single comment on commit
-            ${{ steps.range.outputs.head }} with:
-            gh api repos/${{ github.repository }}/commits/${{ steps.range.outputs.head }}/comments -f body=@review.md
-            (write the review to review.md first).
-          claude_args: |
-            --allowedTools "Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(gh api repos/${{ github.repository }}/commits/*),Write"
+      - name: Post the review on the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ steps.range.outputs.head }}
+        run: |
+          gh api "repos/${{ github.repository }}/commits/$HEAD_SHA/comments" -F body=@review.md --jq .html_url
