@@ -34,7 +34,8 @@ _lock = asyncio.Lock()
 
 
 def _cache_key(anilist_id: str) -> str:
-    return f"anilist:media:{anilist_id}"
+    # v2: the shape gained mal_id; an old entry without it must not be reused.
+    return f"anilist:media:v2:{anilist_id}"
 
 
 def _shape(media: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -46,6 +47,7 @@ def _shape(media: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "episodes": media.get("episodes"),
         "duration": media.get("duration") or 24,
         "format": media.get("format") or "TV",
+        "mal_id": media.get("idMal"),
     }
 
 

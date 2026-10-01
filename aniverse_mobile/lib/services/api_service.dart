@@ -266,6 +266,15 @@ class ApiService {
         if (url.startsWith('/')) {
           map['url'] = '$webUrl$url';
         }
+        // The subtitle files timed to this source. Most "sub" streams are the
+        // raw episode with the text in a separate file, so without these the
+        // episode plays in Japanese with nothing on screen.
+        map['subtitles'] = ((map['subtitles'] ?? []) as List).map((t) {
+          final track = Map<String, dynamic>.from(t as Map);
+          final u = (track['url'] ?? '').toString();
+          if (u.startsWith('/')) track['url'] = '$webUrl$u';
+          return track;
+        }).toList();
         return map;
       }).toList();
 
@@ -282,6 +291,20 @@ class ApiService {
     } catch (e) {
       print('getSources failed: $e');
       return {'sources': [], 'error': "Can't reach the AniVerse server.", 'offline': true};
+    }
+  }
+
+  /// A WebVTT subtitle file's text, or null if it could not be had. The proxy
+  /// answers 200 even when the host refused it, so the body is what is checked.
+  static Future<String?> getSubtitleFile(String url) async {
+    try {
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 20));
+      if (response.statusCode != 200) return null;
+      final text = utf8.decode(response.bodyBytes, allowMalformed: true).replaceFirst('﻿', '');
+      return text.trimLeft().startsWith('WEBVTT') ? text : null;
+    } catch (e) {
+      print('getSubtitleFile failed: $e');
+      return null;
     }
   }
 }

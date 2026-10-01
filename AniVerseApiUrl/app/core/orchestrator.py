@@ -1,6 +1,6 @@
 import asyncio
 import hashlib
-from typing import List, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple
 from app.providers.base import BaseProvider
 from app.core.cache import cache
 
@@ -17,6 +17,14 @@ class ResolverOrchestrator:
         normalized_subtitles = []
         for res in results:
             if "streams" in res and len(res["streams"]) > 0:
+                # Each stream keeps the subtitle files its own provider gave:
+                # they are timed to that encode, and another provider's cut of
+                # the same episode can be seconds out (a different intro, a
+                # recap). The app shows a source's own tracks, never the pool.
+                tracks = [t for t in res.get("subtitles") or []
+                          if isinstance(t, dict) and t.get("kind", "captions") in ("captions", "subtitles")]
+                for stream in res["streams"]:
+                    stream.setdefault("subtitles", tracks)
                 normalized_streams.extend(res["streams"])
             if "subtitles" in res:
                 normalized_subtitles.extend(res["subtitles"])
@@ -27,6 +35,12 @@ class ResolverOrchestrator:
             url = stream.get("url", "")
             server_name = stream.get("server", "")
             
+            # ZokoAnime is looked up by MyAnimeList ID, not by title, so it
+            # cannot land on the wrong show or season, and its audio track is
+            # the category it was asked for.
+            if server_name == "ZokoAnime":
+                return 0
+
             # GogoAnime servers (guaranteed correct audio track)
             if "vibeplayer.site" in url:
                 return 0
@@ -91,6 +105,14 @@ class ResolverOrchestrator:
     # costs nothing on any episode that already has a stream.
     LAST_RESORT_EXTRA_SECONDS = 75
 
+    # Once one provider has a stream, the rest get this much longer to add
+    # theirs and are then cut off. Waiting the full PROVIDER_TIMEOUT_SECONDS
+    # for every straggler held a playable episode back for a minute or more --
+    # a 60-title sweep took 60-135s on a third of them while a stream had been
+    # ready within seconds -- and to the viewer a spinner that long reads as
+    # "not available". The stragglers are fallbacks; the fast ones already are.
+    SETTLE_SECONDS = 15
+
     async def _run(self, provider: BaseProvider, anilist_id: str,
                    episode_number: int, category: str) -> Dict[str, Any]:
         """provider.resolve() with any exception turned into an error result."""
@@ -102,10 +124,12 @@ class ResolverOrchestrator:
             return {"error": f"{provider.__class__.__name__}: {type(e).__name__}: {e}"}
 
     async def _resolve_requested(self, anilist_id: str, episode_number: int,
-                                 category: str) -> List[Dict[str, Any]]:
-        """Every provider's result for the requested category, in provider order.
+                                 category: str) -> Tuple[List[Dict[str, Any]], Optional[float]]:
+        """Every provider's result for the requested category, in provider order,
+        and the loop time the settle cutoff fell at (None if nothing played).
 
-        Waits for all of them up to PROVIDER_TIMEOUT_SECONDS, as before. If by
+        Waits for all of them up to PROVIDER_TIMEOUT_SECONDS, as before, except
+        that once one has a stream the rest get only SETTLE_SECONDS more. If by
         then nothing has produced a stream and some are still working, those get
         LAST_RESORT_EXTRA_SECONDS more, and the wait ends the moment one of them
         delivers. Anything still running after that is cancelled, which also
@@ -117,13 +141,21 @@ class ResolverOrchestrator:
                  for p in self.providers]
         deadline = loop.time() + self.PROVIDER_TIMEOUT_SECONDS
         extended = False
+        settle_at = None
         pending = set(tasks)
 
         def playable() -> bool:
-            return any(t.done() and not t.cancelled() and (t.result() or {}).get("streams")
+            # In the requested category: a dub request drops sub streams later,
+            # so one must not start the settle countdown.
+            return any(t.done() and not t.cancelled()
+                       and any(s.get("category", category) == category
+                               for s in (t.result() or {}).get("streams") or [])
                        for t in tasks)
 
         while pending:
+            if settle_at is None and playable():
+                settle_at = min(deadline, loop.time() + self.SETTLE_SECONDS)
+                deadline = settle_at
             remaining = deadline - loop.time()
             if remaining <= 0:
                 if extended or playable():
@@ -147,11 +179,14 @@ class ResolverOrchestrator:
             name = provider.__class__.__name__
             if task in pending:
                 task.cancel()
-                print(f"Provider {name} timed out after {limit}s ({category})")
+                if settle_at is not None and not extended:
+                    print(f"Provider {name} cut off {self.SETTLE_SECONDS}s after the first stream ({category})")
+                else:
+                    print(f"Provider {name} timed out after {limit}s ({category})")
                 results.append({"error": f"{name} timed out"})
             else:
                 results.append(task.result())
-        return results
+        return results, settle_at
 
     async def _resolve_one(self, provider: BaseProvider, anilist_id: str,
                            episode_number: int, category: str) -> Dict[str, Any]:
@@ -196,13 +231,27 @@ class ResolverOrchestrator:
         # Started first so they run alongside the requested category; each is
         # capped at PROVIDER_TIMEOUT_SECONDS and never extended -- hasDub is a
         # menu hint, not worth making anyone wait for.
-        other_future = asyncio.gather(*[
-            self._resolve_one(provider, anilist_id, episode_number, other_category)
+        other_tasks = [
+            asyncio.create_task(self._resolve_one(provider, anilist_id, episode_number, other_category))
             for provider in other_providers
-        ], return_exceptions=True)
+        ]
 
-        results = await self._resolve_requested(anilist_id, episode_number, category)
-        other_results = await other_future
+        results, cut_at = await self._resolve_requested(anilist_id, episode_number, category)
+        if cut_at is not None:
+            # The requested category was cut short once it had a stream; the
+            # probe, started at the same moment, gets no longer than it did.
+            # Whatever is still running is "could not determine", not "no".
+            loop = asyncio.get_running_loop()
+            _, probing = await asyncio.wait(other_tasks, timeout=max(0.0, cut_at - loop.time()))
+            for task in probing:
+                task.cancel()
+        # asyncio.wait never raises for a task's own failure or cancellation,
+        # so neither can be mistaken for this request being cancelled.
+        await asyncio.wait(other_tasks)
+        other_results = [
+            {"error": "timed out"} if t.cancelled() else (t.exception() or t.result())
+            for t in other_tasks
+        ]
         
         valid_results = []
         for idx, r in enumerate(results):
@@ -302,6 +351,7 @@ from app.providers.vidsrc import VidSrcProvider
 from app.providers.gogoanime import GogoAnimeProvider
 from app.providers.aniwatch import AniWatchProvider
 from app.providers.aniwatchone import AniWatchOneProvider
+from app.providers.zokoanime import ZokoAnimeProvider
 
 # Instantiate orchestrator with the REAL VidSrc provider (Cloudflare Immune!)
-orchestrator = ResolverOrchestrator(providers=[GogoAnimeProvider(), VidSrcProvider(), AniWatchProvider(), AniWatchOneProvider()])
+orchestrator = ResolverOrchestrator(providers=[ZokoAnimeProvider(), GogoAnimeProvider(), VidSrcProvider(), AniWatchProvider(), AniWatchOneProvider()])

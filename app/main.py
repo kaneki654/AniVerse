@@ -569,6 +569,27 @@ def _stream_referer(stream: dict, data: dict) -> str:
     return data.get("headers", {}).get("Referer", "https://cloudnestra.com/")
 
 
+def _source_subtitles(stream: dict, referer: str) -> list:
+    """The subtitle tracks timed to this stream, as proxy paths.
+
+    Most "sub" streams are the raw episode with the subtitles in a separate
+    file, and those files are referer-locked like the video, so the app can
+    only fetch them through /proxy/subtitle.
+    """
+    tracks = []
+    for t in stream.get("subtitles") or []:
+        url = t.get("file") or t.get("url")
+        if not url:
+            continue
+        ref = t.get("referer") or referer
+        tracks.append({
+            "url": f"/proxy/subtitle?url={quote(url, safe='')}&referer={quote(ref, safe='')}",
+            "label": t.get("label") or t.get("lang") or "English",
+            "default": bool(t.get("default")),
+        })
+    return tracks
+
+
 async def _upstream_alive(client: httpx.AsyncClient, url: str, referer: str, is_m3u8: bool) -> bool:
     """Whether a stream's host still serves it, as the proxy would ask for it."""
     headers = {"User-Agent": USER_AGENT}
@@ -654,7 +675,8 @@ async def get_source(episode_id: str, server: str = "Auto", category: str = "sub
                     "url": proxy_url,
                     "isM3U8": "m3u8" in abs_url,
                     "quality": stream.get("quality", "auto"),
-                    "serverName": stream.get("server", "Auto")
+                    "serverName": stream.get("server", "Auto"),
+                    "subtitles": _source_subtitles(stream, referer),
                 })
 
             return {

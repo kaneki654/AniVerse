@@ -108,6 +108,22 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   Timer? _bufferShowTimer;
   Timer? _bufferHideTimer;
 
+  // Subtitles.
+  /// The viewer's pick from the CC button; null until they make one, which
+  /// means on for SUB and off for DUB (a dub's tracks mostly repeat its audio).
+  bool? _captionsChoice;
+
+  /// Whether the source playing now has its subtitle file loaded.
+  bool _hasCaptions = false;
+
+  /// Whether the HUD's bottom bar is showing, so the text can sit above it.
+  bool _hudVisible = true;
+
+  /// Parsed subtitle files by URL, so a reconnect does not fetch them again.
+  final Map<String, ClosedCaptionFile> _captionFiles = {};
+
+  bool get _captionsOn => _captionsChoice ?? category == 'sub';
+
   // History.
   Timer? _historyTimer;
   Duration _lastGoodPosition = Duration.zero;
@@ -200,6 +216,19 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
 
     _applySourceData(data);
     if (_sources.isEmpty) {
+      // No subbed copy anywhere, but the server found a dub: play that rather
+      // than an error screen with a button for it, and say why.
+      if (category == 'sub' && _hasDub == true && data['offline'] != true) {
+        setState(() {
+          category = 'dub';
+          _captionsChoice = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('No subbed version was found, so this is the English dub.'),
+          duration: Duration(seconds: 5),
+        ));
+        return _resolve();
+      }
       return _fail(_explain(data));
     }
 
@@ -422,13 +451,43 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       _phase = _Phase.playing;
       _attempt = 0;
       _retryAt = null;
+      _hasCaptions = false;
     });
+    if (index < _sources.length) _loadCaptions(c, _sources[index]);
     if (from == _Phase.opening || from == _Phase.reconnecting) _handOffOrb();
     // The frozen frame has done its job once the new player is up.
     final stale = _stale;
     _stale = null;
     if (old != null && old != stale) old.dispose();
     stale?.dispose();
+  }
+
+  /// Loads the source's own subtitle file into [c]. Done once the video is
+  /// already playing, not before: a slow or broken subtitle file must never be
+  /// what stops an episode from starting. Most "sub" streams are the raw
+  /// episode with the text in a separate file, so this is what puts the
+  /// subtitles on screen at all.
+  Future<void> _loadCaptions(VideoPlayerController c, Map<String, dynamic> source) async {
+    final tracks = ((source['subtitles'] ?? []) as List).whereType<Map>().toList();
+    if (tracks.isEmpty) return;
+    bool english(Map t) => (t['label'] ?? '').toString().toLowerCase().startsWith('english');
+    // The one the source flags as default, else English, else the first.
+    final track = tracks.firstWhere((t) => t['default'] == true,
+        orElse: () => tracks.firstWhere(english, orElse: () => tracks.first));
+    final url = (track['url'] ?? '').toString();
+    if (url.isEmpty) return;
+
+    var file = _captionFiles[url];
+    if (file == null) {
+      final text = await ApiService.getSubtitleFile(url);
+      if (text == null) return;
+      final parsed = WebVTTCaptionFile(text);
+      if (parsed.captions.isEmpty) return;
+      file = _captionFiles[url] = parsed;
+    }
+    if (!mounted || _controller != c) return;
+    await c.setClosedCaptionFile(Future.value(file));
+    if (mounted && _controller == c) setState(() => _hasCaptions = true);
   }
 
   /// Carry the loading orb into the player so it visibly fills to the top and
@@ -760,6 +819,8 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     setState(() {
       category = category == 'sub' ? 'dub' : 'sub';
       _controller = null;
+      _hasCaptions = false;
+      _captionsChoice = null;
       _bufferVisible = false;
       _wasBuffering = false;
     });
@@ -890,6 +951,12 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       fit: StackFit.expand,
       children: [
         Center(child: video),
+        // Not while the buffering orb is up: the picture is frozen, so the line
+        // is stale, and in the portrait player it lands on the orb's label.
+        if (_hasCaptions && _captionsOn && !_bufferVisible)
+          IgnorePointer(
+            child: _Captions(controller: controller, fullscreen: fullscreen, lifted: _hudVisible),
+          ),
         AniVersePlayerControls(
           controller: controller,
           title: widget.title == null
@@ -899,6 +966,11 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
           outro: _outro,
           category: category,
           onToggleCategory: _toggleCategory,
+          captionsOn: _hasCaptions ? _captionsOn : null,
+          onToggleCaptions: () => setState(() => _captionsChoice = !_captionsOn),
+          onHudVisibleChanged: (v) {
+            if (mounted && v != _hudVisible) setState(() => _hudVisible = v);
+          },
           isFullscreen: fullscreen,
           onToggleFullscreen: () => _toggleFullscreen(fullscreen),
           hideTransport: _bufferVisible,
@@ -1079,6 +1151,47 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// The subtitle line, drawn like game dialogue: pixel text on a dark box.
+class _Captions extends StatelessWidget {
+  final VideoPlayerController controller;
+  final bool fullscreen;
+
+  /// Raised clear of the HUD's bottom bar while it shows.
+  final bool lifted;
+
+  const _Captions({required this.controller, required this.fullscreen, required this.lifted});
+
+  @override
+  Widget build(BuildContext context) {
+    // The bottom bar is a seek track plus a row of buttons: 92dp tall in
+    // landscape, 60dp in the portrait player.
+    final bottom = lifted ? (fullscreen ? 98.0 : 64.0) : (fullscreen ? 24.0 : 10.0);
+    return ValueListenableBuilder<VideoPlayerValue>(
+      valueListenable: controller,
+      builder: (_, v, __) {
+        final text = v.caption.text.trim();
+        if (text.isEmpty) return const SizedBox.shrink();
+        return Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(24, 0, 24, bottom),
+            child: Container(
+              color: const Color(0xA6050305),
+              padding: const EdgeInsets.fromLTRB(8, 3, 8, 3),
+              child: Text(
+                text,
+                textAlign: TextAlign.center,
+                style: PxFont.text(fullscreen ? 17 : 12, color: Px.bone, height: 1.25)
+                    .copyWith(shadows: PxFont.outline(1.2)),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

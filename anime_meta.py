@@ -180,6 +180,26 @@ def _anilist_id_from_mappings(
     return None
 
 
+def _mal_id_from_mappings(
+    anime: Dict[str, Any],
+    included: Dict[Tuple[str, str], Dict[str, Any]],
+) -> Optional[int]:
+    """The MyAnimeList ID from Kitsu's mappings, when they were included.
+
+    Streams are looked up by MAL ID (see the ZokoAnime provider), so the Kitsu
+    fallback has to carry it too, or an AniList outage would stop every episode
+    from resolving through that source.
+    """
+    for mapping in _related(anime, "mappings", included):
+        attrs = mapping.get("attributes") or {}
+        if attrs.get("externalSite") == "myanimelist/anime":
+            try:
+                return int(attrs["externalId"])
+            except (KeyError, TypeError, ValueError):
+                return None
+    return None
+
+
 def kitsu_to_media(
     anime: Dict[str, Any],
     included: Dict[Tuple[str, str], Dict[str, Any]],
@@ -219,6 +239,7 @@ def kitsu_to_media(
 
     return {
         "id": anilist_id,
+        "idMal": _mal_id_from_mappings(anime, included),
         "title": {"romaji": romaji, "english": english},
         "coverImage": {"large": cover},
         "description": attrs.get("synopsis") or attrs.get("description") or "",
@@ -271,6 +292,7 @@ async def _kitsu_anime_list(
 # --------------------------------------------------------------------------
 _MEDIA_FIELDS = """
   id
+  idMal
   title { romaji english }
   description
   coverImage { large }
@@ -324,7 +346,7 @@ async def fetch_media(
         return None
 
     detailed = await _kitsu_get(
-        f"/anime/{kitsu_anime['id']}", {"include": "genres,categories"}, client
+        f"/anime/{kitsu_anime['id']}", {"include": "genres,categories,mappings"}, client
     )
     if detailed and detailed.get("data"):
         return kitsu_to_media(

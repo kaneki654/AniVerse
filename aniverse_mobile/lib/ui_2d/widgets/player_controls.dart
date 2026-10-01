@@ -27,6 +27,14 @@ class AniVersePlayerControls extends StatefulWidget {
   /// Hide the centre play/seek buttons while the buffering orb sits there.
   final bool hideTransport;
 
+  /// Whether subtitles are showing; null when the source has none, which
+  /// hides the CC button.
+  final bool? captionsOn;
+  final VoidCallback? onToggleCaptions;
+
+  /// Told when the HUD shows or hides, so subtitles can move clear of it.
+  final ValueChanged<bool>? onHudVisibleChanged;
+
   const AniVersePlayerControls({
     super.key,
     required this.controller,
@@ -39,6 +47,9 @@ class AniVersePlayerControls extends StatefulWidget {
     this.isFullscreen = false,
     this.onToggleFullscreen,
     this.hideTransport = false,
+    this.captionsOn,
+    this.onToggleCaptions,
+    this.onHudVisibleChanged,
   });
 
   @override
@@ -56,6 +67,10 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
     super.initState();
     _c.addListener(_onTick);
     _scheduleHide();
+    // A fresh HUD starts shown; the parent may remember an old one as hidden.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onHudVisibleChanged?.call(_visible);
+    });
   }
 
   @override
@@ -82,12 +97,22 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
     _hideTimer?.cancel();
     // Controls stay put while paused; hiding them mid-pause is annoying.
     _hideTimer = Timer(const Duration(seconds: 3), () {
-      if (mounted && _c.value.isPlaying) setState(() => _visible = false);
+      if (!mounted) return;
+      // A seek usually lands mid-buffer, and ExoPlayer reports "not playing"
+      // for the whole stall -- which used to read as paused and leave the HUD
+      // up for good. Still buffering is not paused: look again shortly.
+      if (_c.value.isBuffering) return _scheduleHide();
+      if (_c.value.isPlaying) _setVisible(false);
     });
   }
 
+  void _setVisible(bool v) {
+    setState(() => _visible = v);
+    widget.onHudVisibleChanged?.call(v);
+  }
+
   void _toggleVisible() {
-    setState(() => _visible = !_visible);
+    _setVisible(!_visible);
     if (_visible) _scheduleHide();
   }
 
@@ -191,6 +216,16 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
                               style: PxFont.label(8).copyWith(shadows: PxFont.outline(1)),
                             ),
                           ),
+                          if (widget.captionsOn != null && widget.onToggleCaptions != null) ...[
+                            _CaptionsToggle(
+                              on: widget.captionsOn!,
+                              onTap: () {
+                                widget.onToggleCaptions!();
+                                _scheduleHide();
+                              },
+                            ),
+                            const SizedBox(width: 6),
+                          ],
                           if (widget.onToggleCategory != null)
                             _AudioToggle(
                               category: widget.category,
@@ -365,6 +400,33 @@ class _SkipTen extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// CC button: lit while subtitles show; tap to turn them on or off.
+class _CaptionsToggle extends StatelessWidget {
+  final bool on;
+  final VoidCallback onTap;
+
+  const _CaptionsToggle({required this.on, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Subtitles ${on ? 'on' : 'off'}. Tap to turn ${on ? 'off' : 'on'}',
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: PixelBox(
+          fill: on ? Px.blood : Px.panel,
+          shadow: 2,
+          padding: const EdgeInsets.fromLTRB(7, 5, 7, 4),
+          child: Text('CC', style: PxFont.label(8, color: on ? Px.bone : Px.ash, height: 1.2)),
         ),
       ),
     );
