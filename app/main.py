@@ -22,6 +22,14 @@ app = FastAPI()
 # Sign-in and per-account watch history for the mobile app.
 app.include_router(accounts.router)
 
+# The website's look. "pixel" (the default) is the 2D pixel-art UI that matches
+# the AniVerse Pixel app; "classic" is the original site, kept as it was. It is
+# installed before the classic page routes below, so on a path both define the
+# pixel page wins, and the classic one returns when this is switched off.
+if os.getenv("ANIVERSE_WEB_UI", "pixel").strip().lower() != "classic":
+    from app import pixel_web
+    pixel_web.install(app)
+
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 

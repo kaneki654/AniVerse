@@ -1,0 +1,9 @@
+{% extends "pixel/base.html" %}
+{% block content %}
+<div class="section-head" style="margin-bottom:18px">
+  <a class="icon-btn" href="/genres" aria-label="All genres"><i data-sprite="back" data-scale="2.2"></i></a>
+  <h1 class="page-title" style="margin:0">{{ genre }}</h1>
+</div>
+<div id="results" class="grid" data-genre="{{ genre }}"></div>
+<div id="more" style="height:1px"></div>
+{% endblock %}

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#050305">
+  <meta name="description" content="Watch anime free in AniVerse Pixel -- subbed and dubbed, synced with the app.">
+  <title>{{ title }}</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/pixel/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="/static/pixel/img/apple-touch-icon.png">
+  <link rel="preload" href="/static/pixel/fonts/PressStart2P-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/pixel/fonts/DotGothic16-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/pixel/pixel.css?v={{ v }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <a class="sr-only" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap bar">
+      <a class="logo" href="/" aria-label="AniVerse home">
+        <img src="/static/pixel/img/logo.png" alt="" width="34" height="30">
+        <span class="word">ANIVERSE</span>
+        <canvas class="drips" aria-hidden="true"></canvas>
+      </a>
+      <form class="header-search" action="/search" role="search">
+        <div class="input-wrap">
+          <i data-sprite="search" data-scale="1.6"></i>
+          <input id="header-q" class="px-input px-box flat" name="q" type="search" placeholder="Search anime..." autocomplete="off" aria-label="Search anime" value="{{ q or '' }}">
+        </div>
+        <div id="header-suggest" class="suggest px-box" hidden></div>
+      </form>
+      <nav class="site-nav" aria-label="Main">
+        <a class="icon-btn nav-home" href="/" {% if nav == 'home' %}aria-current="page"{% endif %} aria-label="Home"><i data-sprite="home" data-scale="2.2"></i><span class="nav-text">Home</span></a>
+        <a class="icon-btn nav-search" href="/search" {% if nav == 'search' %}aria-current="page"{% endif %} aria-label="Search"><i data-sprite="search" data-scale="2"></i><span class="nav-text">Search</span></a>
+        <a class="icon-btn" href="/genres" {% if nav == 'genres' %}aria-current="page"{% endif %} aria-label="Genres"><i data-sprite="grid" data-scale="2.2"></i><span class="nav-text">Genres</span></a>
+        <a class="icon-btn" href="/history" {% if nav == 'history' %}aria-current="page"{% endif %} aria-label="History"><i data-sprite="clock" data-scale="2"></i><span class="nav-text">History</span></a>
+        <a id="nav-account" class="icon-btn" href="/account" {% if nav == 'account' %}aria-current="page"{% endif %} aria-label="Sign in"><span class="nav-icon"></span><span class="nav-text">Sign in</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    {% block hero %}{% endblock %}
+    <div class="wrap">
+      {% block content %}{% endblock %}
+      <div id="app-promo"></div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <span class="lbl">AniVerse Pixel</span>
+      <span>Streams are found on third-party sites; AniVerse hosts no video.</span>
+    </div>
+  </footer>
+  <script type="module" src="/static/pixel/js/{{ page }}.js?v={{ v }}"></script>
+</body>
+</html>

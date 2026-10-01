@@ -37,6 +37,21 @@ tunnel, and what to do when that URL changes -- are in **[SETUP.md](SETUP.md)**.
 > it. Install the requirements normally and keep it off `PYTHONPATH` on both
 > platforms.
 
+## Website look
+
+The site uses the same 2D pixel-art style as the AniVerse Pixel app (pixel
+fonts, sprite icons, blood effects, the katana loader and blood-orb buffering
+circle), and talks to the same endpoints, so accounts and watch history are
+shared with the app. Its pages are `app/pixel_web.py`, `app/templates/pixel/`
+and `app/static/pixel/`. There is no manga section.
+
+The original site is still there, untouched. To switch back to it, start the
+frontend with:
+
+```bash
+ANIVERSE_WEB_UI=classic ./run.sh
+```
+
 ## Type checking
 
 The Python code is type-checked with [Pyright](https://github.com/microsoft/pyright).

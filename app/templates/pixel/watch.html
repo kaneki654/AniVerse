@@ -1,0 +1,18 @@
+{% extends "pixel/base.html" %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.15/dist/hls.min.js" defer></script>
+{% endblock %}
+{% block content %}
+<div id="watch" data-id="{{ anime_id }}" data-ep="{{ ep }}" class="watch-layout">
+  <div>
+    <div id="player" class="player px-box"></div>
+    <h1 class="watch-title" id="watch-title">Episode {{ ep }}</h1>
+    <div class="watch-meta" id="watch-meta"></div>
+    <div class="watch-actions" id="watch-actions"></div>
+  </div>
+  <aside class="watch-side px-box" aria-label="Episodes">
+    <div class="section-head" style="margin-bottom:6px"><i data-sprite="bloodDrop" data-scale="2"></i><h2>Episodes</h2></div>
+    <div id="watch-eps" class="eps"></div>
+  </aside>
+</div>
+{% endblock %}

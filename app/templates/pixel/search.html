@@ -1,0 +1,9 @@
+{% extends "pixel/base.html" %}
+{% block content %}
+<h1 class="page-title">Search</h1>
+<form id="search-form" class="input-wrap" role="search" style="margin-bottom:22px">
+  <i data-sprite="search" data-scale="1.8"></i>
+  <input id="q" class="px-input px-box flat" name="q" type="search" placeholder="Title, in English or romaji..." autocomplete="off" aria-label="Search anime" value="{{ q }}" style="padding-left:44px;min-height:52px;font-size:18px">
+</form>
+<div id="results" aria-live="polite"></div>
+{% endblock %}
