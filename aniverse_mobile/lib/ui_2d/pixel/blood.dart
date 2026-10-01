@@ -104,7 +104,7 @@ class _SplatPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     const cell = 3.0;
-    final pc = PixelCanvas(canvas, cell);
+    final pc = PixelCanvas(canvas, cell, glow: true);
     final c = (size.width / cell / 2).floor();
 
     // The hit itself: a blot that shrinks as the droplets leave it.
@@ -126,13 +126,17 @@ class _SplatPainter extends CustomPainter {
       final color = _bloodAt(frame + (i % 3));
       final big = i % 3 == 0 && frame < 8;
       pc.rect(x.round(), y.round(), big ? 2 : 1, big ? 2 : 1, color);
-      // A one-cell trail behind fast drops reads as motion without any blur.
-      if (frame > 0 && frame < 9) {
-        final px = c + math.cos(a) * s * (f - 1);
-        final py = c + math.sin(a) * s * (f - 1) + 0.5 * 0.42 * (f - 1) * (f - 1);
-        pc.px(px.round(), py.round(), Px.bloodDark);
+      // Trails behind fast drops: fading copies where they just were, which
+      // reads as motion blur without a blurred pixel.
+      for (final (back, alpha) in const [(1, 0.6), (2, 0.25)]) {
+        final g = f - back;
+        if (g < 0 || frame >= 10) continue;
+        final px = c + math.cos(a) * s * g;
+        final py = c + math.sin(a) * s * g + 0.5 * 0.42 * g * g;
+        pc.ghost(px.round(), py.round(), 1, 1, Px.blood, alpha);
       }
     }
+    pc.commit(strength: frame < 6 ? 1.2 : 0.8);
   }
 
   @override
@@ -188,7 +192,7 @@ class _DripsPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final pc = PixelCanvas(canvas, cell);
+    final pc = PixelCanvas(canvas, cell, glow: true);
     final cols = (size.width / cell).floor();
     final rows = (size.height / cell).floor();
 
@@ -220,11 +224,16 @@ class _DripsPainter extends CustomPainter {
         final ft = (t - 30).toDouble();
         final y = maxLen + 1 + (0.5 * 0.5 * ft * ft).round();
         if (y < rows) {
+          // Motion blur, pixel style: fading copies where the drop just was.
+          final fall = math.max(1, (0.5 * ft).round());
+          pc.ghost(x, y - fall, thick ? 2 : 1, fall, Px.blood, 0.45);
+          pc.ghost(x, y - 2 * fall, thick ? 2 : 1, fall, Px.blood, 0.18);
           pc.rect(x, y, thick ? 2 : 1, 2, Px.blood);
           pc.px(x, y, Px.bloodLight);
         }
       }
     }
+    pc.commit();
   }
 
   @override
@@ -296,7 +305,7 @@ class _KatanaPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final pc = PixelCanvas(canvas, size.width / _w);
+    final pc = PixelCanvas(canvas, size.width / _w, glow: true);
 
     // Ground line, dithered.
     for (var x = 2; x < _w - 2; x += 2) {
@@ -358,6 +367,17 @@ class _KatanaPainter extends CustomPainter {
     // gold guard, steel blade with a darker edge, bloodied after the cut.
     final deg = angle(frame);
     final bloodied = frame >= hitFrame && frame < 26;
+    // The swing is four frames; copies of the blade at the two angles before
+    // this one smear it across the arc -- motion blur in whole cells.
+    if (frame >= 4 && frame <= 7) {
+      for (final (back, alpha) in const [(1, 0.42), (2, 0.18)]) {
+        final ghostDeg = angle(frame - back);
+        for (var t = 8; t <= _len; t++) {
+          final (x, y) = _at(ghostDeg, t.toDouble());
+          pc.ghost(x, y, 1, 1, Px.steel, alpha);
+        }
+      }
+    }
     for (var t = 0; t <= _len; t++) {
       final (x, y) = _at(deg, t.toDouble());
       if (t < 7) {
@@ -387,6 +407,7 @@ class _KatanaPainter extends CustomPainter {
       final drop = (frame - 8) % 5;
       pc.px(tx, ty + 1 + drop, Px.blood);
     }
+    pc.commit();
   }
 
   @override

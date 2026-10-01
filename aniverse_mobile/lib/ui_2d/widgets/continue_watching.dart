@@ -15,6 +15,7 @@ void openHistoryEntry(BuildContext context, HistoryEntry entry) {
   Navigator.push(
     context,
     FadeScaleRoute(
+      backdrop: false,
       page: WatchScreen(
         animeId: entry.animeId,
         epNum: entry.episode,

@@ -294,6 +294,27 @@ class ApiService {
     }
   }
 
+  /// Intro/outro for the video playing: `{intro, outro, source, pending}`, or
+  /// null on failure. [duration] is that video's length in seconds -- times
+  /// only fit the release they were taken from. `pending` means the server is
+  /// still finding them in the audio; ask again in a minute or two.
+  static Future<Map<String, dynamic>?> skipTimes(
+      String id, int epNum, double duration, String server, String category) async {
+    try {
+      final q = 'duration=${duration.toStringAsFixed(2)}'
+          '&server=${Uri.encodeQueryComponent(server)}&category=$category';
+      final response = await http
+          .get(Uri.parse('$baseUrl/anime/skip/${Uri.encodeComponent(id)}/$epNum?$q'))
+          .timeout(const Duration(seconds: 30));
+      if (response.statusCode != 200) return null;
+      final body = json.decode(response.body);
+      return body is Map<String, dynamic> ? body : null;
+    } catch (e) {
+      print('skipTimes failed: $e');
+      return null;
+    }
+  }
+
   /// A WebVTT subtitle file's text, or null if it could not be had. The proxy
   /// answers 200 even when the host refused it, so the body is what is checked.
   static Future<String?> getSubtitleFile(String url) async {

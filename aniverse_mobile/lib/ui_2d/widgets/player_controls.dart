@@ -140,14 +140,16 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
     final pos = _c.value.position.inSeconds;
     Map<String, dynamic>? active;
     String label = '';
+    // Until a second before the end: landing on the end itself after a skip
+    // should not leave the button up.
     if (widget.intro != null &&
         pos >= (widget.intro!['start'] ?? 0) &&
-        pos <= (widget.intro!['end'] ?? 0)) {
+        pos < (widget.intro!['end'] ?? 0) - 1) {
       active = widget.intro;
       label = 'Skip intro';
     } else if (widget.outro != null &&
         pos >= (widget.outro!['start'] ?? 0) &&
-        pos <= (widget.outro!['end'] ?? 0)) {
+        pos < (widget.outro!['end'] ?? 0) - 1) {
       active = widget.outro;
       label = 'Skip outro';
     }

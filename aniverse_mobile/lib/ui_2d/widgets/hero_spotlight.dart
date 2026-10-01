@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../pixel/blood.dart';
+import '../pixel/fx.dart';
 import '../pixel/pixel.dart';
 import '../pixel/pixel_widgets.dart';
 import '../pixel/sprites.dart';
@@ -24,6 +25,10 @@ class _HeroSpotlightState extends State<HeroSpotlight> {
 
   late final PageController _controller = PageController();
   int _page = 0;
+  int _dir = 1;
+
+  /// Bumped on every page change; the speed lines play when it does.
+  final ValueNotifier<int> _swipes = ValueNotifier(0);
 
   List<Map<String, dynamic>> get _slides => widget.animes
       .whereType<Map<String, dynamic>>()
@@ -33,6 +38,7 @@ class _HeroSpotlightState extends State<HeroSpotlight> {
   @override
   void dispose() {
     _controller.dispose();
+    _swipes.dispose();
     super.dispose();
   }
 
@@ -45,14 +51,26 @@ class _HeroSpotlightState extends State<HeroSpotlight> {
       children: [
         SizedBox(
           height: 232,
-          child: PageView.builder(
-            controller: _controller,
-            itemCount: slides.length,
-            onPageChanged: (i) => setState(() => _page = i),
-            itemBuilder: (context, i) => _Slide(
-              anime: slides[i],
-              onTap: () => widget.onTap(slides[i]),
-            ),
+          child: Stack(
+            children: [
+              PageView.builder(
+                controller: _controller,
+                itemCount: slides.length,
+                onPageChanged: (i) {
+                  setState(() {
+                    _dir = i > _page ? -1 : 1;
+                    _page = i;
+                  });
+                  _swipes.value++;
+                },
+                itemBuilder: (context, i) => _Slide(
+                  anime: slides[i],
+                  onTap: () => widget.onTap(slides[i]),
+                ),
+              ),
+              // Streaks across the card as it changes: pixel art's motion blur.
+              Positioned.fill(child: SpeedLines(trigger: _swipes, direction: _dir)),
+            ],
           ),
         ),
         if (slides.length > 1) ...[
@@ -139,6 +157,7 @@ class _Slide extends StatelessWidget {
           border: Px.blood,
           borderWidth: 3,
           shadow: 4,
+          rivets: true,
           child: Stack(
             fit: StackFit.expand,
             children: [

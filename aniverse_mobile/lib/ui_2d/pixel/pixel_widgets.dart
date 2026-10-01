@@ -3,6 +3,7 @@ import 'dart:ui' show lerpDouble;
 import 'package:flutter/material.dart';
 
 import 'blood.dart';
+import 'fx.dart';
 import 'pixel.dart';
 
 /// Rectangle with its corners stepped in by one cell -- the shape of a pixel
@@ -124,6 +125,51 @@ class _BoxPainter extends CustomPainter {
       o.shadow != shadow || o.pressed != pressed || o.bevel != bevel;
 }
 
+/// What goes over a panel's contents: corner rivets and the glint band. A
+/// cover image filling the panel would hide them if they were painted under it.
+class _FacePainter extends CustomPainter {
+  final double bw;
+  final double shadow;
+  final bool pressed;
+  final bool rivets;
+  final double glint;
+
+  _FacePainter({required this.bw, required this.shadow, required this.pressed,
+      required this.rivets, required this.glint});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = Paint()..isAntiAlias = false;
+    final inner = Rect.fromLTWH(0, 0, size.width - shadow, size.height - shadow)
+        .shift(pressed ? Offset(shadow, shadow) : Offset.zero)
+        .deflate(bw);
+    if (rivets && inner.width > 24 && inner.height > 24) {
+      // A pixel stud in each corner, lit on its top-left cell.
+      const r = 3.0, inset = 4.0;
+      for (final (dx, dy) in [
+        (inner.left + inset, inner.top + inset),
+        (inner.right - inset - r, inner.top + inset),
+        (inner.left + inset, inner.bottom - inset - r),
+        (inner.right - inset - r, inner.bottom - inset - r),
+      ]) {
+        canvas.drawRect(Rect.fromLTWH(dx - 1, dy - 1, r + 2, r + 2), p..color = Px.black);
+        canvas.drawRect(Rect.fromLTWH(dx, dy, r, r), p..color = Px.ashDark);
+        canvas.drawRect(Rect.fromLTWH(dx, dy, 1, 1), p..color = Px.bone);
+      }
+    }
+    if (glint >= 0) {
+      canvas.save();
+      canvas.translate(inner.left, inner.top);
+      GlintPainter(glint).paint(canvas, inner.size);
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _FacePainter o) =>
+      o.bw != bw || o.shadow != shadow || o.pressed != pressed || o.rivets != rivets || o.glint != glint;
+}
+
 /// A pixel-art panel: stepped corners, a hard border, and a drop shadow with
 /// no blur, offset down-right like every panel in a 16-bit game.
 class PixelBox extends StatelessWidget {
@@ -136,6 +182,12 @@ class PixelBox extends StatelessWidget {
   final bool pressed;
   final bool bevel;
 
+  /// Corner studs, for the bigger panels.
+  final bool rivets;
+
+  /// A light band crossing the face at 0..1; below 0, none.
+  final double glint;
+
   const PixelBox({
     super.key,
     this.child,
@@ -146,6 +198,8 @@ class PixelBox extends StatelessWidget {
     this.padding = EdgeInsets.zero,
     this.pressed = false,
     this.bevel = false,
+    this.rivets = false,
+    this.glint = -1,
   });
 
   @override
@@ -161,6 +215,9 @@ class PixelBox extends StatelessWidget {
         pressed: pressed,
         bevel: bevel,
       ),
+      foregroundPainter: rivets || glint >= 0
+          ? _FacePainter(bw: b, shadow: shadow, pressed: pressed, rivets: rivets, glint: glint)
+          : null,
       child: Padding(
         padding: EdgeInsets.fromLTRB(
           b + padding.left + press.dx,
@@ -208,6 +265,15 @@ class _PixelButtonState extends State<PixelButton> {
   bool _down = false;
 
   bool get _enabled => widget.onPressed != null && !widget.busy;
+
+  Widget _face(Color fill, Widget content, double glint) => PixelBox(
+        fill: fill,
+        pressed: _down,
+        bevel: true,
+        glint: glint,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Center(widthFactor: 1, heightFactor: 1, child: content),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -262,13 +328,15 @@ class _PixelButtonState extends State<PixelButton> {
             : null,
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 46),
-          child: PixelBox(
-            fill: faceFill,
-            pressed: _down,
-            bevel: true,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Center(widthFactor: 1, heightFactor: 1, child: content),
-          ),
+          child: _enabled && widget.kind == PixelButtonKind.blood
+              // A light band sweeps the face every few seconds; buttons start
+              // at different points of the loop so they do not flash together.
+              ? FrameClock(
+                  fps: 12,
+                  frames: 72,
+                  builder: (_, f) => _face(faceFill, content, glintAt(f + widget.label.length * 7, frames: 72)),
+                )
+              : _face(faceFill, content, -1),
         ),
       ),
     );

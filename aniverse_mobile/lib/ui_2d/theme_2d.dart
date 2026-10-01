@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'pixel/fx.dart';
 import 'pixel/pixel.dart';
 import 'pixel/pixel_widgets.dart';
 import 'pixel/sprites.dart';
@@ -42,7 +43,9 @@ class AniVerseTheme {
       displayColor: Px.bone,
     );
     return base.copyWith(
-      scaffoldBackgroundColor: Px.ink,
+      // Transparent: PixelBackdrop paints the ground, with embers on it, behind
+      // every screen but the player (whose Scaffold is black).
+      scaffoldBackgroundColor: Colors.transparent,
       primaryColor: Px.blood,
       colorScheme: const ColorScheme.dark(
         primary: Px.blood,
@@ -174,14 +177,24 @@ class SectionHeader extends StatelessWidget {
         children: [
           const PixelSprite(Sprites.bloodDrop, scale: 2.2),
           const SizedBox(width: 10),
-          Expanded(
+          ConstrainedBox(
+            // Room for the title first; the katana takes whatever is left.
+            constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.62),
             child: Text(
               title.toUpperCase(),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: PxFont.label(11).copyWith(shadows: PxFont.outline(1.5)),
+              style: PxFont.label(11).copyWith(shadows: [
+                ...PxFont.outline(1.5),
+                // Bloom: hard red copies a step out, no blur.
+                for (final o in const [Offset(-3, 0), Offset(3, 0), Offset(0, -3), Offset(0, 3)])
+                  Shadow(color: const Color(0x40D10A1A), offset: o),
+              ]),
             ),
           ),
+          const SizedBox(width: 10),
+          const Expanded(child: KatanaDivider()),
+          const SizedBox(width: 6),
           if (onMore != null)
             GestureDetector(
               onTap: onMore,

@@ -24,7 +24,7 @@ function render() {
   } }, sprite("eye", 2));
   const submit = h("button.px-btn.px-box.bevel.wide", { type: "submit" }, sprite(mode === "login" ? "lock" : "check", 1.6), mode === "login" ? "Sign in" : "Create account");
 
-  const form = h("form.card.px-box", { novalidate: true },
+  const form = h("form.card.px-box.rivets", { novalidate: true },
     h("div.tabs", null,
       h(`button.px-btn.px-box.bevel.small${mode === "login" ? "" : ".dark"}`, { type: "button", onclick: () => { mode = "login"; render(); } }, "Sign in"),
       h(`button.px-btn.px-box.bevel.small${mode === "register" ? "" : ".dark"}`, { type: "button", onclick: () => { mode = "register"; render(); } }, "New account")),
@@ -63,7 +63,7 @@ function profile(user) {
   const name = user.display_name || user.username || "Player";
   const count = history.latestPerAnime().length;
   root.append(h("h1.page-title", null, "Account"),
-    h("div.card.px-box", null,
+    h("div.card.px-box.rivets", null,
       h("div.profile", null,
         h("div.avatar-big.px-box", null, name.trim().charAt(0).toUpperCase()),
         h("div.who", null, h("b", null, name), user.username ? h("span.muted", null, `@${user.username}`) : null)),

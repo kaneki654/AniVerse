@@ -53,6 +53,11 @@ export const api = {
     }
   },
   appRelease: () => getJson("/app/version.json", { timeout: 8000 }).catch(() => null),
+  /** Intro/outro for the video playing: {intro, outro, source, pending}. */
+  skipTimes(id, ep, duration, server, category) {
+    const q = `duration=${duration.toFixed(2)}&server=${encodeURIComponent(server || "")}&category=${category}`;
+    return getJson(`/api/anime/skip/${encodeURIComponent(id)}/${ep}?${q}`, { timeout: 30000 }).catch(() => null);
+  },
 };
 
 // --- anime helpers --------------------------------------------------------------

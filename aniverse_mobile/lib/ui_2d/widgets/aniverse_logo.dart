@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../pixel/blood.dart';
+import '../pixel/fx.dart';
 import '../pixel/pixel.dart';
 
 /// The ANIVERSE wordmark as sprite text -- arcade face, hard black outline, the
@@ -15,6 +16,7 @@ class AniVerseLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final step = fontSize / 4;
     final word = Text(
       'ANIVERSE',
       style: PxFont.label(fontSize, color: Px.blood, height: 1.2).copyWith(
@@ -22,8 +24,35 @@ class AniVerseLogo extends StatelessWidget {
           ...PxFont.outline(fontSize / 9),
           // Hard drop shadow: offset, no blur.
           Shadow(color: Px.black, offset: Offset(fontSize / 6, fontSize / 6)),
+          // Bloom: red copies a step out on each side -- a blocky glow.
+          for (final o in [Offset(-step, 0), Offset(step, 0), Offset(0, -step), Offset(0, step)])
+            Shadow(color: const Color(0x47D10A1A), offset: o),
         ],
       ),
+    );
+    // A light band sweeps across the letters every few seconds.
+    final shiny = FrameClock(
+      fps: 12,
+      frames: 84,
+      builder: (_, f) {
+        final g = glintAt(f, frames: 84, sweep: 20);
+        if (g < 0) return word;
+        return Stack(
+          children: [
+            word,
+            ShaderMask(
+              blendMode: BlendMode.srcIn,
+              shaderCallback: (r) => LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: const [Color(0x00FFFFFF), Color(0xD9FFECD2), Color(0xD9FFECD2), Color(0x00FFFFFF)],
+                stops: [g - 0.08, g - 0.08, g, g].map((v) => v.clamp(0.0, 1.0)).toList(),
+              ).createShader(r),
+              child: Text('ANIVERSE', style: PxFont.label(fontSize, color: Colors.white, height: 1.2)),
+            ),
+          ],
+        );
+      },
     );
     return Semantics(
       label: 'AniVerse',
@@ -46,7 +75,7 @@ class AniVerseLogo extends StatelessWidget {
             Stack(
               clipBehavior: Clip.none,
               children: [
-                word,
+                shiny,
                 if (drips)
                   Positioned(
                     left: 0,
@@ -68,24 +97,40 @@ class AniVerseLogo extends StatelessWidget {
   }
 }
 
-/// Page transition in four hard steps instead of a smooth fade: the way a
-/// 2D game swaps screens.
+/// Page transition as a Bayer-dither dissolve in five steps: the new screen
+/// breaks out of square black cells (and back into them when it closes), the
+/// way a 16-bit game swaps screens. The name is kept from the fade it replaced.
+///
+/// [backdrop] puts the screen on the ember backdrop; the player turns it off,
+/// so nothing animates behind the video.
 class FadeScaleRoute<T> extends PageRouteBuilder<T> {
   final Widget page;
 
-  FadeScaleRoute({required this.page})
+  FadeScaleRoute({required this.page, bool backdrop = true})
       : super(
           transitionDuration: const Duration(milliseconds: 240),
           reverseTransitionDuration: const Duration(milliseconds: 180),
-          pageBuilder: (_, __, ___) => page,
-          transitionsBuilder: (_, animation, __, child) => AnimatedBuilder(
-            animation: animation,
-            child: child,
-            builder: (_, c) => Opacity(
-              opacity: ((animation.value * 4).floor() / 4).clamp(0.0, 1.0),
-              child: c,
-            ),
-          ),
+          pageBuilder: (_, __, ___) => backdrop ? PixelBackdrop(child: page) : page,
+          transitionsBuilder: (context, animation, __, child) {
+            if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) return child;
+            return AnimatedBuilder(
+              animation: animation,
+              child: child,
+              builder: (_, c) {
+                final shown = ((animation.value * 5).floor() / 5).clamp(0.0, 1.0);
+                if (shown >= 1) return c!;
+                return Stack(
+                  fit: StackFit.passthrough,
+                  children: [
+                    c!,
+                    Positioned.fill(
+                      child: IgnorePointer(child: CustomPaint(painter: DitherCover(1 - shown))),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
         );
 }
 

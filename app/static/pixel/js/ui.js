@@ -1,12 +1,13 @@
 // Shared pieces of the pixel website: the header, poster cards, shelves, the
 // spotlight and continue-watching rows -- the app's widgets, as DOM.
-import { h, sprite, hydrateSprites, pixelCover, drips, clear, plainText } from "./px.js";
+import { h, sprite, hydrateSprites, pixelCover, drips, clear, plainText, embers, dissolve, speedLines } from "./px.js";
 import { api, auth, history, titleOf, coverOf } from "./api.js";
 
 export function sectionHead(title, more) {
   return h("div.section-head", null,
     sprite("bloodDrop", 2),
     h("h2", null, title),
+    h("span.blade", { "aria-hidden": "true" }),
     more ? h("a.more", { href: more.href }, more.label || "More", sprite("chevron", 1)) : null);
 }
 
@@ -115,9 +116,21 @@ export function heroSpotlight(animes) {
     return el;
   });
   const dots = slides.map((_, i) => h("button", { type: "button", "aria-label": `Slide ${i + 1}`, onclick: () => go(i, true) }));
+  let first = true;
   const go = (i, user) => {
+    const dir = i < on ? -1 : 1;
     on = (i + slides.length) % slides.length;
-    slideEls.forEach((el, j) => { el.classList.toggle("on", j === on); el.setAttribute("aria-hidden", j === on ? "false" : "true"); });
+    slideEls.forEach((el, j) => {
+      el.classList.toggle("on", j === on);
+      el.classList.remove("enter-next", "enter-prev");
+      el.setAttribute("aria-hidden", j === on ? "false" : "true");
+    });
+    if (!first) {
+      void slideEls[on].offsetWidth;
+      slideEls[on].classList.add(dir > 0 ? "enter-next" : "enter-prev");
+      speedLines(stage, -dir);
+    }
+    first = false;
     dots.forEach((d, j) => d.classList.toggle("on", j === on));
     slideEls[on]._drips();
     if (user) restart();
@@ -126,7 +139,7 @@ export function heroSpotlight(animes) {
     clearInterval(timer);
     timer = setInterval(() => { if (!document.hidden) go(on + 1); }, 7000);
   };
-  const stage = h("div.hero-stage.px-box", null, slideEls,
+  const stage = h("div.hero-stage.px-box.rivets", null, slideEls,
     slides.length > 1 ? h("button.hero-arrow.prev.px-box", { type: "button", "aria-label": "Previous", onclick: () => go(on - 1, true) },
       h("span", { style: { transform: "scaleX(-1)", display: "grid" } }, sprite("chevron", 2))) : null,
     slides.length > 1 ? h("button.hero-arrow.next.px-box", { type: "button", "aria-label": "Next", onclick: () => go(on + 1, true) }, sprite("chevron", 2)) : null);
@@ -223,9 +236,40 @@ async function appPromo() {
     h("a.px-btn.px-box.bevel.small", { href: "/app/aniverse.apk", download: "AniVerse-Pixel.apk" }, sprite("download", 1.4), "Get the app")));
 }
 
+/** Same-site page links play the dissolve before leaving. */
+function pageTransitions() {
+  const root = document.documentElement;
+  if (root.classList.contains("entering")) {
+    try { sessionStorage.removeItem("av.dissolve"); } catch { /* storage off */ }
+    // The dissolve draws its first frame synchronously, so the page is still
+    // covered when the CSS cover goes. (Not on a later frame: a background
+    // tab may not get one until it is shown, and would sit there black.)
+    dissolve("in", 220);
+    root.classList.remove("entering");
+  }
+  document.addEventListener("click", (e) => {
+    const a = e.target instanceof Element ? e.target.closest("a[href]") : null;
+    if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    if ((a.target && a.target !== "_self") || a.hasAttribute("download")) return;
+    const url = new URL(a.href, location.href);
+    if (url.origin !== location.origin || /^\/(app|static|api|proxy)\//.test(url.pathname)) return;
+    if (url.pathname === location.pathname && url.search === location.search) return; // same page / anchor
+    e.preventDefault();
+    try { sessionStorage.setItem("av.dissolve", "1"); } catch { /* storage off */ }
+    dissolve("out", 160).then(() => { location.href = url.href; });
+  });
+  // Back/forward restores the page as it was left: covered. Uncover it.
+  addEventListener("pageshow", (e) => {
+    if (e.persisted) document.querySelectorAll("canvas.dissolve").forEach((c) => c.remove());
+  });
+}
+
 /** Everything every page needs once. */
 export function initShell() {
   hydrateSprites();
+  const bg = document.querySelector("canvas.embers-bg");
+  if (bg) embers(bg);
+  pageTransitions();
   const logoDrips = document.querySelector(".logo canvas.drips");
   if (logoDrips) drips(logoDrips, { count: 4, seed: 3, cell: 2.4 });
   headerSearch();

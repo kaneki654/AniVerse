@@ -78,7 +78,6 @@ function explain(data) {
 function apply(data) {
   sources = data.sources.filter((s) => s && s.url);
   hasDub = data.hasDub ?? null;
-  player.setMarkers(data.intro || null, data.outro || null);
   player.setCategory(category, category === "dub" || hasDub !== false);
 }
 
@@ -241,6 +240,7 @@ function attached() {
   player.hideStage();
   player.hideBuffering();
   loadCaptions(sources[sourceIndex]);
+  loadSkipTimes(sources[sourceIndex]);
   renderActions();
   video.play().catch(() => player.poke()); // Autoplay refused: the play button waits.
 }
@@ -357,6 +357,35 @@ async function reconnect() {
   }
   reconnecting = false;
   fail("The stream dropped and could not be brought back. Check your connection and retry.");
+}
+
+// --- skip intro / outro ---------------------------------------------------------------
+// The playing source's own markers when its provider has them; otherwise the
+// server's, which come from AniSkip or from matching this episode's audio with
+// its neighbour's. That last can take a couple of minutes the first time, so a
+// "pending" answer is asked again, and better times replace earlier ones.
+
+let skipMarks = { intro: null, outro: null };
+let skipTimer = 0;
+
+function loadSkipTimes(src) {
+  clearTimeout(skipTimer);
+  const g = gen;
+  skipMarks = { intro: src?.intro || null, outro: src?.outro || null };
+  player.setMarkers(skipMarks.intro, skipMarks.outro);
+  if (skipMarks.intro && skipMarks.outro) return;
+  const ask = async (attempt) => {
+    if (g !== gen) return;
+    const d = video.duration;
+    if (!Number.isFinite(d) || d <= 0) { skipTimer = setTimeout(() => ask(attempt), 1000); return; }
+    const r = await api.skipTimes(animeId, ep, d, src?.serverName, category);
+    if (g !== gen || !r) return;
+    // The source's own markers are exact for it; fill only what it lacks.
+    skipMarks = { intro: src?.intro || r.intro || skipMarks.intro, outro: src?.outro || r.outro || skipMarks.outro };
+    player.setMarkers(skipMarks.intro, skipMarks.outro);
+    if (r.pending && attempt < 4) skipTimer = setTimeout(() => ask(attempt + 1), [60, 90, 150, 300][attempt] * 1000);
+  };
+  ask(0);
 }
 
 // --- subtitles -------------------------------------------------------------------------

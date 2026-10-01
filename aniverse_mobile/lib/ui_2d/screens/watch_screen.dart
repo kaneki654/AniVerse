@@ -284,8 +284,8 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       for (final s in (data['sources'] as List? ?? const []))
         if ((s as Map)['url'].toString().isNotEmpty) Map<String, dynamic>.from(s),
     ];
-    _intro = data['intro'] as Map<String, dynamic>?;
-    _outro = data['outro'] as Map<String, dynamic>?;
+    // Intro/outro are taken per source when one is attached (_loadSkipTimes):
+    // each provider's markers fit only its own cut of the episode.
     _hasDub = data['hasDub'] as bool?;
   }
 
@@ -453,7 +453,10 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       _retryAt = null;
       _hasCaptions = false;
     });
-    if (index < _sources.length) _loadCaptions(c, _sources[index]);
+    if (index < _sources.length) {
+      _loadCaptions(c, _sources[index]);
+      _loadSkipTimes(c, _sources[index]);
+    }
     if (from == _Phase.opening || from == _Phase.reconnecting) _handOffOrb();
     // The frozen frame has done its job once the new player is up.
     final stale = _stale;
@@ -467,6 +470,47 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   /// what stops an episode from starting. Most "sub" streams are the raw
   /// episode with the text in a separate file, so this is what puts the
   /// subtitles on screen at all.
+  Timer? _skipTimer;
+
+  /// Intro/outro for the source now playing: its own markers when its provider
+  /// has them, otherwise the server's -- from AniSkip, or found by matching
+  /// this episode's audio with its neighbour's. That can take a couple of
+  /// minutes the first time, so a "pending" answer is asked again, and better
+  /// times replace earlier ones.
+  void _loadSkipTimes(VideoPlayerController c, Map<String, dynamic> source, [int attempt = 0]) {
+    _skipTimer?.cancel();
+    Map<String, dynamic>? own(String k) =>
+        source[k] is Map ? Map<String, dynamic>.from(source[k] as Map) : null;
+    if (attempt == 0) {
+      setState(() {
+        _intro = own('intro');
+        _outro = own('outro');
+      });
+    }
+    if (_intro != null && _outro != null) return;
+    final gen = _generation;
+    Future<void> ask() async {
+      final d = c.value.duration;
+      if (d <= Duration.zero) return;
+      final r = await ApiService.skipTimes(widget.animeId, widget.epNum, d.inMilliseconds / 1000,
+          (source['serverName'] ?? '').toString(), category);
+      if (!mounted || gen != _generation || _controller != c || r == null) return;
+      Map<String, dynamic>? got(String k) => r[k] is Map ? Map<String, dynamic>.from(r[k] as Map) : null;
+      setState(() {
+        _intro = own('intro') ?? got('intro') ?? _intro;
+        _outro = own('outro') ?? got('outro') ?? _outro;
+      });
+      if (r['pending'] == true && attempt < 4) {
+        const waits = [60, 90, 150, 300];
+        _skipTimer = Timer(Duration(seconds: waits[attempt]), () {
+          if (mounted && gen == _generation && _controller == c) _loadSkipTimes(c, source, attempt + 1);
+        });
+      }
+    }
+
+    ask();
+  }
+
   Future<void> _loadCaptions(VideoPlayerController c, Map<String, dynamic> source) async {
     final tracks = ((source['subtitles'] ?? []) as List).whereType<Map>().toList();
     if (tracks.isEmpty) return;
@@ -855,6 +899,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _skipTimer?.cancel();
     _generation++;
     WidgetsBinding.instance.removeObserver(this);
     _saveProgress();

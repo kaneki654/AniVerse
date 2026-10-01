@@ -292,8 +292,9 @@ export function createPlayer(host, handlers) {
     buffering(label, { onRetry, detail } = {}) {
       const o = orb(Math.min(136, host.clientWidth * 0.26), currentOrb?.level?.() ?? 0.08);
       const lab = h("div.label", null, label);
-      clear(bufStage).append(o.el, lab, detail ? h("div.detail", null, detail) : null,
-        onRetry ? h("button.px-btn.px-box.bevel.small", { type: "button", onclick: onRetry }, sprite("refresh", 1.4), "Retry now") : null);
+      // DOM append() prints null as "null"; leave the absent parts out.
+      clear(bufStage).append(...[o.el, lab, detail ? h("div.detail", null, detail) : null,
+        onRetry ? h("button.px-btn.px-box.bevel.small", { type: "button", onclick: onRetry }, sprite("refresh", 1.4), "Retry now") : null].filter(Boolean));
       bufStage.hidden = false;
       center.style.visibility = "hidden";
       return { set: ({ progress, mbps, text }) => { o.set({ progress, mbps }); if (text) lab.textContent = text; }, el: bufStage };

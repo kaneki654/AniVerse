@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException
 from app.core.orchestrator import orchestrator
 from app.api.proxy import router as proxy_router
 from app.services.anilist import anilist_service
-from app.services import anilist_media
+from app.services import anilist_media, skip_times
 
 router = APIRouter(prefix="/anime", tags=["Anime"])
 
@@ -101,6 +101,20 @@ async def genre_top(genres: str):
     if not names or len(names) > 30 or any(len(g) > 40 for g in names):
         raise HTTPException(status_code=400, detail="Give 1-30 genre names")
     return await anilist_service.get_genre_top(names)
+
+
+@router.get("/skip/{anilist_id}/{episode_number}")
+async def skip_markers(anilist_id: str, episode_number: int, duration: float = 0.0,
+                       server: str = "", category: str = "sub"):
+    """Intro/outro times for the video a client is playing.
+
+    `duration` is that video's length in seconds: times only fit the release
+    they were taken from. `pending` means a detection that may fill in what is
+    missing is running; ask again in a minute or two.
+    """
+    if not 0 < episode_number < 100000 or category not in ("sub", "dub"):
+        raise HTTPException(status_code=400, detail="Bad episode or category")
+    return await skip_times.lookup(anilist_id, episode_number, max(0.0, duration), server[:40], category)
 
 
 @router.get("/browse")

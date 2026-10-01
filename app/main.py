@@ -687,6 +687,9 @@ async def get_source(episode_id: str, server: str = "Auto", category: str = "sub
                     "quality": stream.get("quality", "auto"),
                     "serverName": stream.get("server", "Auto"),
                     "subtitles": _source_subtitles(stream, referer),
+                    # This source's own intro/outro, when its provider has them.
+                    "intro": stream.get("intro"),
+                    "outro": stream.get("outro"),
                 })
 
             return {

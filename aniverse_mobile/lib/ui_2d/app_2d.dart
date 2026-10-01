@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'pixel/fx.dart';
 import 'screens/home_screen.dart';
 import 'theme_2d.dart';
 
@@ -14,7 +15,7 @@ class AniVerse2DApp extends StatelessWidget {
       title: 'AniVerse Pixel',
       debugShowCheckedModeBanner: false,
       theme: AniVerseTheme.build(context),
-      home: const HomeScreen(),
+      home: const PixelBackdrop(child: HomeScreen()),
     );
   }
 }

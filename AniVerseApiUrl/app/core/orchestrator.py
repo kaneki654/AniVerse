@@ -27,6 +27,9 @@ class ResolverOrchestrator:
                           if isinstance(t, dict) and t.get("kind", "captions") in ("captions", "subtitles")]
                 for stream in res["streams"]:
                     stream.setdefault("subtitles", tracks)
+                    # Markers are timed to this provider's cut, like its subtitles.
+                    stream.setdefault("intro", res.get("intro"))
+                    stream.setdefault("outro", res.get("outro"))
                 normalized_streams.extend(res["streams"])
             if "subtitles" in res:
                 normalized_subtitles.extend(res["subtitles"])

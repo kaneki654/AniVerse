@@ -38,7 +38,7 @@ function render(a) {
     h("div.shade"),
     dripCanvas,
     h("div.wrap", null, h("div.detail-top", null,
-      h("div.poster-art.px-box", null, pixelCover(cover, 110, title)),
+      h("div.poster-art.px-box.rivets", null, pixelCover(cover, 110, title)),
       h("div.detail-info", null,
         h("h1", null, title),
         romaji && romaji !== title ? h("div.alt", null, romaji) : null,

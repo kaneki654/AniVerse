@@ -23,7 +23,7 @@ api.genreArt().then((all) => {
     if (!a) { art.remove(); continue; }
     // Banners are wide like the tile; the portrait cover only when there is none.
     art.replaceWith(pixelCover(a.banner || a.cover, a.banner ? 180 : 72, ""));
-    clear(top).append(sprite("star", 1.4, "#e8b23a"), a.score ? h("span.s", null, String(a.score)) : null, h("span.t", null, a.title));
+    clear(top).append(...[sprite("star", 1.4, "#e8b23a"), a.score ? h("span.s", null, String(a.score)) : null, h("span.t", null, a.title)].filter(Boolean));
     tile.setAttribute("aria-label", `${genre}. Top rated: ${a.title}`);
   }
 });

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 /// The 2D UI's palette: blood reds on a near-black ground, bone-white text.
@@ -83,16 +85,86 @@ class PixelCanvas {
   final double cell;
   final Paint _paint = Paint()..isAntiAlias = false;
 
-  PixelCanvas(this.canvas, this.cell);
+  /// With [glow] on, cells are collected and drawn by [commit], which first
+  /// paints a bloom under the hot ones: blood reds and bright highlights get a
+  /// stepped halo -- one solid ring and a dithered outer one, into empty cells
+  /// only -- so effects glow without a single blurred pixel.
+  final bool glow;
+  final List<(int, int, int, int, Color)> _ops = [];
+
+  PixelCanvas(this.canvas, this.cell, {this.glow = false});
 
   void px(int x, int y, Color c) => rect(x, y, 1, 1, c);
 
   void rect(int x, int y, int w, int h, Color c) {
     if (w <= 0 || h <= 0) return;
+    if (glow) {
+      _ops.add((x, y, w, h, c));
+      return;
+    }
+    _draw(x, y, w, h, c);
+  }
+
+  void _draw(int x, int y, int w, int h, Color c) {
     canvas.drawRect(
       Rect.fromLTWH(x * cell, y * cell, w * cell, h * cell),
       _paint..color = c,
     );
+  }
+
+  /// A see-through copy behind something moving: pixel art's motion blur.
+  void ghost(int x, int y, int w, int h, Color c, double alpha) =>
+      rect(x, y, w, h, c.withValues(alpha: alpha));
+
+  static const _warm = Color(0xFFFFC478);
+
+  static Color? _glowOf(Color c) {
+    if (c.a < 0.8) return null;
+    if (c == Px.blood || c == Px.bloodLight) return Px.bloodLight;
+    if (c == Px.bone || c == Px.gold) return _warm;
+    return null;
+  }
+
+  /// Paints the bloom, then every collected cell over it.
+  void commit({double strength = 1}) {
+    if (!glow) return;
+    final filled = <int>{};
+    int key(int x, int y) => (y + 4096) * 8192 + (x + 4096);
+    for (final (x, y, w, h, _) in _ops) {
+      for (var j = 0; j < h; j++) {
+        for (var i = 0; i < w; i++) {
+          filled.add(key(x + i, y + j));
+        }
+      }
+    }
+    final halo = <int, (double, Color)>{};
+    for (final (x, y, w, h, c) in _ops) {
+      final g = _glowOf(c);
+      if (g == null) continue;
+      for (var j = -2; j < h + 2; j++) {
+        for (var i = -2; i < w + 2; i++) {
+          final ring = math.max(
+            i < 0 ? -i : (i >= w ? i - w + 1 : 0),
+            j < 0 ? -j : (j >= h ? j - h + 1 : 0),
+          );
+          if (ring == 0) continue;
+          final cx = x + i, cy = y + j;
+          if (ring == 2 && (cx + cy).isOdd) continue;
+          final k = key(cx, cy);
+          if (filled.contains(k)) continue;
+          final a = (ring == 1 ? 0.4 : 0.16) * strength;
+          final old = halo[k];
+          if (old == null || old.$1 < a) halo[k] = (a, g);
+        }
+      }
+    }
+    halo.forEach((k, v) {
+      _draw(k % 8192 - 4096, k ~/ 8192 - 4096, 1, 1, v.$2.withValues(alpha: v.$1));
+    });
+    for (final (x, y, w, h, c) in _ops) {
+      _draw(x, y, w, h, c);
+    }
+    _ops.clear();
   }
 
   /// Bresenham: an aliased line, stepping one cell at a time.

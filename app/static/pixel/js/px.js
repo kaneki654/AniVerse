@@ -189,7 +189,54 @@ export class PixelCanvas {
     this.ctx.fillRect(Math.round(x), Math.round(y), w, h);
   }
   px(x, y, color) { this.rect(x, y, 1, 1, color); }
+
+  /**
+   * Pixel bloom: a stepped glow round every hot cell -- blood reds glow red,
+   * bone and gold highlights glow warm -- painted into empty cells only, as two
+   * rings with the outer one dithered. A blocky halo, never a blur.
+   */
+  bloom(strength = 1) {
+    const w = this.c.width, h = this.c.height;
+    if (!w || !h) return;
+    const img = this.ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    const glow = new Float32Array(w * h);
+    const tone = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        if (d[i + 3] < 200) continue;
+        const r = d[i], g = d[i + 1];
+        const kind = r > 170 && g < 110 ? 1 : r > 220 && g > 170 ? 2 : 0;
+        if (!kind) continue;
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            const qx = x + dx, qy = y + dy;
+            if (qx < 0 || qy < 0 || qx >= w || qy >= h) continue;
+            const ring = Math.max(Math.abs(dx), Math.abs(dy));
+            if (!ring || (ring === 2 && ((qx + qy) & 1))) continue;
+            const q = qy * w + qx;
+            const a = (ring === 1 ? 0.42 : 0.17) * strength;
+            if (a > glow[q]) { glow[q] = a; tone[q] = kind; }
+          }
+        }
+      }
+    }
+    for (let q = 0; q < w * h; q++) {
+      const i = q * 4;
+      if (!glow[q] || d[i + 3] !== 0) continue;
+      const warm = tone[q] === 2;
+      d[i] = 255; d[i + 1] = warm ? 196 : 77; d[i + 2] = warm ? 120 : 87;
+      d[i + 3] = Math.round(glow[q] * 255);
+    }
+    this.ctx.putImageData(img, 0, 0);
+  }
+
+  /** A see-through copy behind something moving: pixel art's motion blur. */
+  ghost(x, y, w, h, rgb, alpha) { this.rect(x, y, w, h, `rgba(${rgb},${alpha})`); }
 }
+
+const RGB_BLOOD = "209,10,26", RGB_STEEL = "213,220,230";
 
 /** Stable pseudo-random value in [0, 1) for seed -- same as the app's pxRand. */
 export function pxRand(seed) {
@@ -291,11 +338,16 @@ export function drips(canvas, { count = 5, seed = 7, cell = 2.5 } = {}) {
         const ft = t - 30;
         const y = maxLen + 1 + Math.round(0.25 * ft * ft);
         if (y < rows) {
+          // Motion blur, pixel style: fading copies where the drop just was.
+          const fall = Math.max(1, Math.round(0.5 * ft));
+          pc.ghost(x, y - fall, thick ? 2 : 1, fall, RGB_BLOOD, 0.45);
+          pc.ghost(x, y - 2 * fall, thick ? 2 : 1, fall, RGB_BLOOD, 0.18);
           pc.rect(x, y, thick ? 2 : 1, 2, BLOOD);
           pc.px(x, y, BLOOD_LIGHT);
         }
       }
     }
+    pc.bloom();
   });
 }
 
@@ -331,11 +383,13 @@ export function splat(clientX, clientY) {
       const y = c + Math.sin(a) * s * frame + 0.21 * frame * frame;
       const big = i % 3 === 0 && frame < 8;
       pc.rect(Math.round(x), Math.round(y), big ? 2 : 1, big ? 2 : 1, bloodAt(frame + (i % 3)));
-      if (frame > 0 && frame < 9) {
-        const f = frame - 1;
-        pc.px(Math.round(c + Math.cos(a) * s * f), Math.round(c + Math.sin(a) * s * f + 0.21 * f * f), BLOOD_DARK);
+      for (const [back, alpha] of [[1, 0.6], [2, 0.25]]) {
+        const f = frame - back;
+        if (f < 0 || frame >= 10) continue;
+        pc.ghost(Math.round(c + Math.cos(a) * s * f), Math.round(c + Math.sin(a) * s * f + 0.21 * f * f), 1, 1, RGB_BLOOD, alpha);
       }
     }
+    pc.bloom(frame < 6 ? 1.2 : 0.8);
     requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
@@ -344,8 +398,22 @@ export function splat(clientX, clientY) {
 /** Every .px-btn that is not .dark/.bone bursts blood where it is clicked. */
 document.addEventListener("pointerdown", (e) => {
   const btn = e.target instanceof Element && e.target.closest(".px-btn:not(.dark):not(.bone):not(:disabled), .big-play");
-  if (btn) splat(e.clientX, e.clientY);
+  if (btn) {
+    splat(e.clientX, e.clientY);
+    shake();
+  }
 });
+
+const reducedMotion = () => !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+/** Three frames of a 2px screen shake: the hit landing. */
+export function shake() {
+  if (reducedMotion()) return;
+  document.body.classList.remove("shake");
+  void document.body.offsetWidth; // restart the animation
+  document.body.classList.add("shake");
+  setTimeout(() => document.body.classList.remove("shake"), 200);
+}
 
 // --- katana loader ----------------------------------------------------------------
 
@@ -398,6 +466,17 @@ export function katana(width = 170) {
     if (frame >= 24) for (const x of [30, 33, 36]) if ((x + frame) % 2 === 0) pc.px(x, ground, BLOOD_DEEP);
     const deg = angle(frame);
     const bloodied = frame >= hitFrame && frame < 26;
+    // The swing is four frames; copies of the blade at the two angles before
+    // this one smear it across the arc -- motion blur in whole cells.
+    if (frame >= 4 && frame <= 7) {
+      for (const [back, alpha] of [[1, 0.42], [2, 0.18]]) {
+        const ghostDeg = angle(frame - back);
+        for (let t = 8; t <= len; t++) {
+          const [x, y] = at(ghostDeg, t);
+          pc.ghost(x, y, 1, 1, RGB_STEEL, alpha);
+        }
+      }
+    }
     for (let t = 0; t <= len; t++) {
       const [x, y] = at(deg, t);
       const a = (deg + 90) * Math.PI / 180;
@@ -412,6 +491,7 @@ export function katana(width = 170) {
     }
     if (frame < 3) { const [gx, gy] = at(deg, 10 + frame * 6); pc.px(gx, gy, C.W); }
     if (frame >= 8 && frame < 21) { const [tx, ty] = at(deg, len - 2); pc.px(tx, ty + 1 + ((frame - 8) % 5), BLOOD); }
+    pc.bloom();
   });
   return wrap;
 }
@@ -478,9 +558,13 @@ export function orb(size = 136, initialLevel = 0.08) {
       for (const [dx, off] of [[12, 0], [18, 4]]) {
         pc.px(dx, COLS - 1, BLOOD_DARK);
         const fall = (frame + off * 3) % 10;
-        if (fall < 7) pc.rect(dx, COLS + fall, 1, 2, BLOOD);
+        if (fall < 7) {
+          if (fall > 0) pc.ghost(dx, COLS + fall - 1, 1, 1, RGB_BLOOD, 0.4);
+          pc.rect(dx, COLS + fall, 1, 2, BLOOD);
+        }
       }
     }
+    pc.bloom(0.8);
   });
 
   const set = ({ progress: p, mbps } = {}) => {
@@ -511,7 +595,7 @@ export function confirmDialog(title, text, okLabel = "OK") {
   return new Promise((resolve) => {
     const done = (v) => { back.remove(); resolve(v); };
     const back = h("div.dialog-back", { onclick: (e) => { if (e.target === back) done(false); } },
-      h("div.dialog.px-box", { role: "dialog", "aria-modal": "true", "aria-label": title },
+      h("div.dialog.px-box.rivets", { role: "dialog", "aria-modal": "true", "aria-label": title },
         h("h3", null, title),
         h("p", null, text),
         h("div.row", null,
@@ -529,4 +613,123 @@ export function fmtTime(sec) {
   const hgt = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
   const ss = String(s).padStart(2, "0");
   return hgt ? `${hgt}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+}
+
+// --- ambient embers ----------------------------------------------------------------
+
+/**
+ * Blood embers drifting up behind the page: a low-resolution canvas fixed
+ * behind everything, each ember a cell or two with its own stepped glow, a
+ * slow sway and a flicker. Off when the viewer asks for reduced motion.
+ */
+export function embers(canvas, { cell = 3, density = 0.00009 } = {}) {
+  if (reducedMotion()) return;
+  const pc = new PixelCanvas(canvas);
+  let parts = [];
+  const spawn = (w, h, anywhere) => ({
+    x: Math.random() * w,
+    y: anywhere ? Math.random() * h : h + Math.random() * 20,
+    v: 0.18 + Math.random() * 0.45,
+    sway: Math.random() * Math.PI * 2,
+    big: Math.random() < 0.22,
+    gold: Math.random() < 0.12,
+    life: 0,
+  });
+  const size = () => {
+    canvas.width = Math.max(1, Math.ceil(innerWidth / cell));
+    canvas.height = Math.max(1, Math.ceil(innerHeight / cell));
+    const n = Math.round(canvas.width * canvas.height * cell * cell * density);
+    parts = Array.from({ length: Math.min(70, Math.max(14, n)) }, () => spawn(canvas.width, canvas.height, true));
+  };
+  size();
+  addEventListener("resize", size);
+  animate(canvas, 12, 0, (frame) => {
+    const w = canvas.width, h = canvas.height;
+    pc.clear();
+    for (const p of parts) {
+      p.y -= p.v;
+      p.life++;
+      const x = Math.round(p.x + Math.sin(p.sway + p.life * 0.05) * 2);
+      const y = Math.round(p.y);
+      if (y < -4) Object.assign(p, spawn(w, h, false));
+      // Flicker in whole steps; fade near the top.
+      const lit = (frame + Math.floor(p.sway * 7)) % 9 < 7;
+      const fade = Math.min(1, y / (h * 0.35));
+      const core = p.gold ? "232,178,58" : lit ? "255,77,87" : "209,10,26";
+      const halo = p.gold ? "232,178,58" : "209,10,26";
+      const sz = p.big ? 2 : 1;
+      pc.ghost(x - 1, y - 1, sz + 2, sz + 2, halo, 0.14 * fade);
+      pc.ghost(x, y + sz, sz, 2, halo, 0.16 * fade); // its trail
+      pc.ghost(x, y, sz, sz, core, 0.9 * fade);
+    }
+  });
+}
+
+// --- speed lines ----------------------------------------------------------------------
+
+/**
+ * Horizontal streaks across `host` for a few frames: how pixel art draws a
+ * fast move. dir is 1 (moving right) or -1.
+ */
+export function speedLines(host, dir = 1) {
+  if (reducedMotion()) return;
+  const cell = 3;
+  const r = host.getBoundingClientRect();
+  const canvas = h("canvas.speedlines", { width: Math.ceil(r.width / cell), height: Math.ceil(r.height / cell) });
+  host.appendChild(canvas);
+  const pc = new PixelCanvas(canvas);
+  const W = canvas.width, H = canvas.height;
+  const lines = Array.from({ length: Math.max(8, Math.round(H / 4)) }, () => ({
+    y: Math.floor(Math.random() * H), len: 8 + Math.floor(Math.random() * W * 0.35), x: Math.random() * W,
+  }));
+  let frame = 0;
+  const step = () => {
+    if (frame >= 5) { canvas.remove(); return; }
+    pc.clear();
+    const alpha = [0.55, 0.7, 0.5, 0.3, 0.12][frame];
+    for (const l of lines) {
+      const x = Math.round(l.x + dir * frame * W * 0.18);
+      pc.ghost(x, l.y, l.len, 1, "242,232,213", alpha);
+      pc.ghost(x - dir * 3, l.y, 3, 1, "255,77,87", alpha);
+    }
+    frame++;
+    setTimeout(() => requestAnimationFrame(step), 45);
+  };
+  step();
+}
+
+// --- page transition --------------------------------------------------------------------
+// A Bayer-dither dissolve: the page breaks into, or out of, square cells in
+// five steps, the way 16-bit games change screens.
+
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+
+export function dissolve(mode, ms = 200) {
+  return new Promise((resolve) => {
+    if (reducedMotion()) { resolve(); return; }
+    const cell = 6;
+    const canvas = h("canvas.dissolve", { width: Math.ceil(innerWidth / cell), height: Math.ceil(innerHeight / cell) });
+    document.body.appendChild(canvas);
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width, H = canvas.height;
+    const steps = 5;
+    let i = 0;
+    const draw = () => {
+      // "out" covers the page as it leaves; "in" uncovers the new one.
+      const t = mode === "out" ? (i + 1) / steps : 1 - (i + 1) / steps;
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = "#050305";
+      const level = t * 16;
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) if (BAYER[(y & 3) * 4 + (x & 3)] < level) ctx.fillRect(x, y, 1, 1);
+      }
+      i++;
+      if (i < steps) setTimeout(draw, ms / steps);
+      else {
+        if (mode === "in") canvas.remove();
+        resolve();
+      }
+    };
+    draw();
+  });
 }

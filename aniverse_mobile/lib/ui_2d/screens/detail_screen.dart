@@ -44,6 +44,7 @@ class _DetailScreenState extends State<DetailScreen> {
     Navigator.push(
       context,
       FadeScaleRoute(
+        backdrop: false,
         page: WatchScreen(
           animeId: widget.id,
           epNum: number,

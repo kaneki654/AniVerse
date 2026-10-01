@@ -165,7 +165,7 @@ class _OrbPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final pc = PixelCanvas(canvas, size.width / cols);
+    final pc = PixelCanvas(canvas, size.width / cols, glow: true);
     const c = 15.0, r = 15.0;
     const innerTop = 2.0, innerBottom = 28.0;
     final fill = level.clamp(0.0, 1.0);
@@ -230,9 +230,13 @@ class _OrbPainter extends CustomPainter {
       for (final (dx, off) in const [(12, 0), (18, 4)]) {
         pc.px(dx, cols - 1, Px.bloodDark);
         final fall = (frame + off * 3) % 10;
-        if (fall < 7) pc.rect(dx, cols + fall, 1, 2, Px.blood);
+        if (fall < 7) {
+          if (fall > 0) pc.ghost(dx, cols + fall - 1, 1, 1, Px.blood, 0.4);
+          pc.rect(dx, cols + fall, 1, 2, Px.blood);
+        }
       }
     }
+    pc.commit(strength: 0.8);
   }
 
   @override
