@@ -16,3 +16,4 @@ AniVerseApiUrl/debug_*.txt
 
 # Account database (password hashes, session tokens) and the Google client ID.
 data/
+.pytest_cache/
