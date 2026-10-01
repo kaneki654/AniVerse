@@ -3,9 +3,17 @@ name: Claude Code Review
 on:
   pull_request:
     types: [opened, synchronize]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit to review (defaults to the latest on main)"
+        required: false
 
 jobs:
-  review:
+  review-pr:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -37,3 +45,52 @@ jobs:
             review as a single PR comment with `gh pr comment`.
           claude_args: |
             --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+
+  # Commits pushed straight to main have no PR, so the review goes on the commit.
+  review-push:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to post commit comments
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.sha || github.sha }}
+
+      - name: Work out the commit range
+        id: range
+        run: |
+          HEAD_SHA=$(git rev-parse HEAD)
+          BEFORE="${{ github.event.before }}"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE" 2>/dev/null; then
+            BEFORE=$(git rev-parse "$HEAD_SHA^")
+          fi
+          echo "base=$BEFORE" >> "$GITHUB_OUTPUT"
+          echo "head=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            COMMIT RANGE: ${{ steps.range.outputs.base }}..${{ steps.range.outputs.head }}
+
+            Review the changes in this commit range, which were pushed
+            straight to main. Read them with `git log` and `git diff` on the
+            range above. Check for bugs, security issues, missing error
+            handling, memory/resource leaks, null-safety and lifecycle
+            problems, performance problems, and edge cases.
+
+            Output issues sorted by severity (critical / major / minor),
+            each with file:line, why it's a problem, and a fix.
+            Skip style nitpicks. End with a one-paragraph verdict.
+
+            Post the review as a single comment on commit
+            ${{ steps.range.outputs.head }} with:
+            gh api repos/${{ github.repository }}/commits/${{ steps.range.outputs.head }}/comments -f body=@review.md
+            (write the review to review.md first).
+          claude_args: |
+            --allowedTools "Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(gh api repos/${{ github.repository }}/commits/*),Write"
