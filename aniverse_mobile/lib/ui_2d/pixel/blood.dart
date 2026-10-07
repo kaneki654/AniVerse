@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'pixel.dart';
+import 'theme_fx.dart';
 
 /// Stable pseudo-random value in [0, 1) for [seed]: every blood effect is
 /// procedural but deterministic, so a given frame always draws the same.
@@ -107,6 +108,13 @@ class _SplatPainter extends CustomPainter {
     final pc = PixelCanvas(canvas, cell, glow: true);
     final c = (size.width / cell / 2).floor();
 
+    // The other themes hit differently: sparks for Neon cyber, petals for Sakura.
+    if (fxStyle != FxStyle.blood) {
+      fxStyle == FxStyle.neon ? paintSparkBurst(pc, c, c, frame, seed) : paintPetalBurst(pc, c, frame, seed);
+      pc.commit(strength: frame < 6 ? 1.2 : 0.8);
+      return;
+    }
+
     // The hit itself: a blot that shrinks as the droplets leave it.
     final blot = 3 - frame ~/ 2;
     for (var dy = -blot; dy <= blot; dy++) {
@@ -195,6 +203,14 @@ class _DripsPainter extends CustomPainter {
     final pc = PixelCanvas(canvas, cell, glow: true);
     final cols = (size.width / cell).floor();
     final rows = (size.height / cell).floor();
+
+    if (fxStyle != FxStyle.blood) {
+      fxStyle == FxStyle.neon
+          ? paintDataDrips(pc, frame, count, seed, cols, rows)
+          : paintPetalDrips(pc, frame, count, seed, cols, rows);
+      pc.commit();
+      return;
+    }
 
     for (var i = 0; i < count; i++) {
       final r = pxRand(seed * 31 + i);

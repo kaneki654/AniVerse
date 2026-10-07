@@ -5,28 +5,84 @@ import 'package:flutter/material.dart';
 /// The 2D UI's palette: blood reds on a near-black ground, bone-white text.
 ///
 /// Kept to a small fixed set, like a console palette, so every sprite and
-/// panel in the app draws from the same colours.
+/// panel in the app draws from the same colours. The ground, panels, the blood
+/// family and the gold accents change with the palette picked in Settings
+/// (Blood, Neon cyber, Sakura) -- the same three the website has -- so they
+/// are set at start-up by [apply] rather than being compile-time constants.
 class Px {
   static const black = Color(0xFF050305);
-  static const ink = Color(0xFF0D0709);
-  static const panel = Color(0xFF1B1114);
-  static const panelHigh = Color(0xFF2A1A1F);
-  static const blood = Color(0xFFD10A1A);
-  static const bloodDark = Color(0xFF7A0410);
-  static const bloodDeep = Color(0xFF3D0107);
-  static const bloodLight = Color(0xFFFF4D57);
+  static Color ink = const Color(0xFF0D0709);
+  static Color panel = const Color(0xFF1B1114);
+  static Color panelHigh = const Color(0xFF2A1A1F);
+  static Color blood = const Color(0xFFD10A1A);
+  static Color bloodDark = const Color(0xFF7A0410);
+  static Color bloodDeep = const Color(0xFF3D0107);
+  static Color bloodLight = const Color(0xFFFF4D57);
   static const bone = Color(0xFFF2E8D5);
   static const ash = Color(0xFF9A918C);
   static const ashDark = Color(0xFF5A5250);
   static const steel = Color(0xFFD5DCE6);
   static const steelDark = Color(0xFF7D8796);
-  static const gold = Color(0xFFE8B23A);
-  static const goldDark = Color(0xFF9C6A14);
+  static Color gold = const Color(0xFFE8B23A);
+  static Color goldDark = const Color(0xFF9C6A14);
   static const googleBlue = Color(0xFF4285F4);
+
+  /// Palette ids and their names, as on the website's Settings page.
+  static const themes = {'blood': 'Blood', 'neon': 'Neon cyber', 'sakura': 'Sakura'};
+  static String theme = 'blood';
+
+  // ink, panel, panelHigh, blood, bloodDark, bloodDeep, bloodLight, gold, goldDark
+  static const _palettes = <String, List<int>>{
+    'blood': [0xFF0D0709, 0xFF1B1114, 0xFF2A1A1F, 0xFFD10A1A, 0xFF7A0410, 0xFF3D0107, 0xFFFF4D57, 0xFFE8B23A, 0xFF9C6A14],
+    'neon': [0xFF070A12, 0xFF10141F, 0xFF1B2133, 0xFF00D9FF, 0xFF006B85, 0xFF002A38, 0xFF7FF3FF, 0xFFFF3DF0, 0xFF8A1F86],
+    'sakura': [0xFF120A0F, 0xFF21131B, 0xFF321C29, 0xFFFF5FA2, 0xFFA3305F, 0xFF4A1430, 0xFFFFB3D1, 0xFFFFD36B, 0xFFA8801F],
+  };
+
+  /// A palette's colours without switching to it: what the switch animation
+  /// draws its way in with.
+  static ({Color ink, Color blood, Color bloodDark, Color bloodDeep, Color bloodLight, Color gold}) colorsOf(String name) {
+    final p = _palettes[name] ?? _palettes['blood']!;
+    return (
+      ink: Color(p[0]),
+      blood: Color(p[3]),
+      bloodDark: Color(p[4]),
+      bloodDeep: Color(p[5]),
+      bloodLight: Color(p[6]),
+      gold: Color(p[7]),
+    );
+  }
+
+  /// Switches the palette. Widgets built before the switch keep their old
+  /// colours, so the app rebuilds its whole tree after calling this.
+  static void apply(String name) {
+    final p = _palettes[name] ?? _palettes['blood']!;
+    theme = _palettes.containsKey(name) ? name : 'blood';
+    ink = Color(p[0]);
+    panel = Color(p[1]);
+    panelHigh = Color(p[2]);
+    blood = Color(p[3]);
+    bloodDark = Color(p[4]);
+    bloodDeep = Color(p[5]);
+    bloodLight = Color(p[6]);
+    gold = Color(p[7]);
+    goldDark = Color(p[8]);
+    keys
+      ..['k'] = ink
+      ..['P'] = panel
+      ..['R'] = blood
+      ..['r'] = bloodDark
+      ..['d'] = bloodDeep
+      ..['H'] = bloodLight
+      ..['Y'] = gold
+      ..['y'] = goldDark;
+  }
+
+  /// The swatch shown for a palette in Settings.
+  static Color swatch(String name) => Color((_palettes[name] ?? _palettes['blood']!)[3]);
 
   /// Sprite palette keys. 'X' is special: it takes the sprite's tint colour,
   /// which is how one icon sprite serves in any colour.
-  static const Map<String, Color> keys = {
+  static final Map<String, Color> keys = {
     'K': black,
     'k': ink,
     'P': panel,

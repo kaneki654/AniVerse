@@ -229,7 +229,7 @@ class HeroSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    return Column(
       children: [
         SizedBox(
           height: 232,
@@ -238,11 +238,11 @@ class HeroSkeleton extends StatelessWidget {
             border: Px.bloodDark,
             borderWidth: 3,
             shadow: 4,
-            child: PixelSkeleton(),
+            child: const PixelSkeleton(),
           ),
         ),
-        SizedBox(height: 12),
-        _PageDots(count: 5, active: 0),
+        const SizedBox(height: 12),
+        const _PageDots(count: 5, active: 0),
       ],
     );
   }

@@ -90,13 +90,13 @@ class _ResumeCard extends StatelessWidget {
                     fit: StackFit.expand,
                     children: [
                       HistoryCover(url: entry.cover),
-                      const Center(
+                      Center(
                         child: PixelBox(
                           fill: Px.blood,
                           shadow: 2,
                           bevel: true,
-                          padding: EdgeInsets.fromLTRB(9, 7, 7, 7),
-                          child: PixelSprite(Sprites.play, scale: 2),
+                          padding: const EdgeInsets.fromLTRB(9, 7, 7, 7),
+                          child: const PixelSprite(Sprites.play, scale: 2),
                         ),
                       ),
                       Positioned(left: 4, bottom: 12, child: EpisodeBadge(episode: entry.episode)),

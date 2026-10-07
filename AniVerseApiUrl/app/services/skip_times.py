@@ -72,7 +72,20 @@ def _db() -> sqlite3.Connection:
         "CREATE TABLE IF NOT EXISTS skip (anilist_id TEXT, episode INTEGER, duration REAL,"
         " intro_start REAL, intro_end REAL, outro_start REAL, outro_end REAL,"
         " checked_at INTEGER, PRIMARY KEY (anilist_id, episode, duration))")
+    # What people are watching, so quiet hours can get the next episodes ready.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS interest (anilist_id TEXT, category TEXT, server TEXT,"
+        " episode INTEGER, requested_at INTEGER, PRIMARY KEY (anilist_id, category))")
     return conn
+
+
+def _note_interest(anilist_id: str, episode: int, category: str, server: str) -> None:
+    with _db() as conn:
+        conn.execute(
+            "INSERT INTO interest VALUES (?, ?, ?, ?, ?) ON CONFLICT(anilist_id, category) DO UPDATE SET"
+            " server = excluded.server, episode = MAX(interest.episode, excluded.episode),"
+            " requested_at = excluded.requested_at",
+            (anilist_id, category, server, episode, int(time.time())))
 
 
 def _range(start: Any, end: Any) -> dict[str, int] | None:
@@ -331,6 +344,8 @@ async def lookup(anilist_id: str, episode: int, duration: float = 0.0,
     """{intro, outro, source, pending}: times for this video, and whether a
     detection that may fill in what is missing is under way."""
     result: dict[str, Any] = {"intro": None, "outro": None, "source": None, "pending": False}
+    if duration > 0:
+        _note_interest(anilist_id, episode, category, server)
     row = _stored(anilist_id, episode, duration)
     if row:
         result.update(intro=_range(row["intro_start"], row["intro_end"]),
@@ -385,3 +400,47 @@ async def _guarded_detect(anilist_id: str, episode: int, category: str, server: 
     except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
         # A background job: nothing waits on it, so log and record the attempt.
         print(f"Skip times: detection failed for {anilist_id} ep {episode}: {type(e).__name__}: {e}")
+
+
+# --- quiet-hours pre-detection ------------------------------------------------------------
+
+AHEAD = 8                 # episodes past the furthest one watched
+INTEREST_DAYS = 14        # shows watched this recently count as being watched
+
+
+def _detected_any(anilist_id: str, episode: int) -> bool:
+    with _db() as conn:
+        return conn.execute("SELECT 1 FROM skip WHERE anilist_id = ? AND episode = ? LIMIT 1",
+                            (anilist_id, episode)).fetchone() is not None
+
+
+async def predetect(max_jobs: int = 2) -> int:
+    """Find skip times for the next episodes of shows people are watching, so
+    the first viewer of each gets Skip Intro at once instead of a minute in.
+    Meant for quiet hours: it uses the same throttled downloads as a live
+    detection. Returns how many detections it ran."""
+    since = int(time.time()) - INTEREST_DAYS * 86400
+    with _db() as conn:
+        rows = conn.execute("SELECT * FROM interest WHERE requested_at >= ? ORDER BY requested_at DESC",
+                            (since,)).fetchall()
+    ran = 0
+    for row in rows:
+        if ran >= max_jobs:
+            break
+        anilist_id, category, server = row["anilist_id"], row["category"], row["server"] or ""
+        if not await _episodic(anilist_id):
+            continue
+        try:
+            async with httpx.AsyncClient(headers={"User-Agent": UA}) as client:
+                total = (await anilist_media.get_media(client, anilist_id)).get("episodes") or 0
+        except (httpx.HTTPError, RuntimeError, ValueError):
+            continue
+        for ep in range(row["episode"] + 1, row["episode"] + 1 + AHEAD):
+            if total and ep > total:
+                break
+            if _detected_any(anilist_id, ep):
+                continue  # done already, or covered as a neighbour
+            await _guarded_detect(anilist_id, ep, category, server)
+            ran += 1
+            break  # one per show per round, so every show gets a turn
+    return ran

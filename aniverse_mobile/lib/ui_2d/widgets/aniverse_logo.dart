@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../pixel/blood.dart';
 import '../pixel/fx.dart';
 import '../pixel/pixel.dart';
+import '../pixel/theme_fx.dart';
 
 /// The ANIVERSE wordmark as sprite text -- arcade face, hard black outline, the
 /// pixel-art logo beside it -- with blood dripping off the letters.
@@ -26,7 +27,7 @@ class AniVerseLogo extends StatelessWidget {
           Shadow(color: Px.black, offset: Offset(fontSize / 6, fontSize / 6)),
           // Bloom: red copies a step out on each side -- a blocky glow.
           for (final o in [Offset(-step, 0), Offset(step, 0), Offset(0, -step), Offset(0, step)])
-            Shadow(color: const Color(0x47D10A1A), offset: o),
+            Shadow(color: Px.blood.withValues(alpha: 0.28), offset: o),
         ],
       ),
     );
@@ -62,15 +63,9 @@ class AniVerseLogo extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // The real logo as pixel art, drawn with no smoothing so its
-            // pixels stay square at any size.
-            Image.asset(
-              'assets/icon/aniverse_icon_pixel.png',
-              width: 34 * fontSize / 16,
-              height: 30 * fontSize / 16,
-              filterQuality: FilterQuality.none,
-              isAntiAlias: false,
-            ),
+            // The real logo as pixel art, drawn cell by cell so its pixels
+            // stay square at any size and take the palette's colours.
+            EmblemSprite(width: 34 * fontSize / 16),
             SizedBox(width: fontSize * 0.5),
             Stack(
               clipBehavior: Clip.none,

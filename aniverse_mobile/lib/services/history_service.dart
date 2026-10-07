@@ -119,6 +119,9 @@ class HistoryService {
     return (e == null || e.deleted) ? null : e;
   }
 
+  /// Every episode watched, for the achievements.
+  static List<HistoryEntry> all() => [for (final e in _entries.values) if (!e.deleted) e];
+
   /// Every episode watched of [animeId], keyed by episode number.
   static Map<int, HistoryEntry> episodesOf(String animeId) => {
         for (final e in _entries.values)

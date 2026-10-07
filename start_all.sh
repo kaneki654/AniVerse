@@ -5,13 +5,16 @@
 #   ./start_all.sh --no-publish    servers + tunnel, print the URL instead
 #   ./start_all.sh --no-tunnel     servers only (this is what run.sh does)
 #
-# Publishing matters: every cloudflared start gets a fresh random URL, and the
-# Android app looks the current one up from the install site. Starting a tunnel
-# without publishing it leaves the app pointed at the previous, now-dead address
-# — which looks exactly like the app being broken.
+# Publishing matters: every quick-tunnel start gets a fresh random URL, and the
+# Android app looks the current one up (GitHub's discovery/host.json, set by
+# ANIVERSE_PUBLISH_GIT=1). For an address that never changes, run
+# scripts/setup_named_tunnel.sh once; this script then uses that named tunnel.
 set -u
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
+# A named tunnel (scripts/setup_named_tunnel.sh) and any other local settings.
+# shellcheck disable=SC1091
+[ -f "$ROOT/.aniverse_tunnel" ] && . "$ROOT/.aniverse_tunnel"
 LOG_DIR="$ROOT/logs"
 mkdir -p "$LOG_DIR"
 
@@ -21,7 +24,7 @@ for arg in "$@"; do
   case "$arg" in
     --no-tunnel)  WITH_TUNNEL=0 ;;
     --no-publish) WITH_PUBLISH=0 ;;
-    -h|--help)    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)    sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 2 ;;
   esac
 done
@@ -194,15 +197,21 @@ fi
 say "Starting tunnel"
 TUNNEL_LOG="$LOG_DIR/tunnel.log"
 : > "$TUNNEL_LOG"
-"$CF" tunnel --url http://localhost:8000 >> "$TUNNEL_LOG" 2>&1 &
-TUNNEL_PID=$!
-
 URL=""
-for _ in $(seq 1 40); do
-  URL="$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$TUNNEL_LOG" 2>/dev/null | head -1)"
-  [ -n "$URL" ] && break
-  sleep 2
-done
+if [ -n "${ANIVERSE_TUNNEL_NAME:-}" ] && [ -n "${ANIVERSE_PUBLIC_URL:-}" ]; then
+  # Named tunnel: the same hostname every time.
+  "$CF" tunnel run --url http://localhost:8000 "$ANIVERSE_TUNNEL_NAME" >> "$TUNNEL_LOG" 2>&1 &
+  TUNNEL_PID=$!
+  URL="${ANIVERSE_PUBLIC_URL%/}"
+else
+  "$CF" tunnel --url http://localhost:8000 >> "$TUNNEL_LOG" 2>&1 &
+  TUNNEL_PID=$!
+  for _ in $(seq 1 40); do
+    URL="$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' "$TUNNEL_LOG" 2>/dev/null | head -1)"
+    [ -n "$URL" ] && break
+    sleep 2
+  done
+fi
 
 if [ -z "$URL" ]; then
   echo "  no tunnel URL appeared — see $TUNNEL_LOG" >&2
@@ -231,6 +240,16 @@ echo
 # now dead — the single most common reason "the app stopped working".
 if [ "$WITH_PUBLISH" -eq 1 ]; then
   say "Publishing the address so the app can find it"
+  if [ "${ANIVERSE_PUBLISH_GIT:-0}" = "1" ]; then
+    # discovery/host.json on GitHub, which the app checks when its saved address is dead.
+    "$PY" "$ROOT/scripts/publish_address.py" --host "$URL" || \
+      echo "  GitHub publish failed; phones keep their saved address."
+  elif [ -z "${ANIVERSE_TUNNEL_NAME:-}" ]; then
+    echo "  Tip: ANIVERSE_PUBLISH_GIT=1 ./start_all.sh publishes this address on GitHub"
+    echo "  (needs gh signed in), so phones find it on their own."
+  fi
+fi
+if [ "$WITH_PUBLISH" -eq 1 ] && command -v vercel >/dev/null 2>&1; then
   if "$PY" "$ROOT/aniverse_site/build_site.py" --host "$URL"; then
     if command -v vercel >/dev/null 2>&1; then
       if (cd "$ROOT/aniverse_site" && vercel deploy --prod --yes >/dev/null 2>&1); then
@@ -239,12 +258,6 @@ if [ "$WITH_PUBLISH" -eq 1 ]; then
         echo "  vercel deploy failed — publish manually:"
         echo "    cd aniverse_site && vercel deploy --prod"
       fi
-    else
-      echo "  vercel CLI not installed, so the app was NOT told about this URL."
-      echo "  Either install it (npm i -g vercel) and re-run, or from a machine"
-      echo "  that has it:"
-      echo "    python3 aniverse_site/build_site.py --host $URL"
-      echo "    cd aniverse_site && vercel deploy --prod"
     fi
   else
     echo "  build_site.py failed; the app was not told about this URL." >&2

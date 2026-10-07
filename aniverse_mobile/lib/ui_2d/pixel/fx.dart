@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import 'blood.dart';
 import 'pixel.dart';
+import 'theme_fx.dart';
 
 /// Ambient detail and motion effects for the 2D UI. All of it is pixel art:
 /// glows are stepped halos, motion blur is ghost frames and speed lines, and
@@ -25,7 +26,7 @@ class PixelBackdrop extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        const ColoredBox(color: Px.ink),
+        ColoredBox(color: Px.ink),
         if (!still) const Positioned.fill(child: IgnorePointer(child: RepaintBoundary(child: EmberField()))),
         const Positioned.fill(
           child: IgnorePointer(child: RepaintBoundary(child: CustomPaint(painter: _ScanlinePainter()))),
@@ -44,7 +45,14 @@ class EmberField extends StatelessWidget {
     return FrameClock(
       fps: 12,
       frames: 7200,
-      builder: (_, f) => CustomPaint(painter: _EmberPainter(f)),
+      // Embers for Blood, digital rain for Neon cyber, petals for Sakura.
+      builder: (_, f) => CustomPaint(
+        painter: switch (fxStyle) {
+          FxStyle.neon => DataRainPainter(f),
+          FxStyle.sakura => PetalFieldPainter(f),
+          FxStyle.blood => _EmberPainter(f),
+        },
+      ),
     );
   }
 }

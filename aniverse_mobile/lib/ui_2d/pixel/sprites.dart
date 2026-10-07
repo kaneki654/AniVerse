@@ -329,4 +329,132 @@ class Sprites {
     '.KWKWK.',
     '..KKK..',
   ]);
+
+  // --- 1.9: My List, schedule, downloads, party, achievements (same as the website's) ---
+  static const download = Sprite([
+    '...XXX...',
+    '...XXX...',
+    '...XXX...',
+    'XXXXXXXXX',
+    '.XXXXXXX.',
+    '..XXXXX..',
+    '...XXX...',
+    '.........',
+    'XXXXXXXXX',
+  ]);
+  static const home = Sprite([
+    '....X....',
+    '...XXX...',
+    '..XXXXX..',
+    '.XXXXXXX.',
+    'XXXXXXXXX',
+    '.XXX.XXX.',
+    '.XXX.XXX.',
+    '.XXX.XXX.',
+    '.XXXXXXX.',
+  ]);
+  static const calendar = Sprite([
+    '.X.....X.',
+    'XXXXXXXXX',
+    'X.......X',
+    'XXXXXXXXX',
+    'X.X.X.X.X',
+    'X.......X',
+    'X.X.X.X.X',
+    'X.......X',
+    'XXXXXXXXX',
+  ]);
+  static const bookmark = Sprite([
+    'XXXXXXX',
+    'XXXXXXX',
+    'XXXXXXX',
+    'XXXXXXX',
+    'XXXXXXX',
+    'XXX.XXX',
+    'XX...XX',
+    'X.....X',
+  ]);
+  static const bookmarkOff = Sprite([
+    'XXXXXXX',
+    'X.....X',
+    'X.....X',
+    'X.....X',
+    'X.....X',
+    'X..X..X',
+    'X.X.X.X',
+    'XX...XX',
+  ]);
+  static const bell = Sprite([
+    '....X....',
+    '..XXXXX..',
+    '.XXXXXXX.',
+    '.XXXXXXX.',
+    '.XXXXXXX.',
+    'XXXXXXXXX',
+    'XXXXXXXXX',
+    '.........',
+    '...XXX...',
+  ]);
+  static const trophy = Sprite([
+    'XXXXXXXXX',
+    'X.XXXXX.X',
+    'X.XXXXX.X',
+    '.XXXXXXX.',
+    '..XXXXX..',
+    '...XXX...',
+    '....X....',
+    '..XXXXX..',
+    '.XXXXXXX.',
+  ]);
+  static const flag = Sprite([
+    'XXXXXXX..',
+    'XXXXXXXX.',
+    'XXXXXXX..',
+    'XXXXXX...',
+    'X........',
+    'X........',
+    'X........',
+    'X........',
+    'X........',
+  ]);
+  static const party = Sprite([
+    '.XX...XX.',
+    'XXXX.XXXX',
+    'XXXX.XXXX',
+    '.XX...XX.',
+    '.........',
+    'XXXX.XXXX',
+    'XXXXXXXXX',
+    'XXXXXXXXX',
+  ]);
+  static const sword = Sprite([
+    '........X',
+    '.......XX',
+    '......XX.',
+    '.....XX..',
+    '.X..XX...',
+    '..XXX....',
+    '..XX.....',
+    '.X..X....',
+    'X........',
+  ]);
+  static const pip = Sprite([
+    'XXXXXXXXXXX',
+    'X.........X',
+    'X.........X',
+    'X.........X',
+    'X....XXXXXX',
+    'X....XXXXXX',
+    'X....XXXXXX',
+    'XXXXXXXXXXX',
+  ]);
+  static const gauge = Sprite([
+    '..XXXXX..',
+    '.X.....X.',
+    'X...X..XX',
+    'X....X..X',
+    'X....XX.X',
+    'X.......X',
+    '.XXXXXXX.',
+  ]);
 }

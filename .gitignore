@@ -17,3 +17,6 @@ AniVerseApiUrl/debug_*.txt
 # Account database (password hashes, session tokens) and the Google client ID.
 data/
 .pytest_cache/
+
+# Named Cloudflare tunnel settings written by scripts/setup_named_tunnel.sh.
+.aniverse_tunnel

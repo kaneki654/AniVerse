@@ -174,7 +174,9 @@ class _FacePainter extends CustomPainter {
 /// no blur, offset down-right like every panel in a 16-bit game.
 class PixelBox extends StatelessWidget {
   final Widget? child;
-  final Color fill;
+
+  /// The face colour; the palette's panel colour when null.
+  final Color? fill;
   final Color border;
   final double borderWidth;
   final double shadow;
@@ -191,7 +193,7 @@ class PixelBox extends StatelessWidget {
   const PixelBox({
     super.key,
     this.child,
-    this.fill = Px.panel,
+    this.fill,
     this.border = Px.black,
     this.borderWidth = 2,
     this.shadow = 3,
@@ -208,7 +210,7 @@ class PixelBox extends StatelessWidget {
     final press = pressed ? Offset(shadow, shadow) : Offset.zero;
     return CustomPaint(
       painter: _BoxPainter(
-        fill: fill,
+        fill: fill ?? Px.panel,
         border: border,
         bw: b,
         shadow: shadow,
@@ -415,16 +417,18 @@ class _PixelIconButtonState extends State<PixelIconButton> {
 /// Small label chip: genre tags, badges.
 class PixelChip extends StatelessWidget {
   final String text;
-  final Color fill;
+
+  /// The chip colour; the palette's blood colour when null.
+  final Color? fill;
   final Color color;
   final double fontSize;
 
-  const PixelChip(this.text, {super.key, this.fill = Px.blood, this.color = Px.bone, this.fontSize = 7});
+  const PixelChip(this.text, {super.key, this.fill, this.color = Px.bone, this.fontSize = 7});
 
   @override
   Widget build(BuildContext context) {
     return PixelBox(
-      fill: fill,
+      fill: fill ?? Px.blood,
       shadow: 2,
       borderWidth: 2,
       padding: const EdgeInsets.fromLTRB(5, 4, 5, 3),

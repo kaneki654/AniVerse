@@ -1,11 +1,16 @@
 // Shared pieces of the pixel website: the header, poster cards, shelves, the
 // spotlight and continue-watching rows -- the app's widgets, as DOM.
-import { h, sprite, hydrateSprites, pixelCover, drips, clear, plainText, embers, dissolve, speedLines } from "./px.js";
+import { h, sprite, hydrateSprites, pixelCover, drips, clear, plainText, embers, dissolve, speedLines, emblemUrl, paletteSwitch } from "./px.js";
 import { api, auth, history, titleOf, coverOf } from "./api.js";
+import { watchlist } from "./watchlist.js";
+import { settings } from "./settings.js";
+import { sfx } from "./sfx.js";
+import { newlyUnlocked } from "./achievements.js";
+import { toast } from "./px.js";
 
 export function sectionHead(title, more) {
   return h("div.section-head", null,
-    sprite("bloodDrop", 2),
+    sprite("mark", 2),
     h("h2", null, title),
     h("span.blade", { "aria-hidden": "true" }),
     more ? h("a.more", { href: more.href }, more.label || "More", sprite("chevron", 1)) : null);
@@ -231,7 +236,7 @@ async function appPromo() {
   if (!rel || !rel.available) return;
   const mb = rel.size ? ` · ${(rel.size / 1048576).toFixed(0)} MB` : "";
   slot.append(h("div.app-promo.px-box", null,
-    h("img", { src: "/static/pixel/img/logo.png", alt: "", width: 34, height: 30, style: { imageRendering: "pixelated" } }),
+    h("img", { src: emblemUrl() || "/static/pixel/img/logo.png", alt: "", width: 34, height: 30, style: { imageRendering: "pixelated" } }),
     h("div.txt", null, h("b", null, "AniVerse Pixel for Android"), h("span", null, `Version ${rel.versionName}${mb}`)),
     h("a.px-btn.px-box.bevel.small", { href: "/app/aniverse.apk", download: "AniVerse-Pixel.apk" }, sprite("download", 1.4), "Get the app")));
 }
@@ -239,7 +244,14 @@ async function appPromo() {
 /** Same-site page links play the dissolve before leaving. */
 function pageTransitions() {
   const root = document.documentElement;
-  if (root.classList.contains("entering")) {
+  let switched = null;
+  try { switched = sessionStorage.getItem("av.palette"); sessionStorage.removeItem("av.palette"); } catch { /* storage off */ }
+  if (switched) {
+    // Arriving from a palette switch: uncover in that palette's style.
+    try { sessionStorage.removeItem("av.dissolve"); } catch { /* storage off */ }
+    paletteSwitch(switched, "reveal");
+    root.classList.remove("entering");
+  } else if (root.classList.contains("entering")) {
     try { sessionStorage.removeItem("av.dissolve"); } catch { /* storage off */ }
     // The dissolve draws its first frame synchronously, so the page is still
     // covered when the CSS cover goes. (Not on a later frame: a background
@@ -264,12 +276,65 @@ function pageTransitions() {
   });
 }
 
+// --- new-episode alerts, sounds, achievements, offline install ---------------------
+
+/** Followed shows with episodes out since you last looked: a dot on My List,
+ *  a toast once per visit, and a system notification if you turned that on. */
+async function checkAlerts() {
+  if (!watchlist.all().length) return;
+  const fresh = await watchlist.newEpisodes();
+  document.querySelectorAll(".nav-mylist .alert-dot").forEach((d) => { d.hidden = !fresh.length; });
+  if (!fresh.length) return;
+  const key = fresh.map((f) => `${f.entry.anime_id}:${f.aired}`).join(",");
+  let told = "";
+  try { told = sessionStorage.getItem("av.alerted") || ""; sessionStorage.setItem("av.alerted", key); } catch { /* storage off */ }
+  if (told === key) return;
+  const first = fresh[0];
+  const text = fresh.length === 1
+    ? `New: ${first.entry.title} episode ${first.aired} is out`
+    : `${fresh.length} shows on your list have new episodes`;
+  toast(text, { action: { label: "Watch", run: () => { location.href = fresh.length === 1 ? `/watch/${first.entry.anime_id}/${first.aired}` : "/mylist"; } } });
+  if (settings.get().alerts && "Notification" in window && Notification.permission === "granted") {
+    try { new Notification("AniVerse", { body: text, icon: "/static/pixel/img/icon-192.png", tag: key }); } catch { /* not allowed here */ }
+  }
+}
+
+function soundHooks() {
+  document.addEventListener("pointerdown", (e) => {
+    const el = e.target instanceof Element ? e.target.closest(".px-btn, .icon-btn, .ep-btn, .toggle, .poster, .px-switch") : null;
+    if (!el || el.matches(":disabled")) return;
+    sfx(el.matches(".px-btn:not(.dark):not(.bone), .big-play") ? "splat" : "click");
+  });
+}
+
+function achievementToasts() {
+  const show = () => {
+    for (const b of newlyUnlocked()) {
+      sfx("achieve");
+      toast(`Achievement unlocked: ${b.name} — ${b.text}`, { ms: 7000, action: { label: "View", run: () => { location.href = "/account"; } } });
+    }
+  };
+  show();
+  history.onChange(show);
+}
+
 /** Everything every page needs once. */
 export function initShell() {
+  // The header emblem in the palette's colours (Blood keeps the crimson PNG).
+  const emblem = emblemUrl();
+  if (emblem) document.querySelectorAll('img[src$="/pixel/img/logo.png"]').forEach((img) => { img.src = emblem; });
   hydrateSprites();
   const bg = document.querySelector("canvas.embers-bg");
   if (bg) embers(bg);
   pageTransitions();
+  soundHooks();
+  achievementToasts();
+  if ("serviceWorker" in navigator && location.protocol === "https:") {
+    navigator.serviceWorker.register("/sw.js").catch(() => { /* installable is a bonus */ });
+  }
+  auth.onChange((user) => { if (user) watchlist.sync({ full: true }).then(checkAlerts); });
+  if (auth.token) watchlist.sync().then(checkAlerts); else checkAlerts();
+  setInterval(checkAlerts, 30 * 60 * 1000);
   const logoDrips = document.querySelector(".logo canvas.drips");
   if (logoDrips) drips(logoDrips, { count: 4, seed: 3, cell: 2.4 });
   headerSearch();

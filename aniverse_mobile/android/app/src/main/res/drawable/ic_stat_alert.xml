@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status-bar icon for new-episode alerts: the pixel skull, one rect per cell. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="7"
+    android:viewportHeight="7">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M1,0.5h1v1h-1zM2,0.5h1v1h-1zM3,0.5h1v1h-1zM4,0.5h1v1h-1zM5,0.5h1v1h-1zM0,1.5h1v1h-1zM1,1.5h1v1h-1zM2,1.5h1v1h-1zM3,1.5h1v1h-1zM4,1.5h1v1h-1zM5,1.5h1v1h-1zM6,1.5h1v1h-1zM0,2.5h1v1h-1zM2,2.5h1v1h-1zM3,2.5h1v1h-1zM4,2.5h1v1h-1zM6,2.5h1v1h-1zM0,3.5h1v1h-1zM1,3.5h1v1h-1zM2,3.5h1v1h-1zM4,3.5h1v1h-1zM5,3.5h1v1h-1zM6,3.5h1v1h-1zM1,4.5h1v1h-1zM2,4.5h1v1h-1zM3,4.5h1v1h-1zM4,4.5h1v1h-1zM5,4.5h1v1h-1zM2,5.5h1v1h-1zM3,5.5h1v1h-1zM4,5.5h1v1h-1z" />
+</vector>

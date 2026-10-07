@@ -37,9 +37,9 @@ class _NoArt extends StatelessWidget {
   const _NoArt();
 
   @override
-  Widget build(BuildContext context) => const ColoredBox(
+  Widget build(BuildContext context) => ColoredBox(
         color: Px.panelHigh,
-        child: Center(child: PixelSprite(Sprites.skull, scale: 2.5)),
+        child: const Center(child: PixelSprite(Sprites.skull, scale: 2.5)),
       );
 }
 
@@ -88,7 +88,7 @@ class PosterCard extends StatelessWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const PixelSprite(Sprites.star, scale: 1, color: Px.gold),
+                            PixelSprite(Sprites.star, scale: 1, color: Px.gold),
                             const SizedBox(width: 3),
                             Text('$score', style: PxFont.label(7, height: 1.2)),
                           ],

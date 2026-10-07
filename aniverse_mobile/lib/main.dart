@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 import 'screens/home_screen.dart';
 import 'theme.dart';
 import 'services/api_service.dart';
+import 'services/app_settings.dart';
 import 'services/auth_service.dart';
+import 'services/download_service.dart';
 import 'services/history_service.dart';
+import 'services/native_bridge.dart';
+import 'services/watchlist_service.dart';
 import 'ui_2d/app_2d.dart';
 
 /// Which UI the app launches. The classic UI (lib/screens, lib/widgets,
@@ -16,13 +20,27 @@ const bool kUse2DUi = true;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (kUse2DUi) {
+    // The 2D app's own state: settings (and with them the palette), history,
+    // My List, saved episodes, and the line to the Android side -- all local.
+    await AppSettings.load();
+    await HistoryService.load();
+    await WatchlistService.load();
+    await DownloadService.load();
+    NativeBridge.init();
+    // The server address is checked while the logo intro plays: ruling out a
+    // dead saved address can take seconds, and used to be a black screen.
+    final ready = ApiService.load().then((_) => AuthService.load());
+    runApp(AniVerse2DApp(ready: ready));
+    return;
+  }
   // Load the saved server address before the first request goes out.
   await ApiService.load();
   // Both are local reads, so "Continue Watching" and the signed-in avatar are
   // there on the first frame; the account check runs in the background.
   await HistoryService.load();
   await AuthService.load();
-  runApp(kUse2DUi ? const AniVerse2DApp() : const AniVerseApp());
+  runApp(const AniVerseApp());
 }
 
 class AniVerseApp extends StatelessWidget {

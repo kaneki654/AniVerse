@@ -53,6 +53,26 @@ export const api = {
     }
   },
   appRelease: () => getJson("/app/version.json", { timeout: 8000 }).catch(() => null),
+  extra: (id) => getJson(`/api/anime/extra/${encodeURIComponent(id)}`, { timeout: 20000 }).catch(() => ({})),
+  episodes: (id) => getJson(`/api/anime/episodes/${encodeURIComponent(id)}`, { timeout: 20000 }).then(list).catch(() => []),
+  schedule: (days = 7) => getJson(`/api/anime/schedule?days=${days}`, { timeout: 30000 }).then(list).catch(() => []),
+  /** filters: {q, genres[], year, season, format[], status, min_score, sort, page} */
+  filter(f = {}) {
+    const q = new URLSearchParams();
+    for (const [k, v] of Object.entries(f)) {
+      if (v === undefined || v === null || v === "" || (Array.isArray(v) && !v.length)) continue;
+      q.set(k, Array.isArray(v) ? v.join(",") : String(v));
+    }
+    return getJson(`/api/anime/filter?${q}`, { timeout: 25000 }).catch(() => ({ media: [], hasNextPage: false, available: false }));
+  },
+  status: () => getJson("/api/anime/status", { timeout: 15000 }),
+  /** Tell the server a stream plays wrong, so it is left out for a while. */
+  report: (id, ep, category, url, reason) => fetch("/api/report", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ episode_id: `${id}/${ep}`, category, url, reason }),
+  }).then((r) => r.ok).catch(() => false),
+  authConfig: () => getJson("/api/auth/config", { timeout: 10000 }).catch(() => ({})),
+  trackingConfig: () => getJson("/api/tracking/config", { timeout: 10000 }).catch(() => ({})),
   /** Intro/outro for the video playing: {intro, outro, source, pending}. */
   skipTimes(id, ep, duration, server, category) {
     const q = `duration=${duration.toFixed(2)}&server=${encodeURIComponent(server || "")}&category=${category}`;
@@ -113,6 +133,23 @@ export const auth = {
     this._set(d.token, d.user);
     await history.sync({ full: true });
     return d.user;
+  },
+  async google(idToken) {
+    const d = await this._post("google", { id_token: idToken });
+    this._set(d.token, d.user);
+    await history.sync({ full: true });
+    return d.user;
+  },
+  /** Authorized JSON calls for the account's tracking links. */
+  async call(method, path, body) {
+    const r = await fetch(path, {
+      method,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${this.token}` },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Something went wrong.");
+    return data;
   },
   async logout() {
     const token = this.token;

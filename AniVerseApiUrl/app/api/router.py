@@ -3,7 +3,8 @@ from fastapi import APIRouter, HTTPException
 from app.core.orchestrator import orchestrator
 from app.api.proxy import router as proxy_router
 from app.services.anilist import anilist_service
-from app.services import anilist_media, skip_times
+from app.core import health
+from app.services import anilist_media, extras, skip_times
 
 router = APIRouter(prefix="/anime", tags=["Anime"])
 
@@ -115,6 +116,49 @@ async def skip_markers(anilist_id: str, episode_number: int, duration: float = 0
     if not 0 < episode_number < 100000 or category not in ("sub", "dub"):
         raise HTTPException(status_code=400, detail="Bad episode or category")
     return await skip_times.lookup(anilist_id, episode_number, max(0.0, duration), server[:40], category)
+
+
+@router.get("/extra/{anilist_id}")
+async def anime_extra(anilist_id: int):
+    """Trailer, studio, relations, recommendations and characters; {} when AniList is down."""
+    return await extras.details(anilist_id)
+
+
+@router.get("/episodes/{anilist_id}")
+async def anime_episodes(anilist_id: int):
+    """Per-episode titles, synopses, air dates and screenshots; [] when unknown."""
+    return await extras.episodes(anilist_id)
+
+
+@router.get("/schedule")
+async def airing_schedule(days: int = 7, start: int | None = None):
+    """What airs from `start` (unix seconds, default now) over `days` days."""
+    return await extras.schedule(days, start)
+
+
+@router.get("/filter")
+async def filter_anime(q: str = "", genres: str = "", year: int | None = None, season: str = "",
+                       format: str = "", status: str = "", min_score: int | None = None,
+                       sort: str = "", page: int = 1, per_page: int = 24):
+    """Browse with filters. `genres` and `format` are comma-separated."""
+    return await extras.filter_media(
+        q=q.strip()[:100],
+        genres=[g.strip() for g in genres.split(",") if g.strip()][:10],
+        year=year if year and 1940 <= year <= 2100 else None,
+        season=season.upper() or None,
+        formats=[f.strip().upper() for f in format.split(",") if f.strip()],
+        status=status.upper() or None,
+        min_score=min_score,
+        sort=sort.upper() or None,
+        page=page,
+        per_page=per_page,
+    )
+
+
+@router.get("/status")
+async def provider_status():
+    """How each provider and episode lookups have done over the last day."""
+    return health.summary()
 
 
 @router.get("/browse")

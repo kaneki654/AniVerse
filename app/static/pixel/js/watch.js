@@ -1,10 +1,15 @@
 // Watching an episode: find streams, open the first that plays, keep it
 // playing through bad connections, and remember how far you got -- the app's
-// watch_screen.dart, for the web. player.js draws; this decides.
+// watch_screen.dart, for the web. player.js draws; this decides. Also here:
+// quality and speed, subtitle choice, reporting a bad stream, fetching the
+// next episode's streams early, and watch parties.
 import { h, sprite, clear, toast, fmtTime } from "./px.js";
 import { api, history, titleOf, coverOf, airedEpisodes } from "./api.js";
+import { settings } from "./settings.js";
+import { sfx } from "./sfx.js";
 import { initShell } from "./ui.js";
-import { createPlayer } from "./player.js";
+import { createPlayer, pref } from "./player.js";
+import { startParty, newPartyCode, validCode } from "./party.js";
 
 initShell();
 const root = document.getElementById("watch");
@@ -19,7 +24,19 @@ let gen = 0;               // bumped when earlier async work must stop mattering
 let hls = null;
 let phase = "resolving";   // resolving | opening | playing | reconnecting | failed
 let captionsChoice = null; // null: on for SUB, off for DUB, as in the app
-let cues = [];
+let cues = [], currentTrack = null;
+
+// A watch party is on when the address carries ?party=CODE.
+const partyParam = new URLSearchParams(location.search).get("party");
+let partyCode = validCode(partyParam) ? partyParam.toUpperCase() : null;
+let party = null;
+const epHref = (n) => `/watch/${animeId}/${n}${partyCode ? `?party=${partyCode}` : ""}`;
+/** Another episode; in a party the room is told first so everyone comes along. */
+function goEpisode(n) {
+  if (!party) { location.href = epHref(n); return; }
+  party.sendEpisode(n);
+  setTimeout(() => { location.href = epHref(n); }, 150);
+}
 
 const player = createPlayer(document.getElementById("player"), {
   backHref,
@@ -31,8 +48,10 @@ const player = createPlayer(document.getElementById("player"), {
   onToggleCategory: () => {
     if (category === "sub" && hasDub === false) return;
     saveProgress();
+    const at = video.currentTime;
     category = category === "sub" ? "dub" : "sub";
     captionsChoice = null;
+    party?.send({ category, t: at, playing: true });
     resolve();
   },
   onToggleCaptions: () => {
@@ -40,9 +59,13 @@ const player = createPlayer(document.getElementById("player"), {
     captionsChoice = !captionsOn();
     syncCaptions();
   },
-  onNext: () => { location.href = `/watch/${animeId}/${ep + 1}`; },
+  onNext: () => goEpisode(ep + 1),
+  menu: () => buildMenu(),
 });
 const video = player.video;
+const styleCaptions = (s) => player.captionStyle({ size: s.subSize, bg: s.subBg });
+styleCaptions(settings.get());
+settings.onChange(styleCaptions);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // --- link speed ---------------------------------------------------------------------
@@ -159,6 +182,7 @@ function teardown() {
   video.removeAttribute("src");
   video.load();
   cues = [];
+  currentTrack = null;
   player.setCaptions(false, false);
   player.hideBuffering();
 }
@@ -216,6 +240,7 @@ function openSource(src, start, g) {
         fragLoadingMaxRetry: 4,
       });
       hls.on(Hls.Events.FRAG_LOADED, (_, d) => speed.frag(d.frag.stats));
+      hls.on(Hls.Events.MANIFEST_PARSED, applyQuality);
       hls.on(Hls.Events.ERROR, (_, d) => {
         if (!d.fatal) return;
         if (!settled) finish(false);
@@ -233,6 +258,7 @@ function openSource(src, start, g) {
   });
 }
 
+let startedOnce = false;
 function attached() {
   phase = "playing";
   reconnectTries = 0;
@@ -242,19 +268,29 @@ function attached() {
   loadCaptions(sources[sourceIndex]);
   loadSkipTimes(sources[sourceIndex]);
   renderActions();
+  mediaSession();
+  video.defaultPlaybackRate = video.playbackRate = pref.get("rate", 1);
+  if (!startedOnce) { startedOnce = true; sfx("start"); }
+  remoteUntil = performance.now() + 1500; // opening is not something to tell the party
   video.play().catch(() => player.poke()); // Autoplay refused: the play button waits.
+  if (pendingParty) {
+    const p = pendingParty;
+    pendingParty = null;
+    applyPartyState(p.s, p.t + (p.s.playing ? (performance.now() - p.at) / 1000 : 0));
+  }
 }
 
 function fail(reason) {
   phase = "failed";
   teardown();
+  sfx("error");
   const other = category === "sub" ? "DUB" : "SUB";
   const offerSwitch = category === "dub" || hasDub !== false;
   player.failed("Couldn't play this episode", reason, [
     { label: "Retry", run: () => resolve() },
     offerSwitch ? { label: `Try ${other}`, kind: "dark", run: () => { category = category === "sub" ? "dub" : "sub"; captionsChoice = null; resolve(); } } : null,
     { label: "Details", kind: "dark", href: backHref },
-  ].filter(Boolean));
+  ].filter(Boolean), { boss: () => resolve() });
 }
 
 // --- keeping it playing ---------------------------------------------------------------
@@ -409,11 +445,24 @@ function paintCue() {
 video.addEventListener("timeupdate", paintCue);
 setInterval(() => { if (!video.paused && cues.length) paintCue(); }, 200);
 
-async function loadCaptions(src) {
+const tracksOf = (src) => ((src && src.subtitles) || []).filter((t) => t && t.url);
+const trackName = (t) => t.label || t.lang || "Subtitles";
+
+/** The language picked in Settings when the stream has it, else its default, else English. */
+function pickTrack(tracks) {
+  const lang = settings.get().subLang;
+  const named = (re) => tracks.find((t) => re.test(trackName(t)));
+  return (lang && named(new RegExp(`^${lang}`, "i"))) || tracks.find((t) => t.default) || named(/^english/i) || tracks[0];
+}
+
+function loadCaptions(src) {
+  const tracks = tracksOf(src);
+  if (tracks.length) loadTrack(pickTrack(tracks));
+}
+
+async function loadTrack(track) {
   const g = gen;
-  const tracks = (src && src.subtitles) || [];
-  if (!tracks.length) return;
-  const track = tracks.find((t) => t.default) || tracks.find((t) => /^english/i.test(t.label || "")) || tracks[0];
+  currentTrack = track;
   try {
     const r = await fetch(track.url);
     if (!r.ok || g !== gen) return;
@@ -465,9 +514,218 @@ video.addEventListener("pause", () => saveProgress());
 addEventListener("pagehide", () => saveProgress());
 video.addEventListener("ended", () => {
   saveProgress(true);
-  if (aired && ep < aired) player.upNext(ep + 1, 8, () => { location.href = `/watch/${animeId}/${ep + 1}`; }, () => {});
+  if (aired && ep < aired) player.upNext(ep + 1, 8, () => goEpisode(ep + 1), () => {});
   else toast("That was the latest episode.");
 });
+
+// The next episode's streams are looked up near the end of this one, so the
+// server has them ready when "up next" fires.
+let prefetched = false;
+video.addEventListener("timeupdate", () => {
+  if (prefetched || phase !== "playing" || !aired || ep >= aired) return;
+  const d = video.duration;
+  if (Number.isFinite(d) && d > 60 && video.currentTime / d > 0.85) {
+    prefetched = true;
+    api.sources(animeId, ep + 1, category);
+  }
+});
+
+// --- quality, speed, the settings menu, reports ---------------------------------------------
+
+const levelName = (l) => (l.height ? `${l.height}p` : `${Math.round((l.bitrate || 0) / 1000)} kbps`);
+function lowestLevel() {
+  let best = 0;
+  hls.levels.forEach((l, i) => { if ((l.bitrate || 0) < (hls.levels[best].bitrate || 0)) best = i; });
+  return best;
+}
+/** The quality to start on: the lowest with data saver, else the one picked last time. */
+function applyQuality() {
+  if (!hls || hls.levels.length < 2) return;
+  if (settings.get().dataSaver) {
+    const low = lowestLevel();
+    hls.autoLevelCapping = low;
+    hls.currentLevel = low;
+    return;
+  }
+  hls.autoLevelCapping = -1;
+  const want = pref.get("quality", "auto");
+  const i = want === "auto" ? -1 : hls.levels.findIndex((l) => l.height === want);
+  if (i >= 0) hls.currentLevel = i;
+}
+function setQuality(i) {
+  if (!hls) return;
+  pref.set("quality", i < 0 ? "auto" : hls.levels[i].height || "auto");
+  hls.autoLevelCapping = -1; // a quality picked by hand beats data saver for this episode
+  hls.currentLevel = i;      // -1: automatic
+}
+
+function buildMenu() {
+  const s = settings.get();
+  const items = [];
+  if (hls && hls.levels && hls.levels.length > 1) {
+    const cur = hls.levels[hls.currentLevel];
+    items.push({ label: "Quality", value: hls.autoLevelEnabled ? `Auto${cur ? ` (${levelName(cur)})` : ""}` : cur ? levelName(cur) : "Auto", sub: qualityPage });
+  }
+  items.push({ label: "Speed", value: `${video.playbackRate}x`, sub: speedPage });
+  const tracks = tracksOf(sources[sourceIndex]);
+  if (tracks.length && phase === "playing") items.push({ label: "Subtitles", value: captionsOn() && currentTrack ? trackName(currentTrack) : "Off", sub: subtitlePage });
+  items.push({ label: "Subtitle style", sub: stylePage });
+  items.push({
+    label: "Data saver", value: s.dataSaver ? "On" : "Off", stay: true,
+    run: () => {
+      const on = !settings.get().dataSaver;
+      settings.set({ dataSaver: on });
+      if (on) applyQuality();
+      else if (hls) { hls.autoLevelCapping = -1; hls.currentLevel = -1; }
+    },
+  });
+  if (sources.length && phase === "playing") items.push("-", { label: "Report a problem", sub: reportPage });
+  return { title: "Settings", items, refresh: buildMenu };
+}
+
+function qualityPage() {
+  if (!hls) return { title: "Quality", items: [] };
+  const auto = hls.autoLevelEnabled;
+  return {
+    title: settings.get().dataSaver ? "Quality · data saver on" : "Quality",
+    items: [
+      { label: "Auto", checked: auto, run: () => setQuality(-1) },
+      ...hls.levels.map((l, i) => ({ l, i }))
+        .sort((a, b) => (b.l.height || 0) - (a.l.height || 0) || (b.l.bitrate || 0) - (a.l.bitrate || 0))
+        .map(({ l, i }) => ({ label: levelName(l), checked: !auto && hls.currentLevel === i, run: () => setQuality(i) })),
+    ],
+  };
+}
+
+function speedPage() {
+  return {
+    title: "Speed",
+    items: [0.5, 0.75, 1, 1.25, 1.5, 2].map((r) => ({
+      label: r === 1 ? "Normal" : `${r}x`, checked: video.playbackRate === r,
+      run: () => { video.defaultPlaybackRate = video.playbackRate = r; pref.set("rate", r); },
+    })),
+  };
+}
+
+function subtitlePage() {
+  return {
+    title: "Subtitles",
+    items: [
+      { label: "Off", checked: !captionsOn(), run: () => { captionsChoice = false; syncCaptions(); } },
+      ...tracksOf(sources[sourceIndex]).map((t) => ({
+        label: trackName(t), checked: captionsOn() && currentTrack === t,
+        run: () => { captionsChoice = true; if (currentTrack === t) syncCaptions(); else loadTrack(t); },
+      })),
+    ],
+  };
+}
+
+function stylePage() {
+  const s = settings.get();
+  return {
+    title: "Subtitle style", refresh: stylePage,
+    items: [
+      ...[["s", "Small"], ["m", "Medium"], ["l", "Large"], ["xl", "Extra large"]].map(([v, label]) => ({
+        label, checked: s.subSize === v, stay: true, run: () => settings.set({ subSize: v }),
+      })),
+      "-",
+      { label: "Dark box behind text", value: s.subBg ? "On" : "Off", stay: true, run: () => settings.set({ subBg: !settings.get().subBg }) },
+    ],
+  };
+}
+
+const REASONS = ["Video won't play", "Wrong episode", "Audio and video out of sync", "Subtitles missing or wrong", "Keeps buffering", "Very bad quality"];
+function reportPage() {
+  return { title: "What's wrong?", items: REASONS.map((r) => ({ label: r, run: () => report(r) })) };
+}
+
+/** Tells the server this stream is bad (it is left out for a few hours) and moves on to another. */
+async function report(reason) {
+  const src = sources[sourceIndex];
+  if (!src) return;
+  api.report(animeId, ep, category, src.url, reason);
+  sfx("slash");
+  toast("Thanks for reporting. That stream is set aside for everyone; trying another.");
+  const g = ++gen;
+  const at = video.currentTime;
+  sources = sources.filter((_, i) => i !== sourceIndex);
+  if (sources.length && await openFrom(sourceIndex % sources.length, at, g)) return;
+  if (g !== gen) return;
+  player.loading("Finding another stream");
+  const next = await api.sources(animeId, ep, category);
+  if (g !== gen) return;
+  apply(next);
+  if (sources.length && await openFrom(0, at, g)) return;
+  if (g === gen) fail("Every stream found for this episode has been reported. Try again later, or switch between SUB and DUB.");
+}
+
+// --- lock screen and media keys ----------------------------------------------------------------
+
+function mediaSession() {
+  const ms = navigator.mediaSession;
+  if (!ms || !info) return;
+  try {
+    ms.metadata = new MediaMetadata({ title: `Episode ${ep}`, artist: titleOf(info), album: "AniVerse", artwork: coverOf(info) ? [{ src: coverOf(info) }] : [] });
+    ms.setActionHandler("play", () => video.play().catch(() => {}));
+    ms.setActionHandler("pause", () => video.pause());
+    ms.setActionHandler("seekbackward", () => { video.currentTime = Math.max(0, video.currentTime - 10); });
+    ms.setActionHandler("seekforward", () => { video.currentTime += 10; });
+    ms.setActionHandler("previoustrack", ep > 1 ? () => goEpisode(ep - 1) : null);
+    ms.setActionHandler("nexttrack", aired && ep < aired ? () => goEpisode(ep + 1) : null);
+  } catch { /* an older browser without some of these actions */ }
+}
+
+// --- watch party -----------------------------------------------------------------------------------
+
+let remoteUntil = 0;   // events before this are the party's doing, not the viewer's
+let pendingParty = null;
+
+const partyState = () => ({
+  anime: animeId, ep, category,
+  playing: phase === "playing" && !video.paused && !video.ended,
+  t: phase === "playing" ? video.currentTime : resumeAt(),
+});
+
+/** Someone in the party played, paused, seeked or changed episode: follow. */
+function applyPartyState(s, t) {
+  if (String(s.anime) !== String(animeId) || s.ep !== ep) {
+    toast(`${s.by || "The party"} moved to episode ${s.ep}`);
+    party?.leave(false);
+    location.href = `/watch/${encodeURIComponent(s.anime)}/${s.ep}?party=${partyCode}`;
+    return;
+  }
+  if (s.category !== category && (s.category === "sub" || hasDub !== false)) {
+    category = s.category;
+    captionsChoice = null;
+    pendingParty = { s, t, at: performance.now() };
+    resolve();
+    return;
+  }
+  if (phase !== "playing") { pendingParty = { s, t, at: performance.now() }; return; }
+  remoteUntil = performance.now() + 1200;
+  if (Math.abs(video.currentTime - t) > 1.5) video.currentTime = t;
+  if (s.playing && video.paused) video.play().catch(() => player.poke());
+  if (!s.playing && !video.paused) video.pause();
+}
+
+const viewerDid = () => { if (party && phase === "playing" && performance.now() > remoteUntil) party.send(); };
+video.addEventListener("play", viewerDid);
+video.addEventListener("pause", () => { if (!video.ended) viewerDid(); });
+video.addEventListener("seeked", viewerDid);
+
+function joinParty() {
+  party = startParty({ code: partyCode, mount: actionsEl, getState: partyState, applyState: applyPartyState });
+}
+
+// In a party, episode links move the whole room (before the page-change effect sees the click).
+document.addEventListener("click", (e) => {
+  if (!party || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+  const a = e.target instanceof Element ? e.target.closest("a[href]") : null;
+  const m = a && new URL(a.href, location.href).pathname.match(/^\/watch\/([^/]+)\/(\d+)$/);
+  if (!m || m[1] !== String(animeId)) return;
+  e.preventDefault();
+  goEpisode(Number(m[2]));
+}, true);
 
 // --- the page around the player --------------------------------------------------------------
 
@@ -480,8 +738,8 @@ epsEl.after(rangeNav);
 
 function renderActions() {
   clear(actionsEl);
-  if (ep > 1) actionsEl.append(h("a.px-btn.dark.px-box.bevel.small", { href: `/watch/${animeId}/${ep - 1}` }, h("span", { style: { transform: "scaleX(-1)", display: "grid" } }, sprite("skipNext", 1.4)), `EP ${ep - 1}`));
-  if (aired && ep < aired) actionsEl.append(h("a.px-btn.px-box.bevel.small", { href: `/watch/${animeId}/${ep + 1}` }, `EP ${ep + 1}`, sprite("skipNext", 1.4)));
+  if (ep > 1) actionsEl.append(h("a.px-btn.dark.px-box.bevel.small", { href: epHref(ep - 1) }, h("span", { style: { transform: "scaleX(-1)", display: "grid" } }, sprite("skipNext", 1.4)), `EP ${ep - 1}`));
+  if (aired && ep < aired) actionsEl.append(h("a.px-btn.px-box.bevel.small", { href: epHref(ep + 1) }, `EP ${ep + 1}`, sprite("skipNext", 1.4)));
   if (sources.length > 1 && phase === "playing") {
     actionsEl.append(h("button.px-btn.dark.px-box.bevel.small", {
       type: "button",
@@ -492,6 +750,18 @@ function renderActions() {
         if (!(await openFrom((sourceIndex + 1) % sources.length, at, g)) && g === gen) fail("None of the other streams would play.");
       },
     }, sprite("refresh", 1.4), `Source ${sourceIndex + 1}/${sources.length}`));
+  }
+  if (!party) {
+    actionsEl.append(h("button.px-btn.dark.px-box.bevel.small", {
+      type: "button", title: "Watch together: everyone with the link plays, pauses and seeks together",
+      onclick: () => {
+        partyCode = newPartyCode();
+        window.history.replaceState(null, "", epHref(ep));
+        joinParty();
+        renderActions();
+        renderEpisodes();
+      },
+    }, sprite("party", 1.4), "Watch party"));
   }
   actionsEl.append(h("a.px-btn.dark.px-box.bevel.small", { href: backHref }, "Details"));
   const src = sources[sourceIndex];
@@ -511,12 +781,12 @@ function renderEpisodes() {
     const e = progress.get(n);
     const done = e && history.finished(e);
     const cls = n === ep ? ".current" : done ? ".watched" : "";
-    epsEl.append(h(`a.ep-btn.px-box${cls}`, { href: `/watch/${animeId}/${n}`, "aria-current": n === ep ? "page" : null },
+    epsEl.append(h(`a.ep-btn.px-box${cls}`, { href: epHref(n), "aria-current": n === ep ? "page" : null },
       String(n), done && n !== ep ? h("span.mark", null, sprite("skullSmall", 2)) : null));
   }
   clear(rangeNav);
-  if (start > 1) rangeNav.append(h("a.px-btn.dark.px-box.bevel.small", { href: `/watch/${animeId}/${start - RANGE}` }, `${start - RANGE}-${start - 1}`));
-  if (end < aired) rangeNav.append(h("a.px-btn.dark.px-box.bevel.small", { href: `/watch/${animeId}/${end + 1}` }, `${end + 1}+`));
+  if (start > 1) rangeNav.append(h("a.px-btn.dark.px-box.bevel.small", { href: epHref(start - RANGE) }, `${start - RANGE}-${start - 1}`));
+  if (end < aired) rangeNav.append(h("a.px-btn.dark.px-box.bevel.small", { href: epHref(end + 1) }, `${end + 1}+`));
   epsEl.querySelector(".current")?.scrollIntoView({ block: "nearest" });
 }
 
@@ -530,6 +800,7 @@ api.info(animeId).then((a) => {
   player.setNext(ep < aired);
   renderActions();
   renderEpisodes();
+  mediaSession();
   history.onChange(renderEpisodes);
   if (a.status === "NOT_YET_RELEASED") {
     ++gen;
@@ -540,4 +811,5 @@ api.info(animeId).then((a) => {
 
 player.setTitle(`Episode ${ep}`);
 renderActions();
+if (partyCode) joinParty();
 resolve();

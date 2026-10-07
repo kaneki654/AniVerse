@@ -26,6 +26,12 @@ class ApiService {
   static const String discoveryUrl =
       'https://aniversesite.vercel.app/version.json';
 
+  /// The same address, as published to the GitHub repository by
+  /// scripts/publish_address.py (start_all.sh with ANIVERSE_PUBLISH_GIT=1).
+  /// Tried first: GitHub stays up, while the Vercel site above went dead.
+  static const String githubDiscoveryUrl =
+      'https://raw.githubusercontent.com/kaneki654/AniVerse/main/discovery/host.json';
+
   static Future<void> load() async {
     var explicit = false;
     try {
@@ -71,12 +77,22 @@ class ApiService {
     }
   }
 
-  /// The address advertised by [discoveryUrl], or null if it cannot be reached.
+  /// The published address that answers: GitHub's copy first, then the
+  /// install site's. Null if neither can be reached or neither works.
   static Future<String?> _publishedHost() async {
+    String? fallback;
+    for (final url in [githubDiscoveryUrl, discoveryUrl]) {
+      final host = await _hostFrom(url);
+      if (host == null) continue;
+      if (await _reachable(host)) return host;
+      fallback ??= host;
+    }
+    return fallback;
+  }
+
+  static Future<String?> _hostFrom(String url) async {
     try {
-      final r = await http
-          .get(Uri.parse(discoveryUrl))
-          .timeout(const Duration(seconds: 6));
+      final r = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 6));
       if (r.statusCode != 200) return null;
       final body = json.decode(r.body);
       if (body is! Map) return null;
@@ -326,6 +342,82 @@ class ApiService {
     } catch (e) {
       print('getSubtitleFile failed: $e');
       return null;
+    }
+  }
+  // --- 1.9: extras, schedule, filters, reports ----------------------------------------
+
+  static Future<dynamic> _getJson(String url, {Duration timeout = const Duration(seconds: 25)}) async {
+    final r = await http.get(Uri.parse(url)).timeout(timeout);
+    if (r.statusCode != 200) throw http.ClientException('HTTP ${r.statusCode}');
+    return json.decode(utf8.decode(r.bodyBytes));
+  }
+
+  /// Studio, season, trailer, relations, recommendations and characters, or {}.
+  static Future<Map<String, dynamic>> extra(String id) async {
+    try {
+      final body = await _getJson('$baseUrl/anime/extra/${Uri.encodeComponent(id)}');
+      return body is Map ? Map<String, dynamic>.from(body) : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// Per-episode titles, synopses, screenshots and air dates, or [].
+  static Future<List<Map<String, dynamic>>> episodes(String id) async {
+    try {
+      final body = await _getJson('$baseUrl/anime/episodes/${Uri.encodeComponent(id)}');
+      return body is List ? [for (final e in body) if (e is Map) Map<String, dynamic>.from(e)] : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// What airs in the next [days] days: [{airingAt, episode, media}], or [].
+  static Future<List<Map<String, dynamic>>> schedule({int days = 7}) async {
+    try {
+      final body = await _getJson('$baseUrl/anime/schedule?days=$days', timeout: const Duration(seconds: 30));
+      return body is List ? [for (final e in body) if (e is Map) Map<String, dynamic>.from(e)] : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Search with filters: {media, hasNextPage, available}. [filters] keys are
+  /// q, genres, year, season, format, status, min_score, sort, page, per_page.
+  static Future<Map<String, dynamic>> filter(Map<String, String> filters) async {
+    try {
+      final q = Uri(queryParameters: {
+        for (final e in filters.entries) if (e.value.isNotEmpty) e.key: e.value,
+      }).query;
+      final body = await _getJson('$baseUrl/anime/filter?$q');
+      return body is Map ? Map<String, dynamic>.from(body) : {'media': [], 'available': false};
+    } catch (_) {
+      return {'media': [], 'hasNextPage': false, 'available': false};
+    }
+  }
+
+  /// Tells the server a stream plays wrong, so it is left out for a while.
+  static Future<bool> report(String id, int epNum, String category, String url, String reason) async {
+    try {
+      final r = await http
+          .post(Uri.parse('$webUrl/api/report'),
+              headers: {'Content-Type': 'application/json'},
+              body: json.encode({'episode_id': '$id/$epNum', 'category': category, 'url': url, 'reason': reason}))
+          .timeout(const Duration(seconds: 15));
+      return r.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Which tracking services this server can connect: {anilist: {enabled,
+  /// authorize_url}, mal: {enabled}}.
+  static Future<Map<String, dynamic>> trackingConfig() async {
+    try {
+      final body = await _getJson('$baseUrl/tracking/config', timeout: const Duration(seconds: 10));
+      return body is Map ? Map<String, dynamic>.from(body) : {};
+    } catch (_) {
+      return {};
     }
   }
 }

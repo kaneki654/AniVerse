@@ -15,7 +15,7 @@ redirect home.
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 _HERE = Path(__file__).resolve().parent
@@ -36,11 +36,14 @@ def _asset_version() -> str:
 _VERSION = _asset_version()
 
 
-def _page(request: Request, name: str, nav: str, title: str, **context) -> HTMLResponse:
+def _page(request: Request, name: str, nav: str, title: str, heading: str | None = None,
+          **context) -> HTMLResponse:
+    """A page: its own template, or with `heading` the shared one, which is just
+    that heading and an empty root its script fills in."""
     return templates.TemplateResponse(
         request=request,
-        name=f"pixel/{name}.html",
-        context={"page": name, "nav": nav, "title": title, "v": _VERSION, **context},
+        name="pixel/simple.html" if heading else f"pixel/{name}.html",
+        context={"page": name, "nav": nav, "title": title, "heading": heading, "v": _VERSION, **context},
     )
 
 
@@ -84,8 +87,66 @@ async def account(request: Request):
     return _page(request, "account", "account", "Account · AniVerse")
 
 
-# Pages the pixel UI does not have. The manga section is gone; the A-Z list and
-# schedule were thin views of the old hianime API, and search/genres cover them.
+@router.get("/schedule", response_class=HTMLResponse)
+async def schedule(request: Request):
+    return _page(request, "schedule", "schedule", "Schedule · AniVerse", heading="Schedule")
+
+
+@router.get("/mylist", response_class=HTMLResponse)
+async def mylist(request: Request):
+    return _page(request, "mylist", "mylist", "My List · AniVerse", heading="My List")
+
+
+@router.get("/settings", response_class=HTMLResponse)
+async def settings(request: Request):
+    return _page(request, "prefs", "account", "Settings · AniVerse", heading="Settings")
+
+
+@router.get("/status", response_class=HTMLResponse)
+async def status(request: Request):
+    return _page(request, "status", "", "Status · AniVerse", heading="Status")
+
+
+@router.get("/offline", response_class=HTMLResponse)
+async def offline(request: Request):
+    return _page(request, "offline", "", "Offline · AniVerse")
+
+
+# --- installable website ----------------------------------------------------------
+# A manifest and a service worker make the site installable from the browser
+# menu ("Add to Home screen"), which is how iPhones -- which cannot take the
+# APK -- get an app icon. The worker must be served from the root to control
+# every page.
+
+@router.get("/manifest.webmanifest")
+async def manifest():
+    icon = "/static/pixel/img"
+    return JSONResponse({
+        "name": "AniVerse Pixel",
+        "short_name": "AniVerse",
+        "description": "Watch anime, subbed and dubbed, in pixel art.",
+        "start_url": "/?source=pwa",
+        "scope": "/",
+        "display": "standalone",
+        "orientation": "any",
+        "background_color": "#0d0709",
+        "theme_color": "#050305",
+        "icons": [
+            {"src": f"{icon}/icon-192.png", "sizes": "192x192", "type": "image/png"},
+            {"src": f"{icon}/icon-512.png", "sizes": "512x512", "type": "image/png"},
+            {"src": f"{icon}/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+        ],
+    }, media_type="application/manifest+json")
+
+
+@router.get("/sw.js")
+async def service_worker():
+    return FileResponse(_STATIC / "sw.js", media_type="text/javascript",
+                        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
+
+
+# Pages the pixel UI does not have. The manga section is gone, and the old A-Z
+# list was a thin view of the old hianime API; search with filters covers it.
 @router.get("/manga")
 @router.get("/manga/{rest:path}")
 async def no_manga():
@@ -95,12 +156,7 @@ async def no_manga():
 @router.get("/azlist/{rest:path}")
 @router.get("/anime/browse")
 async def no_azlist():
-    return RedirectResponse("/genres", status_code=302)
-
-
-@router.get("/schedule")
-async def no_schedule():
-    return RedirectResponse("/", status_code=302)
+    return RedirectResponse("/search", status_code=302)
 
 
 def install(app: FastAPI) -> None:

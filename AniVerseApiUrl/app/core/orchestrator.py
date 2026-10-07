@@ -1,7 +1,9 @@
 import asyncio
 import hashlib
+import time
 from typing import Any
 
+from app.core import health
 from app.core.cache import cache
 from app.providers.base import BaseProvider
 
@@ -121,14 +123,20 @@ class ResolverOrchestrator:
     async def _run(self, provider: BaseProvider, anilist_id: str,
                    episode_number: int, category: str) -> dict[str, Any]:
         """provider.resolve() with any exception turned into an error result."""
+        name = provider.__class__.__name__
+        began = time.monotonic()
         try:
-            return await provider.resolve(anilist_id, episode_number, category)
+            result = await provider.resolve(anilist_id, episode_number, category)
         except asyncio.CancelledError:
             raise
         # One provider must not sink the rest: whatever it raises becomes its
         # error result, and the others' streams still go out.
         except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
-            return {"error": f"{provider.__class__.__name__}: {type(e).__name__}: {e}"}
+            result = {"error": f"{name}: {type(e).__name__}: {e}"}
+        # For the status page: how each provider is doing lately.
+        outcome = "ok" if result.get("streams") else ("error" if result.get("error") else "empty")
+        health.record_attempt(name, outcome, time.monotonic() - began, str(result.get("error") or ""))
+        return result
 
     async def _resolve_requested(self, anilist_id: str, episode_number: int,
                                  category: str) -> tuple[list[dict[str, Any]], float | None]:
@@ -192,6 +200,7 @@ class ResolverOrchestrator:
                 else:
                     print(f"Provider {name} timed out after {limit}s ({category})")
                 results.append({"error": f"{name} timed out"})
+                health.record_attempt(name, "timeout", limit, "timed out")
             else:
                 results.append(task.result())
         return results, settle_at
@@ -223,6 +232,7 @@ class ResolverOrchestrator:
                 # Marked so the web layer knows this may be minutes old and
                 # checks the links still answer before handing them out.
                 return {**cached_data, "cached": True}
+        began = time.monotonic()
 
         
         # Resolve the opposite category in parallel:
@@ -308,8 +318,10 @@ class ResolverOrchestrator:
             has_dub = False
 
         if not valid_results:
+            error = f"No {category} sources available (all providers failed or returned wrong audio)"
+            health.record_resolve(False, anilist_id, episode_number, category, error, time.monotonic() - began)
             return {
-                "error": f"No {category} sources available (all providers failed or returned wrong audio)",
+                "error": error,
                 "streams": [],
                 "hasDub": has_dub,
             }
@@ -352,7 +364,8 @@ class ResolverOrchestrator:
         # unplayable episode, long after the provider has recovered.
         if final_result.get("streams"):
             cache.set(cache_key, final_result, ttl_seconds=600)
-        
+        health.record_resolve(bool(final_result.get("streams")), anilist_id, episode_number, category,
+                              "", time.monotonic() - began)
         return final_result
 
 from app.providers.aniwatch import AniWatchProvider

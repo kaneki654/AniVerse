@@ -23,27 +23,37 @@ except ImportError:  # pragma: no cover - rapidfuzz is in requirements
     fuzz = None
 
 
-async def episode_titles(client: httpx.AsyncClient, anilist_id: str) -> Dict[str, str]:
-    """{episode number: English title} for an AniList entry; {} when unavailable."""
-    key = f"anizip:eptitles:{anilist_id}"
+async def anizip_episodes(client: httpx.AsyncClient, anilist_id: str) -> Dict[str, dict]:
+    """Ani.zip's raw {episode key: episode record} for an AniList entry; {} when
+    unavailable. Shared by the provider mapping checks here and the episode
+    list on detail pages (services/extras.py), so one fetch serves both."""
+    key = f"anizip:episodes:{anilist_id}"
     cached = cache.get(key)
     if cached is not None:
         return cached
 
-    titles: Dict[str, str] = {}
+    episodes: Dict[str, dict] = {}
     try:
         resp = await client.get(
             ANI_ZIP_URL, params={"anilist_id": str(anilist_id)}, timeout=12
         )
         if resp.status_code == 200:
-            for num, episode in ((resp.json() or {}).get("episodes") or {}).items():
-                title = (episode.get("title") or {}).get("en")
-                if title:
-                    titles[str(num)] = title
+            episodes = {str(k): v for k, v in ((resp.json() or {}).get("episodes") or {}).items()
+                        if isinstance(v, dict)}
     except Exception as e:  # noqa: BLE001 - verification is best-effort
-        print(f"Ani.zip episode titles failed for {anilist_id}: {e}")
+        print(f"Ani.zip episodes failed for {anilist_id}: {e}")
 
-    cache.set(key, titles, ttl_seconds=CACHE_TTL_SECONDS)
+    cache.set(key, episodes, ttl_seconds=CACHE_TTL_SECONDS)
+    return episodes
+
+
+async def episode_titles(client: httpx.AsyncClient, anilist_id: str) -> Dict[str, str]:
+    """{episode number: English title} for an AniList entry; {} when unavailable."""
+    titles: Dict[str, str] = {}
+    for num, episode in (await anizip_episodes(client, anilist_id)).items():
+        title = (episode.get("title") or {}).get("en")
+        if title:
+            titles[num] = title
     return titles
 
 

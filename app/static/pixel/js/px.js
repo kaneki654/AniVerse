@@ -9,7 +9,26 @@ export const C = {
   W: "#f2e8d5", g: "#9a918c", G: "#5a5250",
   S: "#d5dce6", s: "#7d8796", Y: "#e8b23a", y: "#9c6a14",
 };
-const BLOOD = C.R, BLOOD_DARK = C.r, BLOOD_DEEP = C.d, BLOOD_LIGHT = C.H;
+let BLOOD = C.R, BLOOD_DARK = C.r, BLOOD_DEEP = C.d, BLOOD_LIGHT = C.H;
+
+/**
+ * Picks up the palette the page is themed with (Settings: Blood, Neon cyber,
+ * Sakura): the CSS custom properties are the one source, so canvas effects
+ * and sprites change colour together with everything else.
+ */
+export function refreshPalette() {
+  const css = getComputedStyle(document.documentElement);
+  const v = (name, fallback) => (css.getPropertyValue(name).trim() || fallback);
+  C.R = v("--blood", C.R); C.r = v("--blood-dark", C.r); C.d = v("--blood-deep", C.d); C.H = v("--blood-light", C.H);
+  C.Y = v("--gold", C.Y); C.y = v("--gold-dark", C.y);
+  BLOOD = C.R; BLOOD_DARK = C.r; BLOOD_DEEP = C.d; BLOOD_LIGHT = C.H;
+  RGB_BLOOD = hexToRgb(BLOOD);
+}
+
+function hexToRgb(hex) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim());
+  return m ? `${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)}` : "209,10,26";
+}
 
 // --- sprites: rows of palette keys, 'X' takes the colour it is drawn in -----------
 export const SPRITES = {
@@ -46,12 +65,27 @@ export const SPRITES = {
   mute: ["....X....", "...XX....", "XXXXX.X.X", "XXXXX..X.", "XXXXX.X.X", "XXXXX....", "...XX....", "....X...."],
   download: ["...XXX...", "...XXX...", "...XXX...", "XXXXXXXXX", ".XXXXXXX.", "..XXXXX..", "...XXX...", ".........", "XXXXXXXXX"],
   home: ["....X....", "...XXX...", "..XXXXX..", ".XXXXXXX.", "XXXXXXXXX", ".XXX.XXX.", ".XXX.XXX.", ".XXX.XXX.", ".XXXXXXX."],
+  // 1.9: schedule, My List, alerts, achievements, reports, parties, the boss fight.
+  calendar: [".X.....X.", "XXXXXXXXX", "X.......X", "XXXXXXXXX", "X.X.X.X.X", "X.......X", "X.X.X.X.X", "X.......X", "XXXXXXXXX"],
+  bookmark: ["XXXXXXX", "XXXXXXX", "XXXXXXX", "XXXXXXX", "XXXXXXX", "XXX.XXX", "XX...XX", "X.....X"],
+  bookmarkOff: ["XXXXXXX", "X.....X", "X.....X", "X.....X", "X.....X", "X..X..X", "X.X.X.X", "XX...XX"],
+  bell: ["....X....", "..XXXXX..", ".XXXXXXX.", ".XXXXXXX.", ".XXXXXXX.", "XXXXXXXXX", "XXXXXXXXX", ".........", "...XXX..."],
+  trophy: ["XXXXXXXXX", "X.XXXXX.X", "X.XXXXX.X", ".XXXXXXX.", "..XXXXX..", "...XXX...", "....X....", "..XXXXX..", ".XXXXXXX."],
+  flag: ["XXXXXXX..", "XXXXXXXX.", "XXXXXXX..", "XXXXXX...", "X........", "X........", "X........", "X........", "X........"],
+  party: [".XX...XX.", "XXXX.XXXX", "XXXX.XXXX", ".XX...XX.", ".........", "XXXX.XXXX", "XXXXXXXXX", "XXXXXXXXX"],
+  sword: ["........X", ".......XX", "......XX.", ".....XX..", ".X..XX...", "..XXX....", "..XX.....", ".X..X....", "X........"],
+  pip: ["XXXXXXXXXXX", "X.........X", "X.........X", "X.........X", "X....XXXXXX", "X....XXXXXX", "X....XXXXXX", "XXXXXXXXXXX"],
+  bolt: ["...KKKK", "..KHHRK", ".KHRRK.", "KHRRRKK", "KRRRRRK", ".KKRRK.", "..KRK..", ".KRK...", ".KK...."],
+  blossom: ["..K.K..", ".KHKHK.", "KHHRHHK", ".KRYRK.", "KHHRHHK", ".KHKHK.", "..K.K.."],
+  gauge: ["..XXXXX..", ".X.....X.", "X...X..XX", "X....X..X", "X....XX.X", "X.......X", ".XXXXXXX."],
 };
 
 const SVG = "http://www.w3.org/2000/svg";
 
 /** A sprite as an SVG: one rect per run of same-coloured cells. */
 export function sprite(name, scale = 2, color) {
+  // "mark" is the palette's own: a blood drop, a bolt, a blossom.
+  if (name === "mark") name = { neon: "bolt", sakura: "blossom" }[fxStyle()] || "bloodDrop";
   const rows = SPRITES[name];
   const svg = document.createElementNS(SVG, "svg");
   if (!rows) return svg;
@@ -180,7 +214,8 @@ export function animate(el, fps, frames, draw) {
 export class PixelCanvas {
   constructor(canvas) {
     this.c = canvas;
-    this.ctx = canvas.getContext("2d");
+    // Bloom reads pixels back every frame, which is faster on a CPU-side canvas.
+    this.ctx = canvas.getContext("2d", { willReadFrequently: true });
   }
   clear() { this.ctx.clearRect(0, 0, this.c.width, this.c.height); }
   rect(x, y, w, h, color) {
@@ -206,8 +241,10 @@ export class PixelCanvas {
       for (let x = 0; x < w; x++) {
         const i = (y * w + x) * 4;
         if (d[i + 3] < 200) continue;
-        const r = d[i], g = d[i + 1];
-        const kind = r > 170 && g < 110 ? 1 : r > 220 && g > 170 ? 2 : 0;
+        const r = d[i], g = d[i + 1], b = d[i + 2];
+        const bright = r > 220 && g > 170 && b < 200;
+        const vivid = Math.max(r, g, b) > 170 && Math.max(r, g, b) - Math.min(r, g, b) > 120;
+        const kind = bright ? 2 : vivid ? 1 : 0;
         if (!kind) continue;
         for (let dy = -2; dy <= 2; dy++) {
           for (let dx = -2; dx <= 2; dx++) {
@@ -226,7 +263,8 @@ export class PixelCanvas {
       const i = q * 4;
       if (!glow[q] || d[i + 3] !== 0) continue;
       const warm = tone[q] === 2;
-      d[i] = 255; d[i + 1] = warm ? 196 : 77; d[i + 2] = warm ? 120 : 87;
+      const [gr, gg, gb] = warm ? [255, 196, 120] : RGB_LIGHT();
+      d[i] = gr; d[i + 1] = gg; d[i + 2] = gb;
       d[i + 3] = Math.round(glow[q] * 255);
     }
     this.ctx.putImageData(img, 0, 0);
@@ -236,7 +274,10 @@ export class PixelCanvas {
   ghost(x, y, w, h, rgb, alpha) { this.rect(x, y, w, h, `rgba(${rgb},${alpha})`); }
 }
 
-const RGB_BLOOD = "209,10,26", RGB_STEEL = "213,220,230";
+let RGB_BLOOD = "209,10,26";
+const RGB_STEEL = "213,220,230";
+const RGB_LIGHT = () => hexToRgb(BLOOD_LIGHT).split(",").map(Number);
+refreshPalette();
 
 /** Stable pseudo-random value in [0, 1) for seed -- same as the app's pxRand. */
 export function pxRand(seed) {
@@ -320,6 +361,12 @@ export function drips(canvas, { count = 5, seed = 7, cell = 2.5 } = {}) {
   animate(canvas, 10, 60, (frame) => {
     const cols = canvas.width, rows = canvas.height;
     pc.clear();
+    if (fxStyle() !== "blood") {
+      // Data streams for Neon cyber, petals letting go for Sakura.
+      (fxStyle() === "neon" ? dataDrips : petalDrips)(pc, frame, count, seed, cols, rows);
+      pc.bloom();
+      return;
+    }
     for (let i = 0; i < count; i++) {
       const r = pxRand(seed * 31 + i);
       const x = Math.round(cols * (i + 0.5) / count + (r - 0.5) * cols / count * 0.6);
@@ -364,11 +411,19 @@ export function splat(clientX, clientY) {
   const pc = new PixelCanvas(canvas);
   const seed = Math.floor(performance.now()) & 0xffff;
   const c = cells / 2;
+  const style = fxStyle();
   const t0 = performance.now();
   const step = () => {
     const frame = Math.floor((performance.now() - t0) / 40);
     if (frame >= 14) { canvas.remove(); return; }
     pc.clear();
+    if (style !== "blood") {
+      // Sparks for Neon cyber, a burst of petals for Sakura.
+      (style === "neon" ? sparkBurst : petalBurst)(pc, c, frame, seed);
+      pc.bloom(frame < 6 ? 1.2 : 0.8);
+      requestAnimationFrame(step);
+      return;
+    }
     const blot = 3 - (frame >> 1);
     for (let dy = -blot; dy <= blot; dy++) {
       for (let dx = -blot; dx <= blot; dx++) {
@@ -625,6 +680,18 @@ export function fmtTime(sec) {
 export function embers(canvas, { cell = 3, density = 0.00009 } = {}) {
   if (reducedMotion()) return;
   const pc = new PixelCanvas(canvas);
+  if (fxStyle() !== "blood") {
+    // Digital rain for Neon cyber, drifting petals for Sakura.
+    const fit = () => {
+      canvas.width = Math.max(1, Math.ceil(innerWidth / cell));
+      canvas.height = Math.max(1, Math.ceil(innerHeight / cell));
+    };
+    fit();
+    addEventListener("resize", fit);
+    const paint = fxStyle() === "neon" ? rainFrame : petalFrame;
+    animate(canvas, 12, 0, (frame) => { pc.clear(); paint(pc, frame, canvas.width, canvas.height); });
+    return;
+  }
   let parts = [];
   const spawn = (w, h, anywhere) => ({
     x: Math.random() * w,
@@ -655,8 +722,9 @@ export function embers(canvas, { cell = 3, density = 0.00009 } = {}) {
       // Flicker in whole steps; fade near the top.
       const lit = (frame + Math.floor(p.sway * 7)) % 9 < 7;
       const fade = Math.min(1, y / (h * 0.35));
-      const core = p.gold ? "232,178,58" : lit ? "255,77,87" : "209,10,26";
-      const halo = p.gold ? "232,178,58" : "209,10,26";
+      const gold = hexToRgb(C.Y), light = hexToRgb(BLOOD_LIGHT);
+      const core = p.gold ? gold : lit ? light : RGB_BLOOD;
+      const halo = p.gold ? gold : RGB_BLOOD;
       const sz = p.big ? 2 : 1;
       pc.ghost(x - 1, y - 1, sz + 2, sz + 2, halo, 0.14 * fade);
       pc.ghost(x, y + sz, sz, 2, halo, 0.16 * fade); // its trail
@@ -690,7 +758,7 @@ export function speedLines(host, dir = 1) {
     for (const l of lines) {
       const x = Math.round(l.x + dir * frame * W * 0.18);
       pc.ghost(x, l.y, l.len, 1, "242,232,213", alpha);
-      pc.ghost(x - dir * 3, l.y, 3, 1, "255,77,87", alpha);
+      pc.ghost(x - dir * 3, l.y, 3, 1, hexToRgb(BLOOD_LIGHT), alpha);
     }
     frame++;
     setTimeout(() => requestAnimationFrame(step), 45);
@@ -731,5 +799,317 @@ export function dissolve(mode, ms = 200) {
       }
     };
     draw();
+  });
+}
+
+// --- per-palette effects -------------------------------------------------------------
+// Each palette is a theme of its own, not a recolour: embers, blood and drips
+// for Blood; digital rain over a synthwave grid, sparks and data streams for
+// Neon cyber; drifting petals, sparkles and petal bursts for Sakura. The app has
+// the same set (aniverse_mobile/lib/ui_2d/pixel/theme_fx.dart).
+
+export const fxStyle = () => document.documentElement.dataset.theme || "blood";
+
+const PETAL = [
+  [[0, 0, 0], [1, 0, 0], [1, 1, 1]],
+  [[0, 0, 0], [1, 0, 1]],
+  [[0, 0, 0], [0, 1, 0], [1, 1, 1]],
+  [[0, 0, 1], [1, 1, 0]],
+];
+function petal(pc, x, y, frame, alpha = 1) {
+  for (const [dx, dy, shade] of PETAL[frame & 3]) pc.ghost(x + dx, y + dy, 1, 1, hexToRgb(shade ? BLOOD : BLOOD_LIGHT), alpha);
+}
+function sparkle(pc, x, y, phase, alpha = 1) {
+  const p = ((phase % 8) + 8) % 8;
+  if (p >= 6) return;
+  const gold = hexToRgb(C.Y);
+  pc.ghost(x, y, 1, 1, "255,255,255", alpha);
+  if (p >= 1 && p <= 4) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) pc.ghost(x + dx, y + dy, 1, 1, gold, alpha);
+  if (p === 2 || p === 3) for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2]]) pc.ghost(x + dx, y + dy, 1, 1, gold, alpha * 0.5);
+}
+
+function rainFrame(pc, frame, cols, rows) {
+  const grid = hexToRgb(C.Y);
+  const horizon = Math.round(rows * 0.7);
+  for (let k = 0; k < 9; k++) {
+    const t = (k + (frame % 12) / 12) / 9;
+    pc.ghost(0, horizon + Math.round(t * t * (rows - horizon)), cols, 1, grid, 0.05 + 0.12 * t);
+  }
+  const cx = cols / 2;
+  for (let k = -8; k <= 8; k++) {
+    const xb = cx + k * cols / 7;
+    for (let y = horizon; y < rows; y += 2) {
+      const t = (y - horizon) / (rows - horizon);
+      pc.ghost(Math.round(cx + (xb - cx) * t), y, 1, 1, grid, 0.05 + 0.1 * t);
+    }
+  }
+  const n = Math.round(cols / 5);
+  for (let i = 0; i < n; i++) {
+    const seed = i * 131 + 7;
+    const x = Math.floor(pxRand(seed) * cols);
+    const speed = 0.5 + pxRand(seed + 1) * 0.9;
+    const len = 5 + Math.floor(pxRand(seed + 2) * 12);
+    const span = rows + len + 10;
+    const head = Math.floor((frame * speed + pxRand(seed + 3) * span) % span) - len;
+    for (let j = 0; j < len; j++) {
+      const y = head - j;
+      if (y < 0 || y >= rows) continue;
+      if (j > 0 && pxRand(seed + y * 7 + Math.floor(frame / 3)) < 0.3) continue;
+      const c = j === 0 ? BLOOD_LIGHT : j < 3 ? BLOOD : BLOOD_DARK;
+      pc.ghost(x, y, 1, 1, hexToRgb(c), (j === 0 ? 0.8 : 0.5) * (1 - j / len));
+    }
+  }
+  if (frame % 97 < 2) {
+    const y = Math.floor(pxRand(Math.floor(frame / 97) + 5) * rows * 0.7);
+    pc.ghost(0, y, cols, 1, hexToRgb(BLOOD_LIGHT), 0.25);
+  }
+}
+
+function petalFrame(pc, frame, cols, rows) {
+  const n = Math.min(36, Math.max(10, Math.round(cols * rows * 0.0006)));
+  for (let i = 0; i < n; i++) {
+    const seed = i * 89 + 3;
+    const fall = 0.16 + pxRand(seed) * 0.28, drift = 0.08 + pxRand(seed + 1) * 0.16;
+    const span = rows + 12;
+    const t = frame * fall + pxRand(seed + 2) * span;
+    const y = Math.floor(t % span) - 6;
+    const x = Math.floor((pxRand(seed + 3) * (cols + 20) + frame * drift + Math.sin(t * 0.18 + seed) * 3) % (cols + 20)) - 10;
+    petal(pc, x, y, (Math.floor(frame / 4) + i) & 3, 0.45 + 0.4 * pxRand(seed + 4));
+  }
+  for (let i = 0; i < 7; i++) {
+    const seed = i * 53 + 11;
+    sparkle(pc, Math.floor(pxRand(seed) * cols), Math.floor(pxRand(seed + 1) * rows), Math.floor(frame / 2) + i * 5, 0.55);
+  }
+}
+
+function sparkBurst(pc, c, frame, seed) {
+  const r = 1 + Math.round(frame * 1.6);
+  const ring = frame < 3 ? BLOOD_LIGHT : frame < 7 ? BLOOD : BLOOD_DARK;
+  if (frame < 10) {
+    for (let d = -r; d <= r; d++) {
+      if ((d + frame) & 1) continue; // dashed, like an electric arc
+      pc.px(c + d, c - r, ring); pc.px(c + d, c + r, ring); pc.px(c - r, c + d, ring); pc.px(c + r, c + d, ring);
+    }
+  }
+  if (frame < 2) { pc.rect(c - 2, c, 5, 1, "#fff"); pc.rect(c, c - 2, 1, 5, "#fff"); }
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2 + pxRand(seed + i) * 0.5;
+    const sp = 1.6 + pxRand(seed + i * 3) * 1.6;
+    const kink = (pxRand(seed + i * 5) - 0.5) * 2;
+    const color = i % 2 ? C.Y : BLOOD_LIGHT;
+    for (let back = 0; back < 3; back++) {
+      const f = frame - back;
+      if (f < 0 || frame > 11) continue;
+      const x = Math.round(c + Math.cos(a) * sp * f + (f > 4 ? kink * (f - 4) : 0));
+      const y = Math.round(c + Math.sin(a) * sp * f);
+      if (back === 0) pc.px(x, y, color); else pc.ghost(x, y, 1, 1, hexToRgb(color), back === 1 ? 0.5 : 0.2);
+    }
+  }
+}
+
+function petalBurst(pc, c, frame, seed) {
+  if (frame < 8) sparkle(pc, c, c, frame);
+  for (let i = 0; i < 12; i++) {
+    const a = -Math.PI * (0.1 + 0.8 * pxRand(seed + i * 7)) + (i % 4 === 0 ? Math.PI * 0.4 : 0);
+    const sp = 1.2 + 1.6 * pxRand(seed + i * 13);
+    const out = sp * (1 - Math.pow(0.78, frame)) / 0.22;
+    const x = c + Math.cos(a) * out + Math.sin(frame * 0.6 + i) * 1.2;
+    const y = c + Math.sin(a) * out + 0.05 * frame * frame;
+    petal(pc, Math.round(x), Math.round(y), (Math.floor(frame / 2) + i) & 3, frame < 10 ? 1 : 0.5);
+  }
+}
+
+function dataDrips(pc, frame, count, seed, cols, rows) {
+  for (let i = 0; i < count; i++) {
+    const x = Math.round(cols * (i + 0.5) / count + (pxRand(seed * 31 + i) - 0.5) * cols / count * 0.6);
+    pc.rect(x - 1, 0, 3, 1, BLOOD_DARK);
+    const speed = 1 + (i % 2), period = rows + 6;
+    const head = Math.floor((frame * speed + pxRand(seed + i * 11) * period) % period);
+    for (let j = 0; j < 4; j++) {
+      const y = head - j;
+      if (y < 1 || y >= rows) continue;
+      if (j > 1 && (frame + y + i) & 1) continue;
+      pc.px(x, y, j === 0 ? BLOOD_LIGHT : j === 1 ? BLOOD : BLOOD_DARK);
+    }
+  }
+}
+
+function petalDrips(pc, frame, count, seed, cols, rows) {
+  for (let i = 0; i < count; i++) {
+    const x0 = Math.round(cols * (i + 0.5) / count + (pxRand(seed * 31 + i) - 0.5) * cols / count * 0.6);
+    pc.px(x0 - 1, 0, BLOOD_LIGHT); pc.px(x0, 0, BLOOD); pc.px(x0 + 1, 0, BLOOD_LIGHT);
+    const t = (frame + Math.floor(pxRand(seed + i * 11) * 60)) % 60;
+    const y = Math.floor(t * 0.45) + 1;
+    if (y >= rows) continue;
+    petal(pc, x0 + Math.round(Math.sin(t * 0.25 + i) * 2), y, (t / 3) & 3, Math.max(0.3, 1 - t / 60));
+  }
+}
+
+// --- the emblem in the palette's colours ------------------------------------------------
+// The logo's pixels (static/pixel/img/logo.png, 34x30), so Neon cyber and Sakura
+// can draw it in their own colours; Blood keeps the crimson image.
+const EMBLEM = [
+  "..............A...A...............", ".............ABAAACA..............", ".............ABBBBCCA.............",
+  "............ADDBBBCEA.............", "............ADBBBCCECA......AAA...", "...........ABBBBBCCCCA...AAADEEAA.",
+  "...........ABBBBBCCCCCA.AEEEEEEBBA", "..........ABBBBBFECCCCBA.AAAAEEBBA", "..........ABBBBEFECCCCBA....AEEBBA",
+  ".........ABBBBEEAACCCCBBA...ABBBA.", "........ABBBBBEEAACCCBBBA..ABBBBA.", "........ABBBBEEAA.ACBBCCBAACCCBA..",
+  ".......ABBBBBEEEBAACCCCCBACCCCA...", ".......ABBBBEEAEBBAACCCCCCCECA....", "......ABBBBBEAAEBBBACCCCCCEEA.....",
+  "......ABBBBEEAAEEEA.AECCCEEA......", ".....ABBBBEEA..AAAAABBBCEEBA......", "...A.ABBBBEEAAAAAABBBBFFEBBBA.....",
+  "..ABABBBBEEEEEEBBBBBFFFFCBBBA.....", ".ABBBBBBBEEEEBBBBEEFFFFCCBBBDA....", ".ABEBBBBEEBBBBBFFFEEEEEEBBBBDA....",
+  "ABBEEECBBBBBBAAAAAAAAAEEBBBBBDA...", ".ABBBBCCFFFAA.........AFFBBBBDA...", ".ACEEEEEFFA............AFFBBBBBA..",
+  ".ACCCCCEEA.............AFFBBBBBA..", "ACCCCCEEA...............AEBBBBBBA.", ".ACCCCEA................AEEBBBBA..",
+  "..AACCA..................AEEEAA...", "....AA....................AEA.....", "...........................A......",
+];
+
+/** The emblem as a data URL in the palette's colours, or null for Blood (the PNG). */
+export function emblemUrl() {
+  if (fxStyle() === "blood") return null;
+  const cv = document.createElement("canvas");
+  cv.width = 34; cv.height = 30;
+  const ctx = cv.getContext("2d");
+  const mix = (a, b, t) => {
+    const [r1, g1, b1] = hexToRgb(a).split(",").map(Number), [r2, g2, b2] = hexToRgb(b).split(",").map(Number);
+    return `rgb(${Math.round(r1 + (r2 - r1) * t)},${Math.round(g1 + (g2 - g1) * t)},${Math.round(b1 + (b2 - b1) * t)})`;
+  };
+  const pal = { A: C.K, B: BLOOD, C: mix(BLOOD, BLOOD_DARK, 0.45), D: BLOOD_LIGHT, E: BLOOD_DARK, F: BLOOD_DEEP };
+  EMBLEM.forEach((row, y) => [...row].forEach((k, x) => {
+    if (k === ".") return;
+    ctx.fillStyle = pal[k];
+    ctx.fillRect(x, y, 1, 1);
+  }));
+  return cv.toDataURL();
+}
+
+// --- switching palette: a scene change in the new palette's style ------------------------
+// Blood: a katana slash and a blood curtain, then the curtain cut along the slash
+// and slid apart. Neon cyber: glitch scanlines closing in, then the screen opening
+// from the middle like a CRT. Sakura: a petal storm in, and on out. The app plays
+// the same (lib/ui_2d/intro/palette_transition.dart). "cover" runs to fully
+// covered with the palette's name showing; "reveal" uncovers the reloaded page.
+
+const SWITCH = {
+  blood: { ink: "#0d0709", blood: "#d10a1a", dark: "#7a0410", deep: "#3d0107", light: "#ff4d57", gold: "#e8b23a", name: "BLOOD" },
+  neon: { ink: "#070a12", blood: "#00d9ff", dark: "#006b85", deep: "#002a38", light: "#7ff3ff", gold: "#ff3df0", name: "NEON CYBER" },
+  sakura: { ink: "#120a0f", blood: "#ff5fa2", dark: "#a3305f", deep: "#4a1430", light: "#ffb3d1", gold: "#ffd36b", name: "SAKURA" },
+};
+const SW_FRAMES = 22, SW_SWAP = 10, SW_REVEAL = 13;
+
+export function paletteSwitch(theme, phase) {
+  return new Promise((resolve) => {
+    if (reducedMotion()) { resolve(); return; }
+    const c = SWITCH[theme] || SWITCH.blood;
+    const cell = Math.max(4, Math.min(10, Math.floor(Math.min(innerWidth, innerHeight) / 64)));
+    const canvas = h("canvas.dissolve.palette-fx", { width: Math.ceil(innerWidth / cell) + 1, height: Math.ceil(innerHeight / cell) + 1 });
+    canvas.style.zIndex = "310";
+    document.body.appendChild(canvas);
+    const ctx = canvas.getContext("2d");
+    const gw = canvas.width, gh = canvas.height;
+    const rect = (x, y, w, hh, col) => { if (w > 0 && hh > 0) { ctx.fillStyle = col; ctx.fillRect(x, y, w, hh); } };
+    // A reveal opens on the covered frame, name and all, so the reload is seamless.
+    const first = phase === "reveal" ? SW_SWAP : 0, last = phase === "reveal" ? SW_FRAMES : SW_REVEAL;
+    const label = (f) => {
+      if (f < SW_SWAP - 1 || f >= SW_REVEAL) return;
+      // The name is drawn in page pixels, over the canvas, so it stays sharp.
+      let el = document.querySelector(".palette-fx-label");
+      if (!el) {
+        el = h("div.palette-fx-label", { style: { position: "fixed", inset: "0", zIndex: "311", display: "grid", placeItems: "center", pointerEvents: "none",
+          font: `${Math.max(14, Math.min(26, innerWidth / 16))}px/1 var(--display)`, color: c.light,
+          textShadow: theme === "neon" ? `-3px 0 ${c.gold}, 3px 0 ${c.blood}` : "2px 2px 0 #050305, -2px -2px 0 #050305" } }, c.name);
+        document.body.appendChild(el);
+      }
+    };
+    const drawBlood = (f) => {
+      if (f < SW_REVEAL) {
+        for (let x = 0; x < gw; x++) {
+          const len = Math.round((f - 1) * (1 + pxRand(x * 7 + 3) * 0.7) * gh / 7.5 + pxRand(x * 13) * 3);
+          if (len <= 0) continue;
+          rect(x, 0, 1, Math.min(len, gh), c.deep);
+          if (len < gh) { rect(x, len - 1, 1, 1, c.blood); if (!(x & 1)) rect(x, len, 1, 1, c.light); }
+        }
+        if (f <= 4) {
+          const p = Math.min(1, (f + 1) / 4);
+          ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.moveTo(0, gh); ctx.lineTo(gw * p, gh - gh * p); ctx.stroke();
+        }
+        return;
+      }
+      const p = (f - SW_REVEAL) / (SW_FRAMES - 1 - SW_REVEAL), e = p * p * 1.2;
+      ctx.fillStyle = c.deep;
+      ctx.save(); ctx.translate(-gw * e * 0.6, -gh * e * 0.6);
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(gw, 0); ctx.lineTo(0, gh); ctx.closePath(); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.translate(gw * e * 0.6, gh * e * 0.6);
+      ctx.beginPath(); ctx.moveTo(gw, 0); ctx.lineTo(gw, gh); ctx.lineTo(0, gh); ctx.closePath(); ctx.fill(); ctx.restore();
+      if (f <= SW_REVEAL + 1) { ctx.strokeStyle = c.light; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, gh); ctx.lineTo(gw, 0); ctx.stroke(); }
+    };
+    const drawNeon = (f) => {
+      if (f < SW_REVEAL) {
+        const q = Math.min(1, (f + 1) / SW_SWAP), rows = Math.ceil(gh / 2);
+        for (let r = 0; r < rows; r++) {
+          const key = (r % 4) * 0.25 + Math.floor(r / 4) / rows;
+          if (key < q) rect(0, r * 2, gw, 2, c.ink);
+          else if (key < q + 0.05) rect(0, r * 2, gw, 1, c.light);
+        }
+        for (let i = 0; i < 14; i++) {
+          if (pxRand(i * 5 + f * 17) > 1 - q * 0.3 - 0.3) continue;
+          rect(Math.floor(pxRand(i * 3 + f) * gw), Math.floor(pxRand(i * 7 + f * 3) * gh), 3 + Math.floor(pxRand(i + f) * 10), 1, i % 2 ? c.blood : c.gold);
+        }
+        if (f >= SW_SWAP - 1) {
+          const horizon = Math.round(gh * 0.68);
+          ctx.globalAlpha = 0.3;
+          for (let k = 0; k < 7; k++) { const t = k / 7; rect(0, horizon + Math.round(t * t * (gh - horizon)), gw, 1, c.gold); }
+          ctx.globalAlpha = 1;
+        }
+        return;
+      }
+      const p = (f - SW_REVEAL) / (SW_FRAMES - 1 - SW_REVEAL), e = 1 - (1 - p) * (1 - p);
+      const half = Math.round(gh / 2 * (1 - e));
+      rect(0, 0, gw, half, c.ink); rect(0, gh - half, gw, half, c.ink);
+      rect(0, half - 1, gw, 1, c.light); rect(0, gh - half, gw, 1, c.light);
+      if (f === SW_REVEAL) rect(0, Math.floor(gh / 2) - 1, gw, 2, "#fff");
+    };
+    const drawSakura = (f) => {
+      const cover = c.deep;
+      const covering = f < SW_REVEAL;
+      const q = covering ? Math.min(1, (f + 1) / SW_SWAP) : (f - SW_REVEAL + 1) / (SW_FRAMES - SW_REVEAL);
+      const front = q * (gw + 24) - 12;
+      for (let y = 0; y < gh; y += 2) {
+        const edge = Math.round(front - Math.round(pxRand(y * 7 + 1) * 6));
+        if (covering) rect(0, y, edge, 2, cover);
+        else rect(Math.max(0, edge), y, gw - Math.max(0, edge), 2, cover);
+      }
+      for (let i = 0; i < 60; i++) {
+        const y = Math.floor(pxRand(i * 3 + 7) * gh);
+        const x = Math.round(front - pxRand(i * 5 + 2) * 14 + Math.sin(f * 0.6 + i) * 1.5);
+        for (const [dx, dy, shade] of PETAL[(f + i) & 3]) rect(x + dx * 2, y + dy * 2, 2, 2, shade ? c.blood : c.light);
+      }
+      if (f >= SW_SWAP - 1 && f < SW_REVEAL) {
+        for (let i = 0; i < 10; i++) {
+          if ((f + i) & 1) continue;
+          const x = Math.floor(gw * (0.2 + 0.6 * pxRand(i * 11))), y = Math.floor(gh * (0.35 + 0.3 * pxRand(i * 13)));
+          rect(x, y, 1, 1, "#fff"); rect(x - 1, y, 1, 1, c.gold); rect(x + 1, y, 1, 1, c.gold); rect(x, y - 1, 1, 1, c.gold); rect(x, y + 1, 1, 1, c.gold);
+        }
+      }
+    };
+    const draw = { neon: drawNeon, sakura: drawSakura }[theme] || drawBlood;
+    let f = first;
+    const t0 = performance.now();
+    const frame = () => {
+      ctx.clearRect(0, 0, gw, gh);
+      draw(f);
+      label(f);
+      if (f >= SW_REVEAL) document.querySelector(".palette-fx-label")?.remove();
+      const next = first + Math.floor((performance.now() - t0) / (1000 / 24)) + 1;
+      if (next >= last) {
+        // A cover stays up (the page is about to reload under it); a reveal goes.
+        if (phase === "reveal") canvas.remove();
+        resolve();
+        return;
+      }
+      f = next;
+      // Timers, not animation frames: a hidden tab gets no frames, and the
+      // switch must still finish (and reload) there.
+      setTimeout(frame, 1000 / 24);
+    };
+    frame();
   });
 }

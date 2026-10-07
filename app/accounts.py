@@ -31,7 +31,7 @@ from contextlib import contextmanager
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request
 from pydantic import BaseModel
 
 DATA_DIR = pathlib.Path(__file__).resolve().parent.parent / "data"
@@ -89,6 +89,25 @@ CREATE TABLE IF NOT EXISTS history (
     PRIMARY KEY (user_id, anime_id, episode)
 );
 CREATE INDEX IF NOT EXISTS history_by_time ON history(user_id, updated_at DESC);
+CREATE TABLE IF NOT EXISTS watchlist (
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    anime_id     TEXT NOT NULL,
+    title        TEXT NOT NULL DEFAULT '',
+    cover        TEXT NOT NULL DEFAULT '',
+    seen_episode INTEGER NOT NULL DEFAULT 0,
+    updated_at   INTEGER NOT NULL,
+    deleted      INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, anime_id)
+);
+CREATE TABLE IF NOT EXISTS tracking (
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    service      TEXT NOT NULL,
+    token        TEXT NOT NULL,
+    refresh      TEXT,
+    expires_at   INTEGER,
+    account_name TEXT,
+    PRIMARY KEY (user_id, service)
+);
 """
 
 _init_lock = threading.Lock()
@@ -329,6 +348,20 @@ class HistoryBatch(BaseModel):
     entries: List[HistoryEntry]
 
 
+class WatchlistEntry(BaseModel):
+    anime_id: str
+    title: str = ""
+    cover: str = ""
+    # Episodes out when the user last looked: what "new episode" alerts compare against.
+    seen_episode: int = 0
+    updated_at: int
+    deleted: bool = False
+
+
+class WatchlistBatch(BaseModel):
+    entries: List[WatchlistEntry]
+
+
 # --- auth endpoints --------------------------------------------------------------------
 
 @router.get("/auth/config")
@@ -454,7 +487,7 @@ def get_history(authorization: Optional[str] = Header(None)):
 
 
 @router.put("/history")
-def put_history(body: HistoryBatch, authorization: Optional[str] = Header(None)):
+def put_history(body: HistoryBatch, background: BackgroundTasks, authorization: Optional[str] = Header(None)):
     """Merge the app's entries in, newest `updated_at` wins, and return the result.
 
     Deletions travel as entries with `deleted: true` rather than as a separate
@@ -485,7 +518,17 @@ def put_history(body: HistoryBatch, authorization: Optional[str] = Header(None))
                  max(0, e.position_ms), max(0, e.duration_ms),
                  min(e.updated_at, ceiling), int(e.deleted)),
             )
-        return {"entries": _history_rows(conn, user["id"])}
+        rows = _history_rows(conn, user["id"])
+    # Finished episodes move linked AniList/MyAnimeList lists forward, after
+    # the reply has gone so a slow tracker never holds up the sync.
+    finished: dict = {}
+    for e in body.entries:
+        if not e.deleted and e.duration_ms > 0 and e.position_ms >= e.duration_ms * 0.9:
+            finished[e.anime_id] = max(finished.get(e.anime_id, 0), e.episode)
+    if finished:
+        from app import tracking  # here: tracking imports this module
+        background.add_task(tracking.sync_progress, user["id"], finished)
+    return {"entries": rows}
 
 
 @router.delete("/history")
@@ -497,3 +540,51 @@ def clear_history(authorization: Optional[str] = Header(None)):
         conn.execute("UPDATE history SET deleted = 1, updated_at = ? WHERE user_id = ?",
                      (now, user["id"]))
         return {"entries": _history_rows(conn, user["id"])}
+
+
+# --- My List ----------------------------------------------------------------------
+# Same sync rules as history: one row per anime, newest updated_at wins, and a
+# removal travels as a tombstone so other devices learn about it.
+
+WATCHLIST_MAX = 1000
+
+
+def _watchlist_rows(conn: sqlite3.Connection, user_id: int) -> list:
+    rows = conn.execute(
+        "SELECT anime_id, title, cover, seen_episode, updated_at, deleted FROM watchlist"
+        " WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?",
+        (user_id, WATCHLIST_MAX),
+    ).fetchall()
+    return [{**dict(r), "deleted": bool(r["deleted"])} for r in rows]
+
+
+@router.get("/watchlist")
+def get_watchlist(authorization: Optional[str] = Header(None)):
+    with _db() as conn:
+        user = _session_user(conn, authorization)
+        return {"entries": _watchlist_rows(conn, user["id"])}
+
+
+@router.put("/watchlist")
+def put_watchlist(body: WatchlistBatch, authorization: Optional[str] = Header(None)):
+    """Merge the client's entries in, newest `updated_at` wins, and return the result."""
+    if len(body.entries) > HISTORY_BATCH_MAX:
+        raise HTTPException(status_code=413, detail="Too many entries at once")
+    ceiling = int(time.time() * 1000) + 5 * 60 * 1000
+    with _db() as conn:
+        user = _session_user(conn, authorization)
+        for e in body.entries:
+            if not e.anime_id or len(e.anime_id) > 32:
+                continue
+            cover = e.cover if e.cover.startswith(("http://", "https://")) else ""
+            conn.execute(
+                "INSERT INTO watchlist (user_id, anime_id, title, cover, seen_episode, updated_at, deleted)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(user_id, anime_id) DO UPDATE SET"
+                "  title = excluded.title, cover = excluded.cover, seen_episode = excluded.seen_episode,"
+                "  updated_at = excluded.updated_at, deleted = excluded.deleted"
+                " WHERE excluded.updated_at > watchlist.updated_at",
+                (user["id"], e.anime_id, e.title[:300], cover[:1000], max(0, e.seen_episode),
+                 min(e.updated_at, ceiling), int(e.deleted)),
+            )
+        return {"entries": _watchlist_rows(conn, user["id"])}

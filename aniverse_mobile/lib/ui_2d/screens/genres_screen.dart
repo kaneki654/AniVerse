@@ -20,7 +20,7 @@ class GenresScreen extends StatefulWidget {
 class _GenresScreenState extends State<GenresScreen> {
   /// Tile colours when there is no art: a stable shade per genre from the
   /// blood palette. Also what shows through before the art arrives.
-  static const _fills = [Px.bloodDark, Px.panelHigh, Px.blood, Px.bloodDeep, Px.panel];
+  static List<Color> get _fills => [Px.bloodDark, Px.panelHigh, Px.blood, Px.bloodDeep, Px.panel];
 
   /// null while loading; empty when the server had no art to give.
   Map<String, Map<String, dynamic>>? _art;
@@ -141,7 +141,7 @@ class _GenreTile extends StatelessWidget {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          const PixelSprite(Sprites.star, scale: 0.9, color: Px.gold),
+                          PixelSprite(Sprites.star, scale: 0.9, color: Px.gold),
                           const SizedBox(width: 3),
                           if (score != null)
                             Text('$score ', style: PxFont.label(6, color: Px.gold, height: 1.2)),

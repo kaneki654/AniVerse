@@ -111,10 +111,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     return Dismissible(
                       key: ValueKey(e.animeId),
                       direction: DismissDirection.endToStart,
-                      background: const PixelBox(
+                      background: PixelBox(
                         fill: Px.bloodDark,
                         shadow: 0,
-                        child: Align(
+                        child: const Align(
                           alignment: Alignment.centerRight,
                           child: Padding(
                             padding: EdgeInsets.only(right: 20),
@@ -213,14 +213,14 @@ class _HistoryTile extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: PixelBox(
                     fill: Px.blood,
                     shadow: 2,
                     bevel: true,
-                    padding: EdgeInsets.fromLTRB(8, 6, 6, 6),
-                    child: PixelSprite(Sprites.play, scale: 1.8),
+                    padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
+                    child: const PixelSprite(Sprites.play, scale: 1.8),
                   ),
                 ),
               ],
@@ -258,7 +258,7 @@ class _SyncNote extends StatelessWidget {
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
-                const PixelSprite(Sprites.floppy, scale: 2.2, color: Px.bloodLight),
+                PixelSprite(Sprites.floppy, scale: 2.2, color: Px.bloodLight),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(

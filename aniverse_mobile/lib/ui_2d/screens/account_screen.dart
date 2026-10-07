@@ -1,13 +1,23 @@
-import 'package:flutter/material.dart';
+import 'dart:convert';
 
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
+
+import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/history_service.dart';
+import '../../services/native_bridge.dart';
+import '../achievements.dart';
+import '../theme_2d.dart';
+import '../widgets/pixel_extras.dart';
 import '../pixel/pixel.dart';
 import '../pixel/pixel_widgets.dart';
 import '../pixel/sprites.dart';
 import '../widgets/aniverse_logo.dart';
 import '../widgets/poster_card.dart';
 import 'history_screen.dart';
+import 'settings_screen.dart';
 
 /// Sign in with Google or with a username and password, or see who is signed
 /// in. Accounts are optional: everything works signed out, an account just
@@ -96,7 +106,18 @@ class _ProfileState extends State<_Profile> {
             fill: Px.panelHigh,
           ),
         ),
-        const SizedBox(height: 30),
+        const SizedBox(height: 26),
+        const ProgressCard(),
+        const SizedBox(height: 18),
+        const _Tracking(),
+        const SizedBox(height: 18),
+        _Tile(
+          icon: Sprites.gear,
+          title: 'Settings',
+          subtitle: 'Palette, sound, subtitles, alerts',
+          onTap: () => Navigator.push(context, FadeScaleRoute(page: const SettingsScreen())),
+        ),
+        const SizedBox(height: 12),
         ValueListenableBuilder<int>(
           valueListenable: HistoryService.changes,
           builder: (context, _, __) {
@@ -364,12 +385,12 @@ class _SignInState extends State<_SignIn> {
         const SizedBox(height: 24),
         Row(
           children: [
-            const Expanded(child: SizedBox(height: 2, child: ColoredBox(color: Px.panelHigh))),
+            Expanded(child: SizedBox(height: 2, child: ColoredBox(color: Px.panelHigh))),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
               child: Text('OR USE A USERNAME', style: PxFont.label(7, color: Px.ashDark)),
             ),
-            const Expanded(child: SizedBox(height: 2, child: ColoredBox(color: Px.panelHigh))),
+            Expanded(child: SizedBox(height: 2, child: ColoredBox(color: Px.panelHigh))),
           ],
         ),
         const SizedBox(height: 20),
@@ -500,7 +521,244 @@ class _SignInState extends State<_SignIn> {
               style: PxFont.text(13, color: Px.ashDark),
             ),
           ),
+        const SizedBox(height: 34),
+        // Progress counts signed out too; an account keeps it with the history.
+        const ProgressCard(),
       ],
     );
+  }
+}
+
+
+// --- level, rank, achievements ---------------------------------------------------
+
+/// Level card, stats and badges, from watch history (so it counts signed out too).
+class ProgressCard extends StatelessWidget {
+  const ProgressCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: HistoryService.changes,
+      builder: (context, _, __) {
+        final s = Achievements.stats();
+        final lv = Achievements.level(s);
+        final got = Achievements.unlocked(s);
+        final name = AuthService.user.value?.displayName ?? 'Player';
+        Widget stat(String v, String label) => Expanded(
+              child: PixelBox(
+                padding: const EdgeInsets.fromLTRB(8, 8, 6, 6),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(v, style: PxFont.label(11)),
+                  const SizedBox(height: 4),
+                  Text(label.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: PxFont.label(5, color: Px.ash)),
+                ]),
+              ),
+            );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            PixelBox(
+              rivets: true,
+              padding: const EdgeInsets.all(14),
+              child: Row(children: [
+                // The frame steps up every 10 levels: bronze, silver, gold, blood, legend.
+                PixelBox(
+                  fill: Px.blood,
+                  border: Color(Achievements.frameColor(lv.frame)),
+                  borderWidth: 4,
+                  shadow: 3,
+                  child: SizedBox(
+                    width: 64,
+                    height: 64,
+                    child: Center(
+                      child: Text(name.trim().isEmpty ? 'P' : name.trim()[0].toUpperCase(),
+                          style: PxFont.label(22).copyWith(shadows: PxFont.outline(1.5))),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('LV ${lv.level} · ${lv.rank.toUpperCase()}', style: PxFont.label(9, color: Px.gold)),
+                    const SizedBox(height: 8),
+                    PixelBar(fraction: lv.progress, height: 12),
+                    const SizedBox(height: 6),
+                    Text(lv.level >= 99 ? '${lv.xp} XP · MAX LEVEL' : '${lv.xp} XP · ${lv.toNext} TO LEVEL ${lv.level + 1}',
+                        style: PxFont.label(6, color: Px.ash)),
+                  ]),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 10),
+            Row(children: [
+              stat('${s.finished}', 'Episodes'),
+              const SizedBox(width: 8),
+              stat('${s.anime}', 'Anime'),
+              const SizedBox(width: 8),
+              stat('${s.streak}', 'Day streak'),
+              const SizedBox(width: 8),
+              stat('${s.hours.floor()}h', 'Watched'),
+            ]),
+            const SizedBox(height: 18),
+            SectionHeader(title: 'Achievements ${got.length}/${Achievements.badges.length}'),
+            GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 0.82,
+              children: [
+                for (final b in Achievements.badges)
+                  Opacity(
+                    opacity: got.contains(b.id) ? 1 : 0.35,
+                    child: PixelBox(
+                      border: got.contains(b.id) ? Px.gold : Px.black,
+                      padding: const EdgeInsets.fromLTRB(6, 10, 6, 6),
+                      child: Column(children: [
+                        PixelSprite(b.sprite, scale: 2.6, color: got.contains(b.id) ? Px.gold : Px.ash),
+                        const SizedBox(height: 8),
+                        Text(b.name.toUpperCase(), textAlign: TextAlign.center, maxLines: 2, style: PxFont.label(5, height: 1.4)),
+                        const SizedBox(height: 4),
+                        Expanded(
+                          child: Text(b.text, textAlign: TextAlign.center, maxLines: 3, overflow: TextOverflow.ellipsis,
+                              style: PxFont.text(10, color: Px.ash, height: 1.2)),
+                        ),
+                      ]),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// --- AniList / MyAnimeList ------------------------------------------------------------
+
+class _Tracking extends StatefulWidget {
+  const _Tracking();
+
+  @override
+  State<_Tracking> createState() => _TrackingState();
+}
+
+class _TrackingState extends State<_Tracking> {
+  Map<String, dynamic> _cfg = const {};
+  Map<String, dynamic> _status = const {};
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final cfg = await ApiService.trackingConfig();
+    Map<String, dynamic> status = const {};
+    try {
+      final r = await http.get(Uri.parse('${ApiService.baseUrl}/tracking'), headers: AuthService.headers)
+          .timeout(const Duration(seconds: 15));
+      if (r.statusCode == 200) status = Map<String, dynamic>.from(json.decode(r.body) as Map);
+    } catch (_) {}
+    if (mounted) {
+      setState(() {
+      _cfg = cfg;
+      _status = status;
+    });
+    }
+  }
+
+  Future<void> _connect(String id) async {
+    if (id == 'mal') {
+      try {
+        final r = await http.post(Uri.parse('${ApiService.baseUrl}/tracking/mal/start'), headers: AuthService.headers)
+            .timeout(const Duration(seconds: 15));
+        final url = (json.decode(r.body) as Map)['url'];
+        if (r.statusCode == 200 && url is String) {
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+          if (mounted) pixelToast(context, 'Finish on the MyAnimeList page, then come back here.', action: 'Refresh', onAction: _load);
+        }
+      } catch (_) {
+        if (mounted) pixelToast(context, "Couldn't start the MyAnimeList sign-in.");
+      }
+      return;
+    }
+    // AniList shows a token on its own page; it is pasted back here.
+    final authorize = (_cfg['anilist'] as Map?)?['authorize_url']?.toString();
+    if (authorize == null) return;
+    await launchUrl(Uri.parse(authorize), mode: LaunchMode.externalApplication);
+    if (!mounted) return;
+    final ctl = TextEditingController();
+    final token = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('ANILIST TOKEN'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('Approve AniVerse on the AniList page, then copy the long token it shows into this box.',
+              style: PxFont.text(13, color: Px.ash)),
+          const SizedBox(height: 10),
+          TextField(controller: ctl, autofocus: true, decoration: const InputDecoration(hintText: 'Paste the token')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('CANCEL')),
+          TextButton(onPressed: () => Navigator.pop(ctx, ctl.text.trim()), child: const Text('CONNECT')),
+        ],
+      ),
+    );
+    if (token == null || token.isEmpty) return;
+    try {
+      final r = await http.post(Uri.parse('${ApiService.baseUrl}/tracking/anilist'),
+          headers: AuthService.headers, body: json.encode({'token': token})).timeout(const Duration(seconds: 20));
+      if (!mounted) return;
+      if (r.statusCode == 200) {
+        Sfx.play('achieve');
+        pixelToast(context, 'AniList connected.');
+      } else {
+        pixelToast(context, "AniList didn't accept that token.");
+      }
+    } catch (_) {
+      if (mounted) pixelToast(context, "Couldn't reach the server.");
+    }
+    _load();
+  }
+
+  Future<void> _disconnect(String id) async {
+    try {
+      await http.delete(Uri.parse('${ApiService.baseUrl}/tracking/$id'), headers: AuthService.headers)
+          .timeout(const Duration(seconds: 15));
+    } catch (_) {}
+    _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget row(String id, String name) {
+      final st = _status[id] is Map ? _status[id] as Map : const {};
+      final enabled = (_cfg[id] as Map?)?['enabled'] == true;
+      final connected = st['connected'] == true;
+      return SettingRow(
+        title: name,
+        text: connected
+            ? 'Connected${st['account'] != null ? ' as ${st['account']}' : ''}.'
+            : enabled
+                ? 'Episodes you finish update your list.'
+                : 'Not set up on this server yet.',
+        control: connected
+            ? PixelButton(label: 'Disconnect', kind: PixelButtonKind.dark, fontSize: 7, onPressed: () => _disconnect(id))
+            : enabled
+                ? PixelButton(label: 'Connect', fontSize: 7, onPressed: () => _connect(id))
+                : const SizedBox.shrink(),
+      );
+    }
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const SectionHeader(title: 'Tracking'),
+      row('anilist', 'AniList'),
+      row('mal', 'MyAnimeList'),
+    ]);
   }
 }

@@ -14,7 +14,7 @@ import 'account_screen.dart';
 import 'detail_screen.dart';
 import 'genres_screen.dart';
 import 'history_screen.dart';
-import 'search_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -55,7 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Update', style: TextStyle(color: Color(0xFFE50914))),
+            child: Text('Update', style: TextStyle(color: Px.bloodLight)),
           ),
         ],
       ),
@@ -112,45 +112,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  /// Lets the tunnel URL be changed on the device. A free trycloudflare address
-  /// is reissued whenever the tunnel restarts, and without this the app would
-  /// need rebuilding and reinstalling every time.
-  Future<void> _editServer() async {
-    final controller = TextEditingController(text: ApiService.host);
-    final saved = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        title: const Text('Server address', style: TextStyle(color: Colors.white)),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          style: const TextStyle(color: Colors.white),
-          decoration: const InputDecoration(
-            hintText: 'https://xxxx.trycloudflare.com',
-            hintStyle: TextStyle(color: Colors.white38),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('Save', style: TextStyle(color: Color(0xFFE50914))),
-          ),
-        ],
-      ),
-    );
-
-    if (saved == null || saved.trim().isEmpty) return;
-    await ApiService.setHost(saved);
-    if (!mounted) return;
-    setState(() => homeData = null);
-    _loadData();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -194,19 +155,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           PixelIconButton(
-            sprite: Sprites.search,
-            tooltip: 'Search',
+            sprite: Sprites.gear,
+            tooltip: 'Settings',
             color: Px.ash,
             onPressed: () => Navigator.push(
               context,
-              FadeScaleRoute(page: const SearchScreen()),
+              FadeScaleRoute(page: const SettingsScreen()),
             ),
-          ),
-          PixelIconButton(
-            sprite: Sprites.gear,
-            tooltip: 'Server address',
-            color: Px.ash,
-            onPressed: _editServer,
           ),
           const SizedBox(width: 4),
         ],

@@ -4,6 +4,7 @@ import 'pixel/fx.dart';
 import 'pixel/pixel.dart';
 import 'pixel/pixel_widgets.dart';
 import 'pixel/sprites.dart';
+import 'pixel/theme_fx.dart';
 
 /// Theme for the 2D (pixel art) UI.
 ///
@@ -11,13 +12,14 @@ import 'pixel/sprites.dart';
 /// but every value is from the pixel palette: flat colours, no gradients or
 /// blur, stepped corners, pixel fonts.
 class AniVerseTheme {
-  static const Color red = Px.blood;
-  static const Color redDark = Px.bloodDark;
-  static const Color bg = Px.ink;
-  static const Color surface = Px.panel;
-  static const Color surfaceHigh = Px.panelHigh;
-  static const Color skeleton = Px.panel;
-  static const Color skeletonHigh = Px.panelHigh;
+  // Getters, not constants: the palette can change at run time (Settings).
+  static Color get red => Px.blood;
+  static Color get redDark => Px.bloodDark;
+  static Color get bg => Px.ink;
+  static Color get surface => Px.panel;
+  static Color get surfaceHigh => Px.panelHigh;
+  static Color get skeleton => Px.panel;
+  static Color get skeletonHigh => Px.panelHigh;
   static const Color textDim = Px.ash;
   static const Color textFaint = Px.ashDark;
 
@@ -47,7 +49,7 @@ class AniVerseTheme {
       // every screen but the player (whose Scaffold is black).
       scaffoldBackgroundColor: Colors.transparent,
       primaryColor: Px.blood,
-      colorScheme: const ColorScheme.dark(
+      colorScheme: ColorScheme.dark(
         primary: Px.blood,
         onPrimary: Px.bone,
         secondary: Px.blood,
@@ -88,13 +90,13 @@ class AniVerseTheme {
       dialogTheme: DialogThemeData(
         backgroundColor: Px.panel,
         surfaceTintColor: Colors.transparent,
-        shape: const PixelBorder(side: BorderSide(color: Px.blood, width: 3), step: 4),
+        shape: PixelBorder(side: BorderSide(color: Px.blood, width: 3), step: 4),
         titleTextStyle: PxFont.label(12),
         contentTextStyle: PxFont.text(15, color: Px.ash),
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: Px.panelHigh,
-        shape: const PixelBorder(side: BorderSide(color: Px.blood, width: 2)),
+        shape: PixelBorder(side: BorderSide(color: Px.blood, width: 2)),
         behavior: SnackBarBehavior.floating,
         contentTextStyle: PxFont.text(15),
         actionTextColor: Px.bloodLight,
@@ -136,23 +138,23 @@ class AniVerseTheme {
           borderRadius: BorderRadius.zero,
           borderSide: BorderSide(color: Px.black, width: 2),
         ),
-        focusedBorder: const OutlineInputBorder(
+        focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.zero,
           borderSide: BorderSide(color: Px.blood, width: 3),
         ),
-        errorBorder: const OutlineInputBorder(
+        errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.zero,
           borderSide: BorderSide(color: Px.bloodLight, width: 2),
         ),
       ),
-      textSelectionTheme: const TextSelectionThemeData(
+      textSelectionTheme: TextSelectionThemeData(
         cursorColor: Px.blood,
-        selectionColor: Color(0x66D10A1A),
+        selectionColor: Px.blood.withValues(alpha: 0.4),
         selectionHandleColor: Px.blood,
       ),
-      progressIndicatorTheme: const ProgressIndicatorThemeData(color: Px.blood),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: Px.blood),
       listTileTheme: const ListTileThemeData(shape: RoundedRectangleBorder()),
-      dividerTheme: const DividerThemeData(color: Px.panelHigh, thickness: 2),
+      dividerTheme: DividerThemeData(color: Px.panelHigh, thickness: 2),
       tooltipTheme: TooltipThemeData(
         decoration: const ShapeDecoration(color: Px.black, shape: PixelBorder()),
         textStyle: PxFont.label(8),
@@ -175,7 +177,7 @@ class SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 14),
       child: Row(
         children: [
-          const PixelSprite(Sprites.bloodDrop, scale: 2.2),
+          PixelSprite(ThemeSprites.mark(Sprites.bloodDrop), scale: 2.2),
           const SizedBox(width: 10),
           ConstrainedBox(
             // Room for the title first; the katana takes whatever is left.
@@ -188,7 +190,7 @@ class SectionHeader extends StatelessWidget {
                 ...PxFont.outline(1.5),
                 // Bloom: hard red copies a step out, no blur.
                 for (final o in const [Offset(-3, 0), Offset(3, 0), Offset(0, -3), Offset(0, 3)])
-                  Shadow(color: const Color(0x40D10A1A), offset: o),
+                  Shadow(color: Px.blood.withValues(alpha: 0.25), offset: o),
               ]),
             ),
           ),
@@ -205,7 +207,7 @@ class SectionHeader extends StatelessWidget {
                   children: [
                     Text('MORE', style: PxFont.label(8, color: Px.bloodLight)),
                     const SizedBox(width: 6),
-                    const PixelSprite(Sprites.chevron, scale: 1.2, color: Px.bloodLight),
+                    PixelSprite(Sprites.chevron, scale: 1.2, color: Px.bloodLight),
                   ],
                 ),
               ),

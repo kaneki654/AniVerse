@@ -82,7 +82,7 @@ class _GenreResultsScreenState extends State<GenreResultsScreen> {
       appBar: AppBar(
         title: Text(
           widget.genre.toUpperCase(),
-          style: const TextStyle(fontFamily: 'PressStart2P', color: AniVerseTheme.red, fontSize: 12),
+          style: TextStyle(fontFamily: 'PressStart2P', color: AniVerseTheme.red, fontSize: 12),
         ),
       ),
       body: _items.isEmpty && _loading

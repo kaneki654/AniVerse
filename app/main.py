@@ -1,7 +1,7 @@
 import sys
 import os
 import re
-from urllib.parse import urljoin, quote, unquote, urlparse
+from urllib.parse import urljoin, quote, unquote, urlparse, parse_qs
 from datetime import date as dt
 import asyncio
 from typing import Any
@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 import httpx
 
 import anime_meta
@@ -21,6 +22,10 @@ from app import accounts
 app = FastAPI()
 # Sign-in and per-account watch history for the mobile app.
 app.include_router(accounts.router)
+# AniList/MyAnimeList list tracking, and watch parties.
+from app import party, tracking  # noqa: E402
+app.include_router(tracking.router)
+app.include_router(party.router)
 
 # The website's look. "pixel" (the default) is the 2D pixel-art UI that matches
 # the AniVerse Pixel app; "classic" is the original site, kept as it was. It is
@@ -645,6 +650,50 @@ async def _drop_dead_streams(client: httpx.AsyncClient, data: dict) -> list:
     return [st for st, ok in zip(streams, alive) if ok]
 
 
+# --- reports of streams that do not play ------------------------------------
+# A stream can answer and still be wrong: another episode, frozen video, no
+# sound. Viewers can say so; a reported stream is left out of answers for
+# that episode for a few hours, which is long enough for providers to fix it
+# or for the cache to move on, and short enough that a mistaken report heals.
+
+REPORT_TTL = 6 * 3600
+_reports: dict = {}  # (anime, episode, category) -> {upstream url: expires}
+
+
+class StreamReport(BaseModel):
+    episode_id: str
+    category: str = "sub"
+    url: str = ""
+    reason: str = ""
+
+
+def _reported(anilist_id: str, ep: str, category: str) -> set:
+    now = time.time()
+    entry = _reports.get((anilist_id, str(ep), category)) or {}
+    return {u for u, until in entry.items() if until > now}
+
+
+@app.post("/api/report")
+async def report_stream(body: StreamReport):
+    try:
+        anilist_id, ep = body.episode_id.split("/")
+    except ValueError:
+        return Response(status_code=400)
+    # Clients send the proxy URL they played; the upstream one is inside it.
+    upstream = (parse_qs(urlparse(body.url).query).get("url") or [body.url])[0]
+    if not upstream.startswith(("http://", "https://")):
+        return Response(status_code=400)
+    key = (anilist_id, ep, body.category if body.category in ("sub", "dub") else "sub")
+    entry = _reports.setdefault(key, {})
+    entry[upstream] = time.time() + REPORT_TTL
+    print(f"Report: {body.episode_id} ({key[2]}) {body.reason[:80]!r}: {upstream[:120]}")
+    if len(_reports) > 5000:  # keep it bounded: drop expired ones
+        now = time.time()
+        for k in [k for k, v in _reports.items() if all(t < now for t in v.values())]:
+            _reports.pop(k, None)
+    return {"ok": True}
+
+
 @app.get("/api/source")
 async def get_source(episode_id: str, server: str = "Auto", category: str = "sub",
                      fresh: bool = False):
@@ -666,6 +715,19 @@ async def get_source(episode_id: str, server: str = "Auto", category: str = "sub
                 else:
                     print(f"Source: every cached stream for {episode_id} ({category}) is dead; resolving afresh")
                     data = await _fetch_resolve(client, anilist_id, ep_num, category, fresh=True)
+
+            # Streams viewers reported as broken (wrong episode, frozen, no
+            # sound) stay out for a while; if that leaves nothing, look again.
+            bad = _reported(anilist_id, ep_num, category)
+            if bad and data.get("streams"):
+                kept = [st for st in data["streams"] if st["url"] not in bad]
+                if not kept:
+                    print(f"Source: every stream for {episode_id} ({category}) was reported; resolving afresh")
+                    data = await _fetch_resolve(client, anilist_id, ep_num, category, fresh=True)
+                    kept = [st for st in data.get("streams", []) if st["url"] not in bad]
+                data["streams"] = kept
+                if not kept and not data.get("error"):
+                    data["error"] = "Every stream found for this episode was reported as broken. Try again later."
 
             sources = []
             for stream in data.get("streams", []):

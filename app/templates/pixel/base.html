@@ -9,12 +9,15 @@
   <title>{{ title }}</title>
   <link rel="icon" type="image/png" sizes="32x32" href="/static/pixel/img/favicon-32.png">
   <link rel="apple-touch-icon" href="/static/pixel/img/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="preload" href="/static/pixel/fonts/PressStart2P-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/pixel/fonts/DotGothic16-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/pixel/pixel.css?v={{ v }}">
   <script>
     /* Arriving through the page dissolve: start covered so nothing flashes. */
-    try { if (sessionStorage.getItem("av.dissolve")) document.documentElement.classList.add("entering"); } catch (e) {}
+    try { if (sessionStorage.getItem("av.dissolve") || sessionStorage.getItem("av.palette")) document.documentElement.classList.add("entering"); } catch (e) {}
+    /* The chosen palette before first paint, so it never flashes the default. */
+    try { document.documentElement.dataset.theme = (JSON.parse(localStorage.getItem("av.settings") || "{}").theme) || "blood"; } catch (e) {}
   </script>
   {% block head %}{% endblock %}
 </head>
@@ -38,8 +41,10 @@
       <nav class="site-nav" aria-label="Main">
         <a class="icon-btn nav-home" href="/" {% if nav == 'home' %}aria-current="page"{% endif %} aria-label="Home"><i data-sprite="home" data-scale="2.2"></i><span class="nav-text">Home</span></a>
         <a class="icon-btn nav-search" href="/search" {% if nav == 'search' %}aria-current="page"{% endif %} aria-label="Search"><i data-sprite="search" data-scale="2"></i><span class="nav-text">Search</span></a>
-        <a class="icon-btn" href="/genres" {% if nav == 'genres' %}aria-current="page"{% endif %} aria-label="Genres"><i data-sprite="grid" data-scale="2.2"></i><span class="nav-text">Genres</span></a>
-        <a class="icon-btn" href="/history" {% if nav == 'history' %}aria-current="page"{% endif %} aria-label="History"><i data-sprite="clock" data-scale="2"></i><span class="nav-text">History</span></a>
+        <a class="icon-btn wide-only" href="/schedule" {% if nav == 'schedule' %}aria-current="page"{% endif %} aria-label="Schedule"><i data-sprite="calendar" data-scale="2"></i><span class="nav-text">Schedule</span></a>
+        <a class="icon-btn wide-only" href="/genres" {% if nav == 'genres' %}aria-current="page"{% endif %} aria-label="Genres"><i data-sprite="grid" data-scale="2.2"></i><span class="nav-text">Genres</span></a>
+        <a class="icon-btn wide-only nav-mylist" href="/mylist" {% if nav == 'mylist' %}aria-current="page"{% endif %} aria-label="My List"><i data-sprite="bookmark" data-scale="2"></i><span class="nav-text">My List</span><span class="alert-dot" hidden></span></a>
+        <a class="icon-btn wide-only" href="/history" {% if nav == 'history' %}aria-current="page"{% endif %} aria-label="History"><i data-sprite="clock" data-scale="2"></i><span class="nav-text">History</span></a>
         <a id="nav-account" class="icon-btn" href="/account" {% if nav == 'account' %}aria-current="page"{% endif %} aria-label="Sign in"><span class="nav-icon"></span><span class="nav-text">Sign in</span></a>
       </nav>
     </div>
@@ -53,10 +58,20 @@
     </div>
   </main>
 
+  <!-- Phones: the main sections as a pixel tab bar along the bottom. -->
+  <nav class="bottom-nav" aria-label="Sections">
+    <a href="/" {% if nav == 'home' %}aria-current="page"{% endif %}><i data-sprite="home" data-scale="2"></i><span>Home</span></a>
+    <a href="/schedule" {% if nav == 'schedule' %}aria-current="page"{% endif %}><i data-sprite="calendar" data-scale="2"></i><span>Airing</span></a>
+    <a href="/genres" {% if nav == 'genres' %}aria-current="page"{% endif %}><i data-sprite="grid" data-scale="2"></i><span>Genres</span></a>
+    <a href="/mylist" class="nav-mylist" {% if nav == 'mylist' %}aria-current="page"{% endif %}><i data-sprite="bookmark" data-scale="2"></i><span>My List</span><span class="alert-dot" hidden></span></a>
+    <a href="/history" {% if nav == 'history' %}aria-current="page"{% endif %}><i data-sprite="clock" data-scale="2"></i><span>History</span></a>
+  </nav>
+
   <footer class="site-footer">
     <div class="wrap">
       <span class="lbl">AniVerse Pixel</span>
       <span>Streams are found on third-party sites; AniVerse hosts no video.</span>
+      <span><a href="/settings">Settings</a> · <a href="/status">Status</a></span>
     </div>
   </footer>
   <script type="module" src="/static/pixel/js/{{ page }}.js?v={{ v }}"></script>

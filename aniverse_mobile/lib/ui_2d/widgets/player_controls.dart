@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../services/native_bridge.dart';
 import '../pixel/blood.dart';
 import '../pixel/pixel.dart';
 import '../pixel/pixel_widgets.dart';
@@ -35,6 +36,15 @@ class AniVersePlayerControls extends StatefulWidget {
   /// Told when the HUD shows or hides, so subtitles can move clear of it.
   final ValueChanged<bool>? onHudVisibleChanged;
 
+  /// The gear: quality, speed, subtitles, download, party, report.
+  final VoidCallback? onOpenMenu;
+
+  /// Shrink into a picture-in-picture window; null hides the button.
+  final VoidCallback? onPip;
+
+  /// After the viewer played, paused or seeked -- what a watch party shares.
+  final VoidCallback? onUserAction;
+
   const AniVersePlayerControls({
     super.key,
     required this.controller,
@@ -50,6 +60,9 @@ class AniVersePlayerControls extends StatefulWidget {
     this.captionsOn,
     this.onToggleCaptions,
     this.onHudVisibleChanged,
+    this.onOpenMenu,
+    this.onPip,
+    this.onUserAction,
   });
 
   @override
@@ -119,14 +132,18 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
   void _togglePlay() {
     setState(() => _c.value.isPlaying ? _c.pause() : _c.play());
     _scheduleHide();
+    _acted();
   }
 
   void _seekBy(int seconds) {
     final target = _c.value.position + Duration(seconds: seconds);
     final max = _c.value.duration;
-    _c.seekTo(target < Duration.zero ? Duration.zero : (target > max ? max : target));
+    _c.seekTo(target < Duration.zero ? Duration.zero : (target > max ? max : target)).then((_) => _acted());
     _scheduleHide();
   }
+
+  /// Told after the player has taken the action in.
+  void _acted() => Future.delayed(const Duration(milliseconds: 250), () => widget.onUserAction?.call());
 
   static String _fmt(Duration d) {
     final h = d.inHours;
@@ -159,7 +176,10 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
       icon: Sprites.forward,
       kind: PixelButtonKind.bone,
       fontSize: 8,
-      onPressed: () => _c.seekTo(Duration(seconds: (active!['end'] as num).toInt())),
+      onPressed: () {
+        Sfx.play('skip');
+        _c.seekTo(Duration(seconds: (active!['end'] as num).toInt())).then((_) => _acted());
+      },
     );
   }
 
@@ -197,7 +217,7 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
                     left: 0,
                     right: 0,
                     child: Container(
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         color: hud,
                         border: Border(bottom: BorderSide(color: Px.blood, width: 2)),
                       ),
@@ -218,6 +238,19 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
                               style: PxFont.label(8).copyWith(shadows: PxFont.outline(1)),
                             ),
                           ),
+                          if (widget.onOpenMenu != null) ...[
+                            PixelIconButton(
+                              sprite: Sprites.gear,
+                              tooltip: 'Quality, speed and more',
+                              scale: compact ? 1.6 : 2,
+                              size: compact ? 36 : 44,
+                              onPressed: () {
+                                widget.onOpenMenu!();
+                                _scheduleHide();
+                              },
+                            ),
+                            const SizedBox(width: 2),
+                          ],
                           if (widget.captionsOn != null && widget.onToggleCaptions != null) ...[
                             _CaptionsToggle(
                               on: widget.captionsOn!,
@@ -264,7 +297,7 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
                     right: 0,
                     bottom: 0,
                     child: Container(
-                      decoration: const BoxDecoration(
+                      decoration: BoxDecoration(
                         color: hud,
                         border: Border(top: BorderSide(color: Px.blood, width: 2)),
                       ),
@@ -276,7 +309,7 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
                             height: compact ? 22 : 30,
                             value: value,
                             onSeek: (d) {
-                              _c.seekTo(d);
+                              _c.seekTo(d).then((_) => _acted());
                               _scheduleHide();
                             },
                           ),
@@ -293,6 +326,14 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
                                   onPressed: widget.onNextEpisode,
                                 ),
                               if (skip != null) ...[skip, const SizedBox(width: 6)],
+                              if (widget.onPip != null)
+                                PixelIconButton(
+                                  sprite: Sprites.pip,
+                                  tooltip: 'Picture in picture',
+                                  scale: compact ? 1.4 : 1.8,
+                                  size: compact ? 36 : 48,
+                                  onPressed: widget.onPip,
+                                ),
                               if (widget.onToggleFullscreen != null)
                                 PixelIconButton(
                                   sprite: widget.isFullscreen

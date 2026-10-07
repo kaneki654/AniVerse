@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/api_service.dart';
+import '../../services/app_settings.dart';
+import '../../services/download_service.dart';
 import '../../services/history_service.dart';
+import '../../services/native_bridge.dart';
+import '../../services/watchlist_service.dart';
 import '../pixel/pixel.dart';
 import '../pixel/pixel_widgets.dart';
 import '../pixel/sprites.dart';
@@ -9,6 +14,7 @@ import '../theme_2d.dart';
 import '../widgets/aniverse_loader.dart';
 import '../widgets/aniverse_logo.dart';
 import '../widgets/continue_watching.dart';
+import '../widgets/pixel_extras.dart';
 import '../widgets/poster_card.dart';
 import 'watch_screen.dart';
 
@@ -23,6 +29,13 @@ class DetailScreen extends StatefulWidget {
 class _DetailScreenState extends State<DetailScreen> {
   Map<String, dynamic>? anime;
 
+  /// Studio, season, trailer, characters, relations, recommendations.
+  Map<String, dynamic> _extra = const {};
+
+  /// Episode titles, synopses and screenshots, by number.
+  Map<int, Map<String, dynamic>> _epInfo = const {};
+  bool _listView = AppSettings.epView == 'list';
+
   /// Collapsed height of the header, measured from the top of the screen.
   static const double _expandedHeight = 330;
 
@@ -33,11 +46,38 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Future<void> _loadDetails() async {
+    ApiService.extra(widget.id).then((x) {
+      if (mounted) setState(() => _extra = x);
+    });
+    ApiService.episodes(widget.id).then((list) {
+      if (mounted) setState(() => _epInfo = {for (final e in list) if (e['number'] is num) (e['number'] as num).toInt(): e});
+    });
     final data = await ApiService.getAnimeDetails(widget.id);
     if (!mounted) return;
     setState(() {
       anime = data;
     });
+  }
+
+  int get _aired => airedEpisodes(anime);
+
+  void _toggleFollow() {
+    if (WatchlistService.has(widget.id)) {
+      WatchlistService.unfollow(widget.id);
+      pixelToast(context, 'Removed from My List.');
+    } else {
+      WatchlistService.follow(widget.id, title: _title, cover: _cover ?? '', seen: _aired);
+      Sfx.play('achieve');
+      pixelToast(context, AppSettings.alerts
+          ? "On My List. You'll be told when new episodes air."
+          : 'On My List. Turn on alerts in Settings to hear about new episodes.');
+    }
+  }
+
+  void _download(int ep) {
+    final ok = DownloadService.enqueue(animeId: widget.id, episode: ep, title: _title, cover: _cover ?? '');
+    Sfx.play('select');
+    pixelToast(context, ok ? 'Episode $ep is downloading. It will be under Saved.' : 'Episode $ep is already saved or on its way.');
   }
 
   void _openEpisode(int number) {
@@ -116,6 +156,10 @@ class _DetailScreenState extends State<DetailScreen> {
     if (score is num && score > 0) out.add('${score.toInt()}%');
     final mins = anime!['duration'];
     if (mins is num && mins > 0) out.add('${mins.toInt()}m');
+    final season = _extra['season'], year = _extra['seasonYear'];
+    if (season is String && year != null) out.add('${season.toLowerCase()} $year');
+    final studio = _extra['studio'];
+    if (studio is String && studio.isNotEmpty) out.add(studio);
     return out;
   }
 
@@ -125,7 +169,9 @@ class _DetailScreenState extends State<DetailScreen> {
       return const Scaffold(body: AniVerseLoadingScreen(label: 'LOADING'));
     }
 
-    final epCount = anime!['episodes'] ?? 12;
+    final aired = _aired;
+    final listed = anime!['episodes'] is num ? (anime!['episodes'] as num).toInt() : 0;
+    final total = aired > listed ? aired : listed;
     final released = anime!['status'] != 'NOT_YET_RELEASED';
 
     return Scaffold(
@@ -174,27 +220,89 @@ class _DetailScreenState extends State<DetailScreen> {
                     Text(_synopsis, style: PxFont.text(15, color: Px.ash, height: 1.5)),
                     const SizedBox(height: 24),
                   ],
+                  ValueListenableBuilder<int>(
+                    valueListenable: WatchlistService.changes,
+                    builder: (context, _, __) {
+                      final on = WatchlistService.has(widget.id);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 20),
+                        child: PixelButton(
+                          label: on ? 'On My List' : 'Add to My List',
+                          icon: on ? Sprites.bookmark : Sprites.bookmarkOff,
+                          kind: on ? PixelButtonKind.dark : PixelButtonKind.blood,
+                          fontSize: 8,
+                          onPressed: _toggleFollow,
+                        ),
+                      );
+                    },
+                  ),
                   if (released)
                     _ResumeBanner(
                       animeId: widget.id,
-                      episodeCount: epCount is num ? epCount.toInt() : 12,
+                      episodeCount: aired,
                       onOpen: _openEpisode,
                     ),
-                  const SectionHeader(title: 'Episodes'),
+                  Row(
+                    children: [
+                      const Expanded(child: SectionHeader(title: 'Episodes')),
+                      if (released)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14, left: 8),
+                          child: PixelIconButton(
+                            sprite: _listView ? Sprites.grid : Sprites.flag,
+                            tooltip: _listView ? 'Show as a grid' : 'Show titles and downloads',
+                            color: Px.ash,
+                            framed: true,
+                            onPressed: () {
+                              Sfx.play('select');
+                              setState(() => _listView = !_listView);
+                              AppSettings.set('epView', _listView ? 'list' : 'grid');
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ),
           ),
           if (!released)
-            const SliverToBoxAdapter(
+            SliverToBoxAdapter(
               child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 32, horizontal: 16),
+                padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
                 child: Center(
                   child: Text(
                     "NOT RELEASED YET",
                     style: TextStyle(fontFamily: PxFont.display, color: AniVerseTheme.red, fontSize: 11),
                   ),
                 ),
+              ),
+            )
+          else if (_listView)
+            ValueListenableBuilder<int>(
+              valueListenable: HistoryService.changes,
+              builder: (context, _, __) => ValueListenableBuilder<int>(
+                valueListenable: DownloadService.changes,
+                builder: (context, _, __) {
+                  final watched = HistoryService.episodesOf(widget.id);
+                  return SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    sliver: SliverList.separated(
+                      itemCount: total,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, i) => _EpisodeRow(
+                        number: i + 1,
+                        info: _epInfo[i + 1],
+                        cover: _cover ?? '',
+                        future: i + 1 > aired,
+                        progress: watched[i + 1],
+                        download: DownloadService.find(widget.id, i + 1),
+                        onTap: () => _openEpisode(i + 1),
+                        onDownload: () => _download(i + 1),
+                      ),
+                    ),
+                  );
+                },
               ),
             )
           else
@@ -220,13 +328,238 @@ class _DetailScreenState extends State<DetailScreen> {
                         progress: watched[index + 1],
                         onTap: () => _openEpisode(index + 1),
                       ),
-                      childCount: epCount is num ? epCount.toInt() : 12,
+                      childCount: total,
                     ),
                   ),
                 );
               },
             ),
+          ..._extras(),
+          const SliverToBoxAdapter(child: SizedBox(height: 28)),
         ],
+      ),
+    );
+  }
+
+  static const _relation = {
+    'PREQUEL': 'Prequel', 'SEQUEL': 'Sequel', 'SIDE_STORY': 'Side story', 'SPIN_OFF': 'Spin-off',
+    'ALTERNATIVE': 'Alternative', 'PARENT': 'Main story', 'SUMMARY': 'Summary', 'COMPILATION': 'Compilation',
+    'CHARACTER': 'Shared cast', 'OTHER': 'Related', 'CONTAINS': 'Contains', 'SOURCE': 'Source',
+  };
+
+  /// Trailer, characters, related seasons and recommendations, as they arrive.
+  List<Widget> _extras() {
+    final x = _extra;
+    if (x.isEmpty) return const [];
+    final out = <Widget>[];
+    Widget section(String title, Widget child) => SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [SectionHeader(title: title), child]),
+          ),
+        );
+
+    final t = x['trailer'];
+    if (t is Map && t['id'] != null && (t['site'] == 'youtube' || t['site'] == 'dailymotion')) {
+      final url = t['site'] == 'youtube'
+          ? 'https://www.youtube.com/watch?v=${t['id']}'
+          : 'https://www.dailymotion.com/video/${t['id']}';
+      out.add(section(
+        'Trailer',
+        PressableScale(
+          onTap: () {
+            Sfx.play('start');
+            launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+          },
+          child: AspectRatio(
+            aspectRatio: 16 / 9,
+            child: PixelBox(
+              fill: Px.black,
+              child: Stack(fit: StackFit.expand, children: [
+                PixelCover(url: (t['thumbnail'] ?? x['bannerImage'] ?? _cover ?? '').toString(), decodeWidth: 120),
+                Center(
+                  child: PixelBox(
+                    fill: Px.blood,
+                    bevel: true,
+                    padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+                    child: const PixelSprite(Sprites.play, scale: 3),
+                  ),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ));
+    }
+
+    final chars = [for (final c in (x['characters'] as List? ?? const [])) if (c is Map && c['name'] != null) c];
+    if (chars.isNotEmpty) {
+      out.add(section(
+        'Characters',
+        SizedBox(
+          height: 150,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: chars.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (_, i) {
+              final c = chars[i];
+              return SizedBox(
+                width: 88,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  SizedBox(
+                    width: 88,
+                    height: 96,
+                    child: PixelBox(fill: Px.black, shadow: 2, child: PixelCover(url: (c['image'] ?? '').toString(), decodeWidth: 56)),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(c['name'].toString(), maxLines: 1, overflow: TextOverflow.ellipsis, style: PxFont.text(12, height: 1.2)),
+                  Text(
+                    (c['voiceActor'] ?? (c['role'] == 'MAIN' ? 'Main' : 'Supporting')).toString().toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: PxFont.label(5, color: Px.ash),
+                  ),
+                ]),
+              );
+            },
+          ),
+        ),
+      ));
+    }
+
+    Widget shelf(List<Map> items, {bool relations = false}) => SizedBox(
+          height: 230,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: items.length,
+            itemBuilder: (context, i) {
+              final a = Map<String, dynamic>.from(items[i]);
+              final card = PosterCard(
+                anime: a,
+                width: 120,
+                onTap: () => Navigator.push(context, FadeScaleRoute(page: DetailScreen(id: a['id'].toString()))),
+              );
+              if (!relations) return card;
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: PixelChip((_relation[a['relation']] ?? 'Related').toUpperCase(), fontSize: 5),
+                ),
+                Expanded(child: card),
+              ]);
+            },
+          ),
+        );
+
+    final related = [for (final r in (x['relations'] as List? ?? const [])) if (r is Map && r['id'] != null) r];
+    if (related.isNotEmpty) out.add(section('Related', shelf(related, relations: true)));
+    final recs = [for (final r in (x['recommendations'] as List? ?? const [])) if (r is Map && r['id'] != null) r];
+    if (recs.isNotEmpty) out.add(section('You might also like', shelf(recs)));
+    return out;
+  }
+}
+
+/// One episode in the list view: screenshot, number, title, air date, a line
+/// of synopsis, progress, and the download button.
+class _EpisodeRow extends StatelessWidget {
+  final int number;
+  final Map<String, dynamic>? info;
+  final String cover;
+  final bool future;
+  final HistoryEntry? progress;
+  final DownloadItem? download;
+  final VoidCallback onTap;
+  final VoidCallback onDownload;
+
+  const _EpisodeRow({
+    required this.number,
+    required this.info,
+    required this.cover,
+    required this.future,
+    required this.progress,
+    required this.download,
+    required this.onTap,
+    required this.onDownload,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final i = info;
+    final title = (i?['title'] ?? '').toString().isNotEmpty ? i!['title'].toString() : 'Episode $number';
+    final done = progress?.finished ?? false;
+    final air = DateTime.tryParse((i?['airDate'] ?? '').toString());
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    final meta = [
+      if (air != null) '${air.day} ${months[air.month - 1]} ${air.year}',
+      if (i?['runtime'] is num) '${(i!['runtime'] as num).toInt()}m',
+      if (future) 'Not aired yet' else if (done) 'Watched',
+    ].join(' · ');
+    final d = download;
+    final image = (i?['image'] ?? '').toString();
+
+    return Opacity(
+      opacity: future ? 0.45 : 1,
+      child: PressableScale(
+        onTap: future ? () {} : onTap,
+        child: PixelBox(
+          border: done ? Px.bloodDark : Px.black,
+          padding: const EdgeInsets.all(6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 120,
+                height: 68,
+                child: Stack(fit: StackFit.expand, children: [
+                  PixelCover(url: image.isNotEmpty ? image : cover, decodeWidth: image.isNotEmpty ? 96 : 40),
+                  Positioned(
+                    left: 0,
+                    bottom: 0,
+                    child: ColoredBox(
+                      color: Px.black,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 3, 4, 2),
+                        child: Text('EP $number', style: PxFont.label(6, height: 1.2)),
+                      ),
+                    ),
+                  ),
+                  if (done) const Positioned(right: 3, top: 3, child: PixelSprite(Sprites.skullSmall, scale: 1.6)),
+                  if (progress != null && !done)
+                    Positioned(left: 0, right: 0, bottom: 0, child: PixelBar(fraction: progress!.fraction, height: 4)),
+                ]),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(title, maxLines: 2, overflow: TextOverflow.ellipsis,
+                      style: PxFont.text(14, color: done ? Px.ash : Px.bone, height: 1.2)),
+                  if (meta.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(meta.toUpperCase(), style: PxFont.label(5, color: Px.ashDark)),
+                  ],
+                  if ((i?['overview'] ?? '').toString().isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(i!['overview'].toString(), maxLines: 2, overflow: TextOverflow.ellipsis,
+                        style: PxFont.text(11, color: Px.ash, height: 1.25)),
+                  ],
+                ]),
+              ),
+              if (!future)
+                d == null || d.status == 'failed'
+                    ? PixelIconButton(sprite: Sprites.download, tooltip: 'Download episode $number', color: Px.ash, scale: 1.8, size: 40, onPressed: onDownload)
+                    : SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: Center(
+                          child: d.done
+                              ? PixelSprite(Sprites.check, scale: 1.8, color: Px.bloodLight)
+                              : Text('${(d.progress * 100).toStringAsFixed(0)}%', style: PxFont.label(6, color: Px.ash)),
+                        ),
+                      ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -273,19 +606,19 @@ class _Header extends StatelessWidget {
         if (banner != null)
           PixelCover(url: banner!, decodeWidth: banner == cover ? 18 : 64)
         else
-          const ColoredBox(color: Px.panel),
+          ColoredBox(color: Px.panel),
         // Hard bands instead of a smooth fade into the page.
-        const DecoratedBox(
+        DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                Color(0x99050305), Color(0x99050305),
-                Color(0xCC0D0709), Color(0xCC0D0709),
+                const Color(0x99050305), const Color(0x99050305),
+                const Color(0xCC0D0709), const Color(0xCC0D0709),
                 Px.ink, Px.ink,
               ],
-              stops: [0.0, 0.45, 0.45, 0.78, 0.78, 1.0],
+              stops: const [0.0, 0.45, 0.45, 0.78, 0.78, 1.0],
             ),
           ),
         ),
@@ -447,12 +780,12 @@ class _ResumeBanner extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      const PixelBox(
+                      PixelBox(
                         fill: Px.blood,
                         shadow: 2,
                         bevel: true,
-                        padding: EdgeInsets.fromLTRB(9, 7, 7, 7),
-                        child: PixelSprite(Sprites.play, scale: 2),
+                        padding: const EdgeInsets.fromLTRB(9, 7, 7, 7),
+                        child: const PixelSprite(Sprites.play, scale: 2),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
