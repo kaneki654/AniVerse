@@ -344,8 +344,46 @@ function errorReports() {
   window.addEventListener("unhandledrejection", (e) => reportError({ message: String(e.reason?.message || e.reason), stack: e.reason?.stack }));
 }
 
+// --- arrow-key navigation, for TV browsers and remotes --------------------------------
+// Arrow keys move focus to the nearest control in that direction. Inside the
+// video player they are left alone: there they seek and change the volume.
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])';
+
+function spatialNav() {
+  window.addEventListener("keydown", (e) => {
+    const dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (!dir || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const from = document.activeElement;
+    const typing = from instanceof HTMLElement && from.closest('input:not([type="range"]), textarea, select, [contenteditable]');
+    // Text boxes keep left/right for the cursor; up/down leave them.
+    if (typing && dir[0] !== 0) return;
+    const onPage = from && from !== document.body && from instanceof HTMLElement;
+    if (onPage && from.closest(".player")) return;           // the player's own keys
+    if (!onPage && document.querySelector(".player")) return; // nothing focused on the watch page: the player has them
+    const rect = onPage ? from.getBoundingClientRect() : new DOMRect(0, 0, 0, 0);
+    const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+    let best = null, bestScore = Infinity;
+    for (const el of document.querySelectorAll(FOCUSABLE)) {
+      if (el === from || el.closest("[hidden], [inert]")) continue;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      const along = (x - cx) * dir[0] + (y - cy) * dir[1];
+      if (onPage && along <= 1) continue;
+      const across = Math.abs((x - cx) * dir[1] + (y - cy) * dir[0]);
+      const score = onPage ? along + across * 2 : y * 4 + x; // from nothing: the top-left-most
+      if (score < bestScore) { bestScore = score; best = el; }
+    }
+    if (!best) return;
+    e.preventDefault();
+    best.focus({ preventScroll: true });
+    best.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+  }, true);
+}
+
 export function initShell() {
   errorReports();
+  spatialNav();
   // The header emblem in the palette's colours (Blood keeps the crimson PNG).
   const emblem = emblemUrl();
   document.querySelectorAll('img[src$="/pixel/img/logo.png"]').forEach((img) => {

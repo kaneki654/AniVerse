@@ -1004,3 +1004,8 @@ body.shake main { animation: shake 0.18s steps(3); }
 html[data-fx="off"] .px-btn::after, html[data-fx="off"] .big-play::after, html[data-fx="off"] .logo .word::after,
 html[data-fx="off"] .poster:hover .frame::after { animation: none !important; }
 html[data-fx="off"] canvas.embers-bg, html[data-fx="off"] canvas.drips { display: none; }
+
+/* Recent searches */
+.recent-searches { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+.recent-searches .chip { padding: 6px 10px; font: 14px/1.3 var(--body); color: var(--bone); background: var(--panel); cursor: pointer; }
+.recent-searches .chip:hover, .recent-searches .chip:focus-visible { border-color: var(--gold); }
