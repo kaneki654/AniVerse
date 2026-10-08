@@ -7,7 +7,7 @@ import { h, sprite, clear, toast, fmtTime } from "./px.js";
 import { api, history, titleOf, coverOf, airedEpisodes } from "./api.js";
 import { settings } from "./settings.js";
 import { sfx } from "./sfx.js";
-import { initShell } from "./ui.js";
+import { initShell, reportError } from "./ui.js";
 import { createPlayer, pref } from "./player.js";
 import { startParty, newPartyCode, validCode } from "./party.js";
 import { castReady, castDevice, startCast, stopCast, castLoad, castPlayPause, onCastChange } from "./cast.js";
@@ -313,6 +313,7 @@ function fail(reason) {
   sfx("error");
   const other = category === "sub" ? "DUB" : "SUB";
   const offerSwitch = category === "dub" || hasDub !== false;
+  reportError({ kind: "playback", message: `EP ${ep} (${category}): ${reason}`, where: `watch/${animeId}` });
   player.failed("Couldn't play this episode", reason, [
     { label: "Retry", run: () => resolve() },
     offerSwitch ? { label: `Try ${other}`, kind: "dark", run: () => { category = category === "sub" ? "dub" : "sub"; captionsChoice = null; resolve(); } } : null,

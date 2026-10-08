@@ -931,6 +931,8 @@ body.shake main { animation: shake 0.18s steps(3); }
 .stat { padding: 10px 12px; }
 .stat b { display: block; font: 14px/1.4 var(--display); color: var(--bone); }
 .stat small { font: 7px/1.6 var(--display); color: var(--ash); text-transform: uppercase; }
+.stat.warn { border-color: var(--blood-light); }
+.stat.warn b, .stat.warn small { color: var(--blood-light); }
 
 /* --- settings ----------------------------------------------------------------------------- */
 .setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; }

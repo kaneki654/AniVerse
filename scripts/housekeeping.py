@@ -19,6 +19,7 @@ start_all.sh runs it when the servers start and once a day after that.
 import argparse
 import datetime
 import json
+import os
 import shutil
 import sqlite3
 import sys
@@ -29,7 +30,17 @@ BACKUPS = ROOT / "backups"
 KEEP_DAYS = 14
 LOG_LIMIT = 10 * 1024 * 1024
 LOG_KEEP = 3
-KEEP_APKS = 3
+# Old APKs kept besides the one published now; 0 keeps every one.
+# ANIVERSE_KEEP_APKS in .aniverse_env changes it.
+KEEP_APKS_DEFAULT = 5
+DISK_LOW = 0.10
+
+
+def keep_apks() -> int:
+    try:
+        return max(0, int(os.environ.get("ANIVERSE_KEEP_APKS", KEEP_APKS_DEFAULT)))
+    except ValueError:
+        return KEEP_APKS_DEFAULT
 
 
 def databases() -> list[Path]:
@@ -98,8 +109,11 @@ def prune_releases(dry: bool) -> list[str]:
             return -1
 
     apks = sorted(folder.glob("aniverse-*.apk"), key=code)
+    keep = keep_apks()
+    if keep == 0:
+        return []
     done = []
-    for apk in apks[:-KEEP_APKS]:
+    for apk in apks[:-keep]:
         if apk.name == current:
             continue
         done.append(f"remove old release {apk.name}")
@@ -108,11 +122,20 @@ def prune_releases(dry: bool) -> list[str]:
     return done
 
 
+def check_disk(dry: bool) -> list[str]:
+    u = shutil.disk_usage(ROOT)
+    free = u.free / u.total if u.total else 0.0
+    line = f"disk: {u.free / 1e9:.1f} GB free of {u.total / 1e9:.0f} GB ({100 * free:.0f}%)"
+    if free < DISK_LOW:
+        line = "WARNING " + line + " -- under 10%; saves fail when it reaches zero"
+    return [line]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Back up databases, rotate logs, prune old APKs.")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
-    for step in (backup, rotate_logs, prune_releases):
+    for step in (check_disk, backup, rotate_logs, prune_releases):
         try:
             for line in step(args.dry_run):
                 print(f"  {line}")

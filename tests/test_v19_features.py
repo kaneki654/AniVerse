@@ -270,7 +270,8 @@ class HousekeepingTest(unittest.TestCase):
         for code in range(10, 16):
             (rel / f"aniverse-{code}-abc.apk").write_text("apk")
         (rel / "current.json").write_text(json.dumps({"file": "aniverse-11-abc.apk"}))
-        self.hk.prune_releases(False)
+        with patch.dict(os.environ, {"ANIVERSE_KEEP_APKS": "3"}):
+            self.hk.prune_releases(False)
         left = sorted(p.name for p in rel.glob("*.apk"))
         # The newest three, plus the current one however old.
         self.assertEqual(left, ["aniverse-11-abc.apk", "aniverse-13-abc.apk", "aniverse-14-abc.apk", "aniverse-15-abc.apk"])

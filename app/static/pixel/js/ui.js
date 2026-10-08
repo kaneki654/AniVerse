@@ -319,7 +319,33 @@ function achievementToasts() {
 }
 
 /** Everything every page needs once. */
+// --- error reports (app/ops.py): crashes and episodes that would not play ---------------
+let reportsLeft = 5;
+const pageVersion = () => {
+  const src = document.querySelector('script[type="module"][src*="?v="]')?.getAttribute("src") || "";
+  return new URL(src, location.href).searchParams.get("v") || "";
+};
+
+/** Tells the server something went wrong here; never throws, at most a few per page. */
+export function reportError({ kind = "error", message = "", stack = "", where = location.pathname } = {}) {
+  if (reportsLeft <= 0 || !message) return;
+  reportsLeft--;
+  const body = JSON.stringify({ source: "web", version: pageVersion(), kind, message: String(message).slice(0, 2000),
+    stack: String(stack || "").slice(0, 8000), where: String(where).slice(0, 200) });
+  try {
+    if (!navigator.sendBeacon?.("/api/client-errors", new Blob([body], { type: "application/json" }))) {
+      fetch("/api/client-errors", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {});
+    }
+  } catch { /* a report must never become an error itself */ }
+}
+
+function errorReports() {
+  window.addEventListener("error", (e) => reportError({ message: e.message, stack: e.error?.stack || `${e.filename}:${e.lineno}` }));
+  window.addEventListener("unhandledrejection", (e) => reportError({ message: String(e.reason?.message || e.reason), stack: e.reason?.stack }));
+}
+
 export function initShell() {
+  errorReports();
   // The header emblem in the palette's colours (Blood keeps the crimson PNG).
   const emblem = emblemUrl();
   document.querySelectorAll('img[src$="/pixel/img/logo.png"]').forEach((img) => {

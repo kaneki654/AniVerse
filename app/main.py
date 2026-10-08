@@ -18,15 +18,18 @@ from pydantic import BaseModel
 import httpx
 
 import anime_meta
-from app import accounts
+from app import accounts, proxy_hosts
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     # New-episode alerts for the website, sent while it is closed (app/webpush.py).
-    from app import webpush as push
+    from app import ops as server_ops, webpush as push
     checker = asyncio.create_task(push.checker_loop())
+    # Free disk space, logged while it runs low (app/ops.py).
+    disk_watch = asyncio.create_task(server_ops.watch_disk())
     yield
     checker.cancel()
+    disk_watch.cancel()
 
 
 app = FastAPI(lifespan=_lifespan)
@@ -69,10 +72,14 @@ app.add_middleware(_ProxyCors)
 # Sign-in and per-account watch history for the mobile app.
 app.include_router(accounts.router)
 # AniList/MyAnimeList list tracking, and watch parties.
-from app import party, reports, tracking, webpush  # noqa: E402
+from app import ops, party, reports, tracking, webpush  # noqa: E402
 app.include_router(tracking.router)
 app.include_router(party.router)
 app.include_router(webpush.router)
+# Disk space, the daily stream sweep and error reports from clients, for /status;
+# a save that fails because the disk is full answers 507 with a readable message.
+app.include_router(ops.router)
+ops.install(app)
 
 
 # The website's look. "pixel" (the default) is the 2D pixel-art UI that matches
@@ -628,6 +635,7 @@ def _source_subtitles(stream: dict, referer: str) -> list:
         if not url:
             continue
         ref = t.get("referer") or referer
+        proxy_hosts.allow(url)
         tracks.append({
             "url": f"/proxy/subtitle?url={quote(url, safe='')}&referer={quote(ref, safe='')}",
             "label": t.get("label") or t.get("lang") or "English",
@@ -759,9 +767,11 @@ async def get_source(request: Request, episode_id: str, server: str = "Auto", ca
                 if "premilkyway.com" in abs_url:
                     proxy_url = abs_url
                 elif "m3u8" in abs_url:
+                    proxy_hosts.allow(abs_url)
                     proxy_url = f"/proxy/m3u8?url={quote(abs_url, safe='')}&referer={quote(referer, safe='')}"
                 else:
                     # It's an mp4 like Doodstream, proxy it using our stream endpoint!
+                    proxy_hosts.allow(abs_url)
                     proxy_url = f"/proxy/stream?url={quote(abs_url, safe='')}&referer={quote(referer, safe='')}"
 
                 sources.append({
@@ -832,6 +842,8 @@ async def genre(request: Request, name: str, page: int = 1):
 
 @app.api_route("/proxy/stream", methods=["GET", "HEAD"])
 async def proxy_stream(request: Request, url: str, referer: str | None = None):
+    if not proxy_hosts.allowed(url):
+        return Response(status_code=403, content="Not a stream this server handed out")
     headers = {"User-Agent": USER_AGENT}
     if referer:
         headers["Referer"] = referer
@@ -878,6 +890,8 @@ async def proxy_stream(request: Request, url: str, referer: str | None = None):
 
 @app.get("/proxy/m3u8")
 async def proxy_m3u8(url: str, referer: str | None = None):
+    if not proxy_hosts.allowed(url):
+        return Response(status_code=403, content="Not a stream this server handed out")
     headers = {"User-Agent": USER_AGENT}
     if referer:
         headers["Referer"] = referer
@@ -909,6 +923,7 @@ async def proxy_m3u8(url: str, referer: str | None = None):
                         def replace_uri(match):
                             uri = match.group(1)
                             abs_uri = urljoin(url, uri)
+                            proxy_hosts.allow(abs_uri)
                             if abs_uri.split('?')[0].endswith('.m3u8'):
                                 proxy_uri = f"/proxy/m3u8?url={quote(abs_uri, safe='')}&referer={quote(referer or '', safe='')}"
                             else:
@@ -918,6 +933,7 @@ async def proxy_m3u8(url: str, referer: str | None = None):
                     rewritten_lines.append(line)
                 else:
                     abs_url = urljoin(url, line)
+                    proxy_hosts.allow(abs_url)
                     if abs_url.split('?')[0].endswith('.m3u8'):
                         proxy_url = f"/proxy/m3u8?url={quote(abs_url, safe='')}&referer={quote(referer or '', safe='')}"
                     else:
@@ -932,6 +948,8 @@ async def proxy_m3u8(url: str, referer: str | None = None):
 
 @app.get("/proxy/ts")
 async def proxy_ts(url: str, referer: str | None = None):
+    if not proxy_hosts.allowed(url):
+        return Response(status_code=403, content="Not a stream this server handed out")
     headers = {"User-Agent": USER_AGENT}
     if referer:
         headers["Referer"] = referer
@@ -950,6 +968,8 @@ async def proxy_ts(url: str, referer: str | None = None):
 
 @app.get("/proxy/subtitle")
 async def proxy_subtitle(url: str, referer: str | None = None):
+    if not proxy_hosts.allowed(url):
+        return Response(status_code=403, content="Not a stream this server handed out")
     headers = {"User-Agent": USER_AGENT}
     if referer:
         headers["Referer"] = referer

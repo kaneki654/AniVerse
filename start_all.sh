@@ -99,10 +99,11 @@ run_forever() {
 
 TUNNEL_PID=""
 HOUSEKEEPING_PID=""
+SWEEP_PID=""
 cleanup() {
   echo
   say "Stopping AniVerse"
-  for pid in "${backend_PID:-}" "${frontend_PID:-}" "$TUNNEL_PID" "$HOUSEKEEPING_PID"; do
+  for pid in "${backend_PID:-}" "${frontend_PID:-}" "$TUNNEL_PID" "$HOUSEKEEPING_PID" "$SWEEP_PID"; do
     [ -n "$pid" ] || continue
     pkill -P "$pid" 2>/dev/null || true
     kill "$pid" 2>/dev/null || true
@@ -157,6 +158,20 @@ echo "  frontend ok"
   done
 ) &
 HOUSEKEEPING_PID=$!
+
+# --- stream sweep -------------------------------------------------------------
+# Once a day: does what is trending on AniList actually play? The totals and the
+# failures show on /status (data/sweep.json). Starts a while after launch, not
+# straight away, so a restart does not hammer the resolver.
+(
+  sleep 900
+  while true; do
+    "$PY" "$ROOT/scripts/sweep_playable.py" --trending 40 --jobs 3 \
+      --out "$LOG_DIR/sweep_results.json" --summary "$ROOT/data/sweep.json" >> "$LOG_DIR/sweep.log" 2>&1
+    sleep 86400
+  done
+) &
+SWEEP_PID=$!
 
 if [ "$WITH_TUNNEL" -eq 0 ]; then
   say "Running (no tunnel)"

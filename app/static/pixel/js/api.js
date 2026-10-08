@@ -66,6 +66,8 @@ export const api = {
     return getJson(`/api/anime/filter?${q}`, { timeout: 25000 }).catch(() => ({ media: [], hasNextPage: false, available: false }));
   },
   status: () => getJson("/api/anime/status", { timeout: 15000 }),
+  /** This server's own health: disk space, the daily stream sweep, error reports. */
+  ops: () => getJson("/api/ops", { timeout: 10000 }).catch(() => null),
   /** Tell the server a stream plays wrong, so it is left out for a while. */
   report: (id, ep, category, url, reason) => fetch("/api/report", {
     method: "POST", headers: { "Content-Type": "application/json" },
