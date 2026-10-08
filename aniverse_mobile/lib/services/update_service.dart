@@ -1,4 +1,6 @@
 import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
@@ -32,7 +34,7 @@ class UpdateService {
       return published > installed ? remote : null;
     } catch (e) {
       // A failed update check must never block using the app.
-      print('update check failed: $e');
+      debugPrint('update check failed: $e');
       return null;
     }
   }

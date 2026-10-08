@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../pixel/blood.dart';
 import '../pixel/fx.dart';
 import '../pixel/pixel.dart';
+import '../pixel/pixel_widgets.dart';
 import '../pixel/theme_fx.dart';
 
 /// The ANIVERSE wordmark as sprite text -- arcade face, hard black outline, the
@@ -32,7 +33,7 @@ class AniVerseLogo extends StatelessWidget {
       ),
     );
     // A light band sweeps across the letters every few seconds.
-    final shiny = FrameClock(
+    final shiny = fxLevel == FxLevel.off ? word : FrameClock(
       fps: 12,
       frames: 84,
       builder: (_, f) {
@@ -144,7 +145,9 @@ class _PressableScaleState extends State<PressableScale> {
   bool _down = false;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PixelFocus(onActivate: widget.onTap, child: _faceBuild(context));
+
+  Widget _faceBuild(BuildContext context) {
     return GestureDetector(
       onTapDown: (_) => setState(() => _down = true),
       onTapUp: (_) => setState(() => _down = false),

@@ -5,6 +5,7 @@ import '../pixel/blood.dart';
 import '../pixel/pixel.dart';
 import '../pixel/pixel_widgets.dart';
 import '../pixel/sprites.dart';
+import '../pixel/theme_fx.dart';
 
 // --- anime helpers (the website's api.js titleOf / coverOf / airedEpisodes) -----------
 
@@ -59,7 +60,12 @@ class PixelSwitch extends StatelessWidget {
   const PixelSwitch({super.key, required this.value, required this.onChanged, required this.label});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PixelFocus(onActivate: () {
+        Sfx.play('select');
+        onChanged(!value);
+      }, child: _faceBuild(context));
+
+  Widget _faceBuild(BuildContext context) {
     return Semantics(
       toggled: value,
       label: label,
@@ -100,7 +106,9 @@ class SettingRow extends StatelessWidget {
   const SettingRow({super.key, required this.title, required this.text, required this.control, this.onTap});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PixelFocus(onActivate: onTap, child: _faceBuild(context));
+
+  Widget _faceBuild(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: GestureDetector(
@@ -139,7 +147,9 @@ class ChoiceChipButton extends StatelessWidget {
   const ChoiceChipButton({super.key, required this.label, required this.onTap});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PixelFocus(onActivate: onTap, child: _faceBuild(context));
+
+  Widget _faceBuild(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: PixelBox(
@@ -268,7 +278,7 @@ class _BossFightState extends State<BossFight> {
               frames: 4096,
               builder: (_, f) {
                 frame = f;
-                final painter = _BossPainter(_rows, f, hp, flash > 0, deadAt == null ? null : f - deadAt!);
+                final painter = _BossPainter(ThemeBosses.current() ?? _rows, f, hp, flash > 0, deadAt == null ? null : f - deadAt!);
                 if (flash > 0) flash--;
                 return SizedBox(width: widget.size, height: widget.size, child: CustomPaint(painter: painter));
               },

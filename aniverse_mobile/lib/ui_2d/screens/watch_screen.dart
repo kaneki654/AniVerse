@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../../services/api_service.dart';
 import '../../services/app_settings.dart';
@@ -195,6 +194,10 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   bool _prefetched = false;
   bool _startedOnce = false;
   bool _pipSupported = false;
+
+  /// Chromecast: whether this device can cast, and the TV it is casting to.
+  bool _castAvailable = false;
+  String? _castTo;
   bool _pipWasReady = false;
 
   /// Playing a downloaded copy rather than a stream.
@@ -231,6 +234,12 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       if (mounted) setState(() => _pipSupported = v);
     });
     NativeBridge.inPip.addListener(_onPip);
+    NativeBridge.onMedia = _onMedia;
+    NativeBridge.castAvailable().then((v) {
+      if (mounted) setState(() => _castAvailable = v);
+    });
+    NativeBridge.castDevice.addListener(_onCast);
+    NativeBridge.onCastEnded = _onCastEnded;
     final code = widget.partyCode;
     if (code != null && PartyConnection.validCode(code)) _joinParty(code.toUpperCase());
     WidgetsBinding.instance.addObserver(this);
@@ -736,7 +745,10 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     // Save on pause as well as on the timer, so stopping mid-episode and
     // closing the app keeps the exact spot.
     if (_wasPlaying && !v.isPlaying) _saveProgress();
-    if (_wasPlaying != v.isPlaying) _syncPip(v);
+    if (_wasPlaying != v.isPlaying) {
+      _syncPip(v);
+      _syncSession(v);
+    }
     _wasPlaying = v.isPlaying;
 
     // The next episode's streams are looked up near the end of this one, so
@@ -1041,6 +1053,8 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       if (_party == null) ('party', 'Start a watch party') else ('invite', 'Party ${_party!.code} · copy invite'),
       if (_party == null) ('join', 'Join a party by code'),
       if (_pipSupported) ('pip', 'Picture in picture'),
+      if (_castAvailable && !_offline && src != null)
+        _castTo == null ? ('cast', 'Cast to TV') : ('cast', 'Casting to $_castTo · stop'),
       if (!_offline && src != null) ('report', 'Report a problem'),
     ], null);
     if (choice == null || !mounted) return;
@@ -1114,6 +1128,12 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
         if (code != null && PartyConnection.validCode(code)) _joinParty(code);
       case 'pip':
         NativeBridge.enterPip();
+      case 'cast':
+        if (_castTo != null) {
+          NativeBridge.castStop();
+        } else if (!await NativeBridge.castPick() && mounted) {
+          pixelToast(context, "Casting needs Google Play services, and this device doesn't have it.");
+        }
       case 'report':
         final reason = await pickOption<String>(context, "What's wrong?", [for (final r in _reasons) (r, r)], null);
         if (reason == null || src == null) return;
@@ -1139,6 +1159,80 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     final size = v.size;
     NativeBridge.setPipReady(ready,
         w: size.width > 0 ? size.width.round() : 16, h: size.height > 0 ? size.height.round() : 9);
+  }
+
+  // --- Chromecast -------------------------------------------------------------------------
+
+  /// A cast started (or ended): the episode goes over to the TV from where it
+  /// is, and the phone becomes the remote.
+  void _onCast() {
+    final device = NativeBridge.castDevice.value;
+    if (!mounted || device == _castTo) return;
+    setState(() => _castTo = device);
+    if (device == null) return;
+    final c = _controller;
+    final src = _sources.isEmpty ? null : _sources[_sourceIndex];
+    final url = src?['url']?.toString() ?? '';
+    if (url.isEmpty || url.startsWith('file://')) {
+      pixelToast(context, 'Saved episodes play on this phone only. Pick one to stream to cast it.');
+      return;
+    }
+    c?.pause();
+    NativeBridge.castLoad(url,
+        title: widget.title ?? 'AniVerse',
+        subtitle: 'Episode ${widget.epNum}${category == 'dub' ? ' (dub)' : ''}',
+        position: (c?.value.position ?? _lastGoodPosition).inMilliseconds,
+        subtitles: _captionsOn ? _trackUrl : null,
+        hls: src?['isM3U8'] == true || url.contains('m3u8'));
+    Sfx.play('select');
+  }
+
+  /// Back on the phone: carry on from where the TV got to.
+  void _onCastEnded(int positionMs) {
+    final c = _controller;
+    if (!mounted || c == null || !c.value.isInitialized) return;
+    if (positionMs > 0) c.seekTo(Duration(milliseconds: positionMs));
+    c.play();
+  }
+
+  // --- media buttons --------------------------------------------------------------------
+
+  /// Tells Android what is playing, for the lock screen and media buttons.
+  void _syncSession(VideoPlayerValue v) {
+    NativeBridge.mediaSession(true,
+        title: widget.title ?? 'AniVerse',
+        subtitle: 'Episode ${widget.epNum}',
+        playing: v.isPlaying,
+        position: v.position.inMilliseconds,
+        duration: v.duration.inMilliseconds,
+        hasNext: _aired > widget.epNum);
+  }
+
+  /// A headset, car or remote button.
+  void _onMedia(String action, int position) {
+    final c = _controller;
+    if (!mounted || c == null || !c.value.isInitialized) return;
+    final at = c.value.position;
+    switch (action) {
+      case 'play':
+        c.play();
+      case 'pause':
+        c.pause();
+      case 'next':
+        if (_aired > widget.epNum) return _goEpisode(widget.epNum + 1);
+      case 'forward':
+        c.seekTo(at + const Duration(seconds: 10));
+      case 'rewind':
+        c.seekTo(at - const Duration(seconds: 10) < Duration.zero ? Duration.zero : at - const Duration(seconds: 10));
+      case 'seek':
+        c.seekTo(Duration(milliseconds: position));
+    }
+    Future.delayed(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+      _userAction();
+      final now = _controller;
+      if (now != null) _syncSession(now.value);
+    });
   }
 
   // --- next episode -------------------------------------------------------------------------
@@ -1232,6 +1326,8 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   /// The viewer played, paused or seeked: tell the party.
   void _userAction() {
     if (_party != null && _phase == _Phase.playing && DateTime.now().isAfter(_remoteUntil)) _party!.send();
+    final c = _controller;
+    if (c != null && c.value.isInitialized) _syncSession(c.value);
   }
 
   // --- history -----------------------------------------------------------------------
@@ -1273,12 +1369,10 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   void _syncWakelock(bool playing) {
     if (playing == _awake) return;
     _awake = playing;
-    // The plugin sets FLAG_KEEP_SCREEN_ON on the activity window and throws
-    // NoActivityException when there is no foreground activity -- which is
-    // exactly when this listener can fire, since the controller keeps ticking
-    // as the app goes to the background. Android already clears the flag on the
-    // way out, so a failure here is nothing to recover from.
-    WakelockPlus.toggle(enable: playing).catchError((_) {});
+    // FLAG_KEEP_SCREEN_ON on the activity window (MainActivity.kt). This can
+    // fire as the app goes to the background, when there is no window to set it
+    // on; Android clears the flag on the way out anyway, so nothing is lost.
+    NativeBridge.keepScreenOn(playing);
   }
 
   /// Reload the current episode on the other audio track.
@@ -1339,6 +1433,10 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     _party?.close();
     NativeBridge.inPip.removeListener(_onPip);
     NativeBridge.setPipReady(false);
+    if (NativeBridge.onMedia == _onMedia) NativeBridge.onMedia = null;
+    NativeBridge.mediaSession(false);
+    NativeBridge.castDevice.removeListener(_onCast);
+    if (NativeBridge.onCastEnded == _onCastEnded) NativeBridge.onCastEnded = null;
     _skipTimer?.cancel();
     _generation++;
     WidgetsBinding.instance.removeObserver(this);
@@ -1356,7 +1454,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     _controller?.dispose();
     _stale?.dispose();
     // Never leave the wakelock held after the player is gone.
-    if (_awake) WakelockPlus.disable().catchError((_) {});
+    if (_awake) NativeBridge.keepScreenOn(false);
     // Leave the device as the rest of the app expects to find it.
     SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -1480,6 +1578,26 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
           onToggleFullscreen: () => _toggleFullscreen(fullscreen),
           hideTransport: _bufferVisible,
         ),
+        if (_castTo != null)
+          Positioned.fill(
+            child: ColoredBox(
+              color: Px.black,
+              child: Center(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Text('CASTING TO ${_castTo!.toUpperCase()}',
+                      textAlign: TextAlign.center,
+                      style: PxFont.label(fullscreen ? 11 : 9, color: Px.gold).copyWith(shadows: PxFont.outline(1.2))),
+                  const SizedBox(height: 14),
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    PixelButton(label: 'Controls', fontSize: 8, onPressed: NativeBridge.castPick),
+                    const SizedBox(width: 12),
+                    PixelButton(
+                        label: 'Stop casting', kind: PixelButtonKind.dark, fontSize: 8, onPressed: NativeBridge.castStop),
+                  ]),
+                ]),
+              ),
+            ),
+          ),
         if (_upNext)
           Positioned.fill(
             child: ColoredBox(

@@ -1,14 +1,16 @@
 // Settings: palette, sound, data saver, subtitle style and alerts. Kept in this
 // browser; the app has the same choices in its own Settings screen.
-import { h, clear, sprite, paletteSwitch } from "./px.js";
+import { h, clear, sprite, paletteSwitch, retheme } from "./px.js";
 import { settings, THEMES } from "./settings.js";
+import { push } from "./push.js";
+import { toast } from "./px.js";
 import { sfx } from "./sfx.js";
 import { initShell } from "./ui.js";
 
 initShell();
 const root = document.getElementById("page-root");
 
-const SWATCH = { blood: "#d10a1a", neon: "#00d9ff", sakura: "#ff5fa2" };
+const SWATCH = { blood: "#d10a1a", neon: "#00d9ff", sakura: "#ff5fa2", gameboy: "#8bac0f", samurai: "#d4a537" };
 
 function toggle(key, label, text, onChange) {
   const s = settings.get();
@@ -46,17 +48,22 @@ function render() {
         h("div.theme-swatches", null, Object.entries(THEMES).map(([id, name]) =>
           h("button.theme-swatch.px-box", {
             type: "button", "aria-pressed": String(s.theme === id),
-            // Each palette arrives with its own transition: covered in its style,
-            // reloaded in its colours, uncovered on arrival.
+            // Each palette arrives with its own transition: covered in its
+            // style, switched underneath without a reload, then uncovered.
             onclick: async () => {
-              if (id === settings.get().theme) return;
-              sfx({ neon: "hit", sakura: "skip" }[id] || "slash");
+              if (id === settings.get().theme || document.querySelector("canvas.palette-fx")) return;
+              sfx({ neon: "hit", sakura: "skip", gameboy: "select", samurai: "boss" }[id] || "slash");
               await paletteSwitch(id, "cover");
               settings.set({ theme: id });
-              try { sessionStorage.setItem("av.palette", id); } catch { /* storage off */ }
-              location.reload();
+              retheme();
+              render();
+              document.querySelectorAll("canvas.palette-fx, .palette-fx-label").forEach((el) => el.remove());
+              await paletteSwitch(id, "reveal");
             },
           }, h("i", { style: { background: SWATCH[id] } }), name))))),
+    h("section.setting-group", null,
+      choice("effects", "Effects", "The animation in the background, on clicks and on buttons. Lite is lighter on the battery; Off keeps the page still.",
+        { full: "Full", lite: "Lite", off: "Off" }, (v) => { setTimeout(() => location.reload(), 150); return v; })),
     h("section.setting-group", null,
       toggle("sfx", "Sound effects", "8-bit blips for buttons, hits and achievements."),
       choice("volume", "Effects volume", "How loud the blips are.", { "0.15": "Quiet", "0.35": "Normal", "0.7": "Loud" }, Number)),
@@ -69,11 +76,18 @@ function render() {
         German: "German", Italian: "Italian", Arabic: "Arabic", Russian: "Russian", Indonesian: "Indonesian",
       })),
     h("section.setting-group", null,
-      toggle("alerts", "New-episode alerts", "Notify me when a show on My List airs a new episode.", async (on) => {
-        if (!on) return true;
+      toggle("alerts", "New-episode alerts", "Notify me when a show on My List airs a new episode, even with AniVerse closed.", async (on) => {
+        if (!on) { await push.disable(); return true; }
         if (!("Notification" in window)) return false;
-        return (await Notification.requestPermission()) === "granted";
-      })),
+        if ((await Notification.requestPermission()) !== "granted") return false;
+        // Push needs a secure address; without it, alerts still come while a tab is open.
+        if (push.supported() && !(await push.enable())) toast("Alerts will show while AniVerse is open (push isn't available here).");
+        return true;
+      }),
+      push.supported() ? h("button.px-btn.dark.px-box.bevel.small", {
+        type: "button", style: { marginTop: "12px" },
+        onclick: async () => toast((await push.test()) ? "Test alert sent." : "Turn alerts on first, then try again."),
+      }, "Send a test alert") : null),
     h("p.muted", null, sprite("gear", 1.6), " The app has these too, under its gear icon."),
   );
 }

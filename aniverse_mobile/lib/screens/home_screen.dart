@@ -7,6 +7,7 @@ import '../widgets/aniverse_logo.dart';
 import '../widgets/continue_watching.dart';
 import '../widgets/hero_spotlight.dart';
 import '../widgets/poster_card.dart';
+import '../classic_plus/classic_extras.dart';
 import 'account_screen.dart';
 import 'detail_screen.dart';
 import 'genres_screen.dart';
@@ -190,11 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
               FadeScaleRoute(page: const SearchScreen()),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.settings, color: Colors.white70),
-            tooltip: 'Server address',
-            onPressed: _editServer,
-          ),
+          ClassicMoreMenu(onServer: _editServer),
         ],
       ),
       body: homeData == null

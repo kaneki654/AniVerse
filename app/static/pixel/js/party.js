@@ -114,6 +114,7 @@ export function startParty({ code, mount, getState, applyState }) {
       } else if (m.type === "state" && m.state) {
         applyState(m.state, where(m.state));
       } else if (m.type === "chat") {
+        if (!m.name) { sys(m.text); return; } // from the server, e.g. "slow down"
         line(h("b", null, `${m.name}: `), m.text);
         if (m.name !== me) sfx("click");
       }

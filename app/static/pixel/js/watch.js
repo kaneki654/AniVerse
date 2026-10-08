@@ -10,6 +10,7 @@ import { sfx } from "./sfx.js";
 import { initShell } from "./ui.js";
 import { createPlayer, pref } from "./player.js";
 import { startParty, newPartyCode, validCode } from "./party.js";
+import { castReady, castDevice, startCast, stopCast, castLoad, castPlayPause, onCastChange } from "./cast.js";
 
 initShell();
 const root = document.getElementById("watch");
@@ -67,6 +68,32 @@ const styleCaptions = (s) => player.captionStyle({ size: s.subSize, bg: s.subBg 
 styleCaptions(settings.get());
 settings.onChange(styleCaptions);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// --- Chromecast (cast.js): the episode goes to the TV from where it is, the page becomes the remote.
+let canCast = false;
+castReady().then((ok) => { canCast = ok; });
+onCastChange(({ device, position }) => {
+  if (!device) {
+    player.hideStage();
+    if (position > 0) video.currentTime = position;
+    if (phase === "playing") video.play().catch(() => {});
+    return;
+  }
+  const src = sources[sourceIndex];
+  if (!src) return;
+  video.pause();
+  const abs = (u) => new URL(u, location.href).href;
+  castLoad({
+    url: abs(src.url),
+    title: info ? titleOf(info) : "AniVerse",
+    subtitle: `Episode ${ep}${category === "dub" ? " (dub)" : ""}`,
+    position: video.currentTime || 0,
+    subtitles: captionsOn() && currentTrack ? abs(currentTrack.url) : null,
+    hls: src.isM3U8 === true || /m3u8/.test(src.url),
+  }).then((ok) => { if (!ok) toast("The TV wouldn't take this stream. Try another server."); });
+  player.casting(device, { onPlayPause: castPlayPause, onStop: stopCast });
+  sfx("select");
+});
 
 // --- link speed ---------------------------------------------------------------------
 // Each finished segment's own download rate, smoothed: the link's real speed,
@@ -579,6 +606,9 @@ function buildMenu() {
       else if (hls) { hls.autoLevelCapping = -1; hls.currentLevel = -1; }
     },
   });
+  if (canCast && sources.length && phase === "playing") {
+    items.push({ label: castDevice() ? "Stop casting" : "Cast to TV", value: castDevice() || "", run: () => (castDevice() ? stopCast() : startCast()) });
+  }
   if (sources.length && phase === "playing") items.push("-", { label: "Report a problem", sub: reportPage });
   return { title: "Settings", items, refresh: buildMenu };
 }

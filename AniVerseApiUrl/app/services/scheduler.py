@@ -46,5 +46,14 @@ def start_scheduler():
         if ran:
             logger.info("Pre-detected skip times for %d episode(s)", ran)
 
+    @scheduler.scheduled_job('interval', minutes=5)
+    def save_health_job():
+        # The status page's history survives a restart (app/core/health.py).
+        from app.core import health
+        try:
+            health.save()
+        except OSError as e:
+            print(f"Could not save health history: {e}")
+
     scheduler.start()
     logger.info("Background workers started successfully.")

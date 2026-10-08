@@ -22,7 +22,7 @@ function audio() {
 
 // Each palette has its own voice: Blood as is, Neon cyber pitched up and
 // bright, Sakura lower and softer -- the same as the app.
-const voice = () => ({ neon: [1.3, 1], sakura: [0.82, 0.75] })[document.documentElement.dataset.theme] || [1, 1];
+const voice = () => ({ neon: [1.3, 1], sakura: [0.82, 0.75], gameboy: [1.15, 0.9], samurai: [0.7, 0.95] })[document.documentElement.dataset.theme] || [1, 1];
 
 function tone(c, { type = "square", from, to = from, at = 0, dur = 0.08, gain = 1 }) {
   const [rate, loud] = voice();

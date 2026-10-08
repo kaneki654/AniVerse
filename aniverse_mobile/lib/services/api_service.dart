@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -16,19 +18,10 @@ class ApiService {
 
   static String get host => _host;
 
-  /// Where the current server address is published.
-  ///
-  /// The tunnel URL rotates on every restart, so a build-time constant goes
-  /// stale and used to mean rebuilding and reinstalling the APK. This page is
-  /// on stable hosting and carries the live address, so a restart only needs
-  /// the site redeployed -- the installed app picks the new address up by
-  /// itself on next launch.
-  static const String discoveryUrl =
-      'https://aniversesite.vercel.app/version.json';
-
-  /// The same address, as published to the GitHub repository by
-  /// scripts/publish_address.py (start_all.sh with ANIVERSE_PUBLISH_GIT=1).
-  /// Tried first: GitHub stays up, while the Vercel site above went dead.
+  /// Where the current server address is published: discovery/host.json in
+  /// the GitHub repository, written by scripts/publish_address.py each time
+  /// start_all.sh brings the tunnel up (ANIVERSE_PUBLISH_GIT=1). The tunnel
+  /// URL rotates on every restart; this is how the installed app follows it.
   static const String githubDiscoveryUrl =
       'https://raw.githubusercontent.com/kaneki654/AniVerse/main/discovery/host.json';
 
@@ -81,7 +74,7 @@ class ApiService {
   /// install site's. Null if neither can be reached or neither works.
   static Future<String?> _publishedHost() async {
     String? fallback;
-    for (final url in [githubDiscoveryUrl, discoveryUrl]) {
+    for (final url in [githubDiscoveryUrl]) {
       final host = await _hostFrom(url);
       if (host == null) continue;
       if (await _reachable(host)) return host;
@@ -154,7 +147,7 @@ class ApiService {
         'latest': json.decode(responses[2].body),
       };
     } catch (e) {
-      print('getHomeData failed: $e');
+      debugPrint('getHomeData failed: $e');
       return {};
     }
   }
@@ -166,12 +159,12 @@ class ApiService {
     try {
       final response = await http.get(Uri.parse('$baseUrl/anime/info/$id'));
       if (response.statusCode != 200) {
-        print('getAnimeDetails: HTTP ${response.statusCode}');
+        debugPrint('getAnimeDetails: HTTP ${response.statusCode}');
         return null;
       }
       return json.decode(response.body) as Map<String, dynamic>;
     } catch (e) {
-      print('getAnimeDetails failed: $e');
+      debugPrint('getAnimeDetails failed: $e');
       return null;
     }
   }
@@ -191,7 +184,7 @@ class ApiService {
       final body = json.decode(response.body);
       return body is List ? body : [];
     } catch (e) {
-      print('search failed: $e');
+      debugPrint('search failed: $e');
       return [];
     }
   }
@@ -242,7 +235,7 @@ class ApiService {
       final body = json.decode(response.body);
       return body is List ? body : [];
     } catch (e) {
-      print('byGenre failed: $e');
+      debugPrint('byGenre failed: $e');
       return [];
     }
   }
@@ -305,7 +298,7 @@ class ApiService {
     } on TimeoutException {
       return {'sources': [], 'error': 'The server took too long to find a stream.'};
     } catch (e) {
-      print('getSources failed: $e');
+      debugPrint('getSources failed: $e');
       return {'sources': [], 'error': "Can't reach the AniVerse server.", 'offline': true};
     }
   }
@@ -326,7 +319,7 @@ class ApiService {
       final body = json.decode(response.body);
       return body is Map<String, dynamic> ? body : null;
     } catch (e) {
-      print('skipTimes failed: $e');
+      debugPrint('skipTimes failed: $e');
       return null;
     }
   }
@@ -340,7 +333,7 @@ class ApiService {
       final text = utf8.decode(response.bodyBytes, allowMalformed: true).replaceFirst('﻿', '');
       return text.trimLeft().startsWith('WEBVTT') ? text : null;
     } catch (e) {
-      print('getSubtitleFile failed: $e');
+      debugPrint('getSubtitleFile failed: $e');
       return null;
     }
   }

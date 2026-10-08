@@ -5,11 +5,17 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.media.AudioAttributes
+import android.media.MediaMetadata
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.media.SoundPool
 import android.net.TrafficStats
 import android.os.Build
 import android.os.Process
 import android.util.Rational
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -28,6 +34,14 @@ class MainActivity : FlutterActivity() {
     private val soundIds = HashMap<String, Int>()
 
     private var pendingPermission: MethodChannel.Result? = null
+
+    // --- media session ---------------------------------------------------------------
+    // While an episode is open: headset buttons, car controls, TV remotes, the
+    // lock screen and Android's media controls play, pause and seek it.
+    private var session: MediaSession? = null
+
+    // --- Chromecast (CastBridge.kt) ------------------------------------------------------
+    private val castBridge = CastBridge(this) { native }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -55,6 +69,7 @@ class MainActivity : FlutterActivity() {
         // Everything else the Dart side needs from Android (lib/services/native_bridge.dart).
         native = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "aniverse/native").apply {
             setMethodCallHandler { call, result ->
+                if (castBridge.handle(call, result)) return@setMethodCallHandler
                 when (call.method) {
                     "sfx" -> {
                         playSound(
@@ -77,6 +92,39 @@ class MainActivity : FlutterActivity() {
                         result.success(null)
                     }
                     "enterPip" -> result.success(enterPip())
+                    "isMetered" -> {
+                        val cm = getSystemService(android.net.ConnectivityManager::class.java)
+                        result.success(cm?.isActiveNetworkMetered ?: false)
+                    }
+                    "downloadsActive" -> {
+                        DownloadKeepAlive.update(
+                            applicationContext,
+                            call.argument<Boolean>("on") == true,
+                            call.argument<String>("text") ?: "",
+                            call.argument<Int>("progress") ?: -1,
+                        )
+                        result.success(null)
+                    }
+                    "keepScreenOn" -> {
+                        val on = call.argument<Boolean>("on") == true
+                        runOnUiThread {
+                            if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                            else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                        }
+                        result.success(null)
+                    }
+                    "mediaSession" -> {
+                        updateSession(
+                            call.argument<Boolean>("active") == true,
+                            call.argument<String>("title") ?: "",
+                            call.argument<String>("subtitle") ?: "",
+                            call.argument<Boolean>("playing") == true,
+                            (call.argument<Number>("position") ?: 0).toLong(),
+                            (call.argument<Number>("duration") ?: 0).toLong(),
+                            call.argument<Boolean>("hasNext") == true,
+                        )
+                        result.success(null)
+                    }
                     "notificationsAllowed" -> result.success(notificationsAllowed())
                     "requestNotifications" -> requestNotifications(result)
                     "scheduleAlerts" -> {
@@ -143,6 +191,18 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onPostResume() {
+        super.onPostResume()
+        // With a remote or keyboard Android frames the focused view -- here the
+        // whole Flutter view. The app draws its own focus ring on the control.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) noFocusHighlight(window.decorView)
+    }
+
+    private fun noFocusHighlight(v: View) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) v.defaultFocusHighlightEnabled = false
+        if (v is ViewGroup) for (i in 0 until v.childCount) noFocusHighlight(v.getChildAt(i))
+    }
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         // Before Android 12 there is no auto-enter; this is the moment to do it by hand.
@@ -152,6 +212,55 @@ class MainActivity : FlutterActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         native?.invokeMethod("pipChanged", isInPictureInPictureMode)
+    }
+
+    // --- media session ----------------------------------------------------------------------
+
+    private fun media(action: String, position: Long = 0) =
+        runOnUiThread { native?.invokeMethod("media", mapOf("action" to action, "position" to position)) }
+
+    private fun updateSession(
+        active: Boolean, title: String, subtitle: String,
+        playing: Boolean, position: Long, duration: Long, hasNext: Boolean,
+    ) {
+        if (!active) {
+            session?.run { isActive = false; release() }
+            session = null
+            return
+        }
+        val s = session ?: MediaSession(this, "AniVerse").also { s ->
+            s.setCallback(object : MediaSession.Callback() {
+                override fun onPlay() = media("play")
+                override fun onPause() = media("pause")
+                override fun onStop() = media("pause")
+                override fun onSkipToNext() = media("next")
+                override fun onFastForward() = media("forward")
+                override fun onRewind() = media("rewind")
+                override fun onSeekTo(pos: Long) = media("seek", pos)
+            })
+            session = s
+        }
+        s.setMetadata(
+            MediaMetadata.Builder()
+                .putString(MediaMetadata.METADATA_KEY_TITLE, title)
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, subtitle)
+                .putLong(MediaMetadata.METADATA_KEY_DURATION, duration)
+                .build()
+        )
+        var actions = PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
+            PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_SEEK_TO or
+            PlaybackState.ACTION_FAST_FORWARD or PlaybackState.ACTION_REWIND or PlaybackState.ACTION_STOP
+        if (hasNext) actions = actions or PlaybackState.ACTION_SKIP_TO_NEXT
+        s.setPlaybackState(
+            PlaybackState.Builder()
+                .setActions(actions)
+                .setState(
+                    if (playing) PlaybackState.STATE_PLAYING else PlaybackState.STATE_PAUSED,
+                    position, if (playing) 1f else 0f,
+                )
+                .build()
+        )
+        s.isActive = true
     }
 
     // --- sound effects ----------------------------------------------------------------------
@@ -207,6 +316,9 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        session?.release()
+        session = null
+        castBridge.dispose()
         sounds?.release()
         sounds = null
         super.onDestroy()

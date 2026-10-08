@@ -28,7 +28,13 @@ class Px {
   static const googleBlue = Color(0xFF4285F4);
 
   /// Palette ids and their names, as on the website's Settings page.
-  static const themes = {'blood': 'Blood', 'neon': 'Neon cyber', 'sakura': 'Sakura'};
+  static const themes = {
+    'blood': 'Blood',
+    'neon': 'Neon cyber',
+    'sakura': 'Sakura',
+    'gameboy': 'Game Boy',
+    'samurai': 'Gold samurai',
+  };
   static String theme = 'blood';
 
   // ink, panel, panelHigh, blood, bloodDark, bloodDeep, bloodLight, gold, goldDark
@@ -36,6 +42,10 @@ class Px {
     'blood': [0xFF0D0709, 0xFF1B1114, 0xFF2A1A1F, 0xFFD10A1A, 0xFF7A0410, 0xFF3D0107, 0xFFFF4D57, 0xFFE8B23A, 0xFF9C6A14],
     'neon': [0xFF070A12, 0xFF10141F, 0xFF1B2133, 0xFF00D9FF, 0xFF006B85, 0xFF002A38, 0xFF7FF3FF, 0xFFFF3DF0, 0xFF8A1F86],
     'sakura': [0xFF120A0F, 0xFF21131B, 0xFF321C29, 0xFFFF5FA2, 0xFFA3305F, 0xFF4A1430, 0xFFFFB3D1, 0xFFFFD36B, 0xFFA8801F],
+    // The handheld's four greens, darkest to lightest, plus a brighter lime.
+    'gameboy': [0xFF0B1D0B, 0xFF0F380F, 0xFF1A4A1A, 0xFF8BAC0F, 0xFF306230, 0xFF173D17, 0xFF9BBC0F, 0xFFC8E05A, 0xFF5A7A1A],
+    // Lacquer black, gold leaf, and vermilion for the accents.
+    'samurai': [0xFF0B0907, 0xFF17120C, 0xFF261D12, 0xFFD4A537, 0xFF7A5A1C, 0xFF2E220C, 0xFFFFE08A, 0xFFE8543A, 0xFF8A2A18],
   };
 
   /// A palette's colours without switching to it: what the switch animation
@@ -148,7 +158,10 @@ class PixelCanvas {
   final bool glow;
   final List<(int, int, int, int, Color)> _ops = [];
 
-  PixelCanvas(this.canvas, this.cell, {this.glow = false});
+  PixelCanvas(this.canvas, this.cell, {bool glow = false}) : glow = glow && bloomEnabled;
+
+  /// Off with the Lite and Off effects settings: no bloom halos anywhere.
+  static bool bloomEnabled = true;
 
   void px(int x, int y, Color c) => rect(x, y, 1, 1, c);
 

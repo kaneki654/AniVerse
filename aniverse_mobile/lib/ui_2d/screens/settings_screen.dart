@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../app_version.dart';
 import '../../services/api_service.dart';
 import '../../services/app_settings.dart';
+import '../../services/download_service.dart';
 import '../../services/native_bridge.dart';
 import '../pixel/pixel.dart';
 import '../pixel/pixel_widgets.dart';
@@ -115,6 +116,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           SettingRow(
+            title: 'Effects',
+            text: 'The animation in the background, on taps and on buttons. Lite saves battery; Off keeps the screens still.',
+            control: ChoiceChipButton(
+              label: switch (AppSettings.effects) { 'lite' => 'Lite', 'off' => 'Off', _ => 'Full' },
+              onTap: () async {
+                final v = await pickOption(context, 'Effects', const [('full', 'Full'), ('lite', 'Lite'), ('off', 'Off')], AppSettings.effects);
+                if (v == null) return;
+                // The app rebuilds in the new level, the way a palette change does.
+                await _set('effects', v);
+              },
+            ),
+          ),
+          SettingRow(
             title: 'Intro animation',
             text: 'The pixel-art logo intro when the app opens. Tap it to skip.',
             control: PixelSwitch(label: 'Intro animation', value: AppSettings.intro, onChanged: (v) => _set('intro', v)),
@@ -198,6 +212,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (v != null) _set('subLang', v);
               },
             ),
+          ),
+          const SizedBox(height: 10),
+          const SectionHeader(title: 'Downloads'),
+          SettingRow(
+            title: 'Wi-Fi only',
+            text: 'Wait for Wi-Fi before downloading, so it never uses mobile data.',
+            control: PixelSwitch(label: 'Wi-Fi only', value: AppSettings.wifiOnly, onChanged: (v) async {
+              await _set('wifiOnly', v);
+              DownloadService.resume();
+            }),
+          ),
+          SettingRow(
+            title: 'Storage limit',
+            text: 'The most saved episodes may take up.',
+            control: ChoiceChipButton(
+              label: AppSettings.downloadLimitGb == 0 ? 'No limit' : '${AppSettings.downloadLimitGb.toStringAsFixed(0)} GB',
+              onTap: () async {
+                final v = await pickOption(context, 'Storage limit',
+                    const [(0.0, 'No limit'), (2.0, '2 GB'), (5.0, '5 GB'), (10.0, '10 GB'), (20.0, '20 GB')],
+                    AppSettings.downloadLimitGb);
+                if (v != null) {
+                  await _set('downloadLimitGb', v);
+                  DownloadService.resume();
+                }
+              },
+            ),
+          ),
+          SettingRow(
+            title: 'Delete when watched',
+            text: "Remove an episode's saved copy once you've watched it to the end.",
+            control: PixelSwitch(label: 'Delete when watched', value: AppSettings.autoDeleteWatched, onChanged: (v) => _set('autoDeleteWatched', v)),
           ),
           const SizedBox(height: 10),
           const SectionHeader(title: 'Alerts'),

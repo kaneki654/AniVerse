@@ -8,6 +8,8 @@ import 'package:path_provider/path_provider.dart';
 
 import 'api_service.dart';
 import 'app_settings.dart';
+import 'history_service.dart';
+import 'native_bridge.dart';
 
 /// An episode saved for watching offline.
 class DownloadItem {
@@ -17,7 +19,7 @@ class DownloadItem {
   String title;
   String cover;
 
-  /// queued | downloading | done | failed
+  /// queued | waiting (for Wi-Fi) | downloading | done | failed
   String status;
   double progress;
   int bytes;
@@ -58,12 +60,13 @@ class DownloadItem {
         category: (j['category'] ?? 'sub').toString(),
         title: (j['title'] ?? '').toString(),
         cover: (j['cover'] ?? '').toString(),
-        // A download cut off by the app closing picks up where it stopped.
-        status: j['status'] == 'done' ? 'done' : 'failed',
+        // A download cut off by the app closing picks up where it stopped:
+        // back in the queue, keeping the segments it already has.
+        status: j['status'] == 'done' ? 'done' : (j['status'] == 'failed' ? 'failed' : 'queued'),
         progress: ((j['progress'] ?? 0) as num).toDouble(),
         bytes: ((j['bytes'] ?? 0) as num).toInt(),
         quality: (j['quality'] ?? '').toString(),
-        error: j['status'] == 'done' ? null : 'Stopped before it finished. Tap retry to carry on.',
+        error: j['status'] == 'failed' ? (j['error'] ?? 'Stopped before it finished. Tap retry to carry on.').toString() : null,
         dir: j['dir'].toString(),
         hasSubs: j['subs'] == true,
         intro: j['intro'] is Map ? Map<String, dynamic>.from(j['intro'] as Map) : null,
@@ -78,6 +81,7 @@ class DownloadItem {
         'title': title,
         'cover': cover,
         'status': status,
+        'error': error,
         'progress': progress,
         'bytes': bytes,
         'quality': quality,
@@ -92,8 +96,12 @@ class DownloadItem {
 /// Offline episodes. HLS streams are saved as their segments plus a local
 /// playlist that points at them, which the player opens like any stream; MP4
 /// sources are saved as one file. One download runs at a time, the rest wait.
-/// Downloads only run while the app is open; one that was cut off resumes from
-/// the segments it already has.
+///
+/// While anything downloads, a foreground service keeps the app alive in the
+/// background (with a progress notification). A download that was cut off --
+/// the app killed, the phone off -- resumes on next start from the segments it
+/// already has. Settings: Wi-Fi only, a storage limit, and deleting episodes
+/// once watched.
 class DownloadService {
   static final List<DownloadItem> _items = [];
   static final ValueNotifier<int> changes = ValueNotifier<int>(0);
@@ -113,14 +121,37 @@ class DownloadService {
   static Future<void> load() async {
     try {
       final f = File('${(await _dir()).path}/index.json');
-      if (!await f.exists()) return;
-      for (final j in json.decode(await f.readAsString()) as List) {
-        _items.add(DownloadItem.fromJson(Map<String, dynamic>.from(j as Map)));
+      if (await f.exists()) {
+        for (final j in json.decode(await f.readAsString()) as List) {
+          _items.add(DownloadItem.fromJson(Map<String, dynamic>.from(j as Map)));
+        }
+        changes.value++;
       }
-      changes.value++;
     } catch (e) {
       debugPrint('downloads load failed: $e');
     }
+    HistoryService.changes.addListener(_deleteWatchedSoon);
+    // Pick up whatever was cut off last time.
+    if (_items.any((i) => i.status == 'queued')) Future.delayed(const Duration(seconds: 2), _pump);
+  }
+
+  // --- deleting watched episodes ---------------------------------------------------------
+
+  static Timer? _deleteTimer;
+  static void _deleteWatchedSoon() {
+    if (!AppSettings.autoDeleteWatched) return;
+    _deleteTimer?.cancel();
+    _deleteTimer = Timer(const Duration(seconds: 5), () {
+      for (final i in [..._items]) {
+        if (i.done && (HistoryService.progressFor(i.animeId, i.episode)?.finished ?? false)) delete(i);
+      }
+    });
+  }
+
+  /// The storage limit in bytes, or null for none.
+  static int? get _limitBytes {
+    final gb = AppSettings.downloadLimitGb;
+    return gb > 0 ? (gb * 1024 * 1024 * 1024).round() : null;
   }
 
   static Future<void> _save() async {
@@ -202,29 +233,76 @@ class DownloadService {
     } catch (_) {}
   }
 
+  static int _lastNote = 0;
+
   static void _changed(DownloadItem item) {
     changes.value++;
+    // The notification keeping downloads alive shows how far along it is, at
+    // most once a second.
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (item.status == 'downloading' && now - _lastNote > 1000) {
+      _lastNote = now;
+      final waiting = _items.where((i) => i.status == 'queued').length;
+      NativeBridge.downloadsActive(true,
+          text: '${item.title.isEmpty ? 'Episode' : item.title} · EP ${item.episode}${waiting > 0 ? ' · $waiting more waiting' : ''}',
+          progress: (item.progress * 100).round());
+    }
   }
+
+  static Timer? _wifiTimer;
 
   static Future<void> _pump() async {
     if (_running) return;
     _running = true;
     try {
       while (true) {
-        final next = _items.where((i) => i.status == 'queued').toList();
+        final next = _items.where((i) => i.status == 'queued' || i.status == 'waiting').toList();
         if (next.isEmpty) break;
+        if (AppSettings.wifiOnly && await NativeBridge.isMetered()) {
+          // Mobile data: wait for Wi-Fi, checking every half minute.
+          for (final i in next) {
+            i.status = 'waiting';
+          }
+          changes.value++;
+          await _save();
+          _wifiTimer?.cancel();
+          _wifiTimer = Timer(const Duration(seconds: 30), _pump);
+          break;
+        }
+        final limit = _limitBytes;
+        if (limit != null && await totalBytes() >= limit) {
+          for (final i in next) {
+            i
+              ..status = 'failed'
+              ..error = 'The storage limit (${AppSettings.downloadLimitGb.toStringAsFixed(0)} GB) is full. '
+                  'Delete some episodes, or raise the limit in Settings.';
+          }
+          changes.value++;
+          await _save();
+          break;
+        }
         await _download(next.first);
         await _save();
       }
     } finally {
       _running = false;
+      if (!_items.any((i) => i.status == 'downloading')) NativeBridge.downloadsActive(false);
     }
+  }
+
+  /// Settings changed (Wi-Fi only switched off, a higher limit): try again.
+  static void resume() {
+    for (final i in _items) {
+      if (i.status == 'waiting') i.status = 'queued';
+    }
+    _pump();
   }
 
   static Future<void> _download(DownloadItem item) async {
     item
       ..status = 'downloading'
       ..error = null;
+    _lastNote = 0;
     _changed(item);
     final dir = Directory('${(await _dir()).path}/${item.dir}');
     await dir.create(recursive: true);
@@ -278,7 +356,8 @@ class DownloadService {
 
   /// The variant to save: the lowest with data saver on, else the best at or
   /// under 720p (a good picture for a phone at a sensible size).
-  static (String, String) _pickVariant(String master, Uri base) {
+  @visibleForTesting
+  static (String, String) pickVariant(String master, Uri base, {bool? dataSaver}) {
     final lines = master.split('\n').map((l) => l.trim()).toList();
     final variants = <(int, int, String)>[]; // (height, bandwidth, uri)
     for (var i = 0; i < lines.length; i++) {
@@ -295,7 +374,7 @@ class DownloadService {
     if (variants.isEmpty) return (base.toString(), '');
     variants.sort((a, b) => a.$2.compareTo(b.$2));
     var pick = variants.first;
-    if (!AppSettings.dataSaver) {
+    if (!(dataSaver ?? AppSettings.dataSaver)) {
       final fit = variants.where((v) => v.$1 > 0 && v.$1 <= 720).toList();
       if (fit.isNotEmpty) pick = fit.last;
     }
@@ -306,36 +385,28 @@ class DownloadService {
     var playlistUrl = url;
     var text = await _text(url);
     if (text.contains('#EXT-X-STREAM-INF')) {
-      final (variant, label) = _pickVariant(text, Uri.parse(url));
+      final (variant, label) = pickVariant(text, Uri.parse(url));
       playlistUrl = variant;
       item.quality = label;
       text = await _text(variant);
     }
-    final base = Uri.parse(playlistUrl);
-    final fmp4 = text.contains('#EXT-X-MAP');
-    final out = StringBuffer();
-    final jobs = <(String, File)>[];
-    var n = 0, keys = 0;
-    for (final raw in text.split('\n')) {
-      final line = raw.trim();
-      if (line.isEmpty) continue;
-      if (line.startsWith('#')) {
-        // Keys and init segments are files too: save them and point at the copies.
-        if ((line.startsWith('#EXT-X-KEY') || line.startsWith('#EXT-X-MAP')) && line.contains('URI="')) {
-          final m = RegExp(r'URI="([^"]+)"').firstMatch(line)!;
-          final name = line.startsWith('#EXT-X-KEY') ? 'key${keys++}.bin' : 'init.mp4';
-          jobs.add((base.resolve(m.group(1)!).toString(), File('${dir.path}/$name')));
-          out.writeln(line.replaceFirst(m.group(0)!, 'URI="$name"'));
-        } else {
-          out.writeln(line);
-        }
-        continue;
+    final (local, files) = localPlaylist(text, Uri.parse(playlistUrl));
+    if (files.isEmpty) throw StateError('The stream had no video segments.');
+    final jobs = [for (final (u, name) in files) (u, File('${dir.path}/$name'))];
+    final out = local;
+
+    // Pieces left by a download that was cut off are kept only if they belong
+    // to this same playlist. Picked up again, the episode can come from another
+    // server or quality, numbered differently -- mixing the two makes a broken
+    // video. The local playlist (durations and file names, no expiring links)
+    // tells them apart.
+    final partial = File('${dir.path}/partial.m3u8');
+    if (!await partial.exists() || await partial.readAsString() != local) {
+      for (final (_, f) in jobs) {
+        if (await f.exists()) await f.delete();
       }
-      final name = 's${(n++).toString().padLeft(5, '0')}.${fmp4 ? 'm4s' : 'ts'}';
-      jobs.add((base.resolve(line).toString(), File('${dir.path}/$name')));
-      out.writeln(name);
+      await partial.writeAsString(local);
     }
-    if (n == 0) throw StateError('The stream had no video segments.');
 
     var doneCount = 0;
     var next = 0;
@@ -349,6 +420,11 @@ class DownloadService {
           await _fetchTo(u, f);
         }
         item.bytes += await f.length();
+        final limit = _limitBytes;
+        if (limit != null && await totalBytes() > limit) {
+          throw StateError('The storage limit (${AppSettings.downloadLimitGb.toStringAsFixed(0)} GB) filled up '
+              'part way through. Delete some episodes, or raise the limit in Settings.');
+        }
         doneCount++;
         item.progress = doneCount / jobs.length;
         if (doneCount % 4 == 0 || doneCount == jobs.length) _changed(item);
@@ -357,7 +433,39 @@ class DownloadService {
 
     item.bytes = 0;
     await Future.wait([for (var w = 0; w < 4; w++) worker()]);
-    await File('${dir.path}/index.m3u8').writeAsString(out.toString());
+    await File('${dir.path}/index.m3u8').writeAsString(out);
+    await partial.delete();
+  }
+
+  /// A media playlist rewritten to point at local files: the playlist text,
+  /// and (absolute url, local file name) for every segment, key and init
+  /// segment it needs.
+  @visibleForTesting
+  static (String, List<(String, String)>) localPlaylist(String text, Uri base) {
+    final fmp4 = text.contains('#EXT-X-MAP');
+    final out = StringBuffer();
+    final files = <(String, String)>[];
+    var n = 0, keys = 0;
+    for (final raw in text.split('\n')) {
+      final line = raw.trim();
+      if (line.isEmpty) continue;
+      if (line.startsWith('#')) {
+        // Keys and init segments are files too: save them and point at the copies.
+        if ((line.startsWith('#EXT-X-KEY') || line.startsWith('#EXT-X-MAP')) && line.contains('URI="')) {
+          final m = RegExp(r'URI="([^"]+)"').firstMatch(line)!;
+          final name = line.startsWith('#EXT-X-KEY') ? 'key${keys++}.bin' : 'init.mp4';
+          files.add((base.resolve(m.group(1)!).toString(), name));
+          out.writeln(line.replaceFirst(m.group(0)!, 'URI="$name"'));
+        } else {
+          out.writeln(line);
+        }
+        continue;
+      }
+      final name = 's${(n++).toString().padLeft(5, '0')}.${fmp4 ? 'm4s' : 'ts'}';
+      files.add((base.resolve(line).toString(), name));
+      out.writeln(name);
+    }
+    return (n == 0 ? '' : out.toString(), n == 0 ? const [] : files);
   }
 
   static Future<void> _fetchTo(String url, File f) async {

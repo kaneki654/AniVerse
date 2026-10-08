@@ -1,10 +1,13 @@
 import 'dart:ui' show lerpDouble;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'blood.dart';
 import 'fx.dart';
 import 'pixel.dart';
+import 'theme_fx.dart';
 
 /// Rectangle with its corners stepped in by one cell -- the shape of a pixel
 /// art panel -- usable anywhere Material takes a shape (dialogs, snack bars,
@@ -278,7 +281,9 @@ class _PixelButtonState extends State<PixelButton> {
       );
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PixelFocus(onActivate: _enabled ? () => widget.onPressed!() : null, child: _faceBuild(context));
+
+  Widget _faceBuild(BuildContext context) {
     final (fill, text) = switch (widget.kind) {
       PixelButtonKind.blood => (Px.blood, Px.bone),
       PixelButtonKind.dark => (Px.panelHigh, Px.bone),
@@ -330,7 +335,7 @@ class _PixelButtonState extends State<PixelButton> {
             : null,
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 46),
-          child: _enabled && widget.kind == PixelButtonKind.blood
+          child: _enabled && widget.kind == PixelButtonKind.blood && fxLevel != FxLevel.off
               // A light band sweeps the face every few seconds; buttons start
               // at different points of the loop so they do not flash together.
               ? FrameClock(
@@ -377,7 +382,9 @@ class _PixelIconButtonState extends State<PixelIconButton> {
   bool _down = false;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PixelFocus(onActivate: widget.onPressed, child: _faceBuild(context));
+
+  Widget _faceBuild(BuildContext context) {
     final icon = PixelSprite(widget.sprite, scale: widget.scale, color: widget.color);
     return Semantics(
       button: true,
@@ -562,4 +569,103 @@ class _SpinnerPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SpinnerPainter o) => o.frame != frame || o.color != color;
+}
+
+
+// --- focus, for remotes and keyboards ------------------------------------------------------
+
+/// Makes a tappable pixel widget reachable with a D-pad or keyboard (Android
+/// TV remotes, game pads, Chromebooks): it takes focus in turn, shows a hard
+/// pixel ring while focused, and Enter / Select / A presses it. On a touch
+/// screen nothing changes -- the ring only shows in keyboard navigation.
+class PixelFocus extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onActivate;
+  final bool autofocus;
+  const PixelFocus({super.key, required this.child, this.onActivate, this.autofocus = false});
+
+  @override
+  State<PixelFocus> createState() => _PixelFocusState();
+}
+
+class _PixelFocusState extends State<PixelFocus> {
+  bool _focused = false;
+
+  /// True from a navigation key until the next touch. Flutter's own highlight
+  /// mode ignores key events that Android marks as coming from a virtual
+  /// keyboard -- and that is how the Google TV phone remote, and adb, send
+  /// them -- so the ring would never show for those.
+  static final ValueNotifier<bool> _keyNav = ValueNotifier<bool>(false);
+  static bool _listening = false;
+  static final _navKeys = <LogicalKeyboardKey>{
+    LogicalKeyboardKey.arrowUp, LogicalKeyboardKey.arrowDown, LogicalKeyboardKey.arrowLeft,
+    LogicalKeyboardKey.arrowRight, LogicalKeyboardKey.tab, LogicalKeyboardKey.select,
+  };
+
+  static void _listen() {
+    if (_listening) return;
+    _listening = true;
+    HardwareKeyboard.instance.addHandler((e) {
+      if (e is KeyDownEvent && _navKeys.contains(e.logicalKey)) _keyNav.value = true;
+      return false;
+    });
+    GestureBinding.instance.pointerRouter.addGlobalRoute((e) {
+      if (e is PointerDownEvent) _keyNav.value = false;
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _listen();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final go = widget.onActivate;
+    return FocusableActionDetector(
+      enabled: go != null,
+      autofocus: widget.autofocus,
+      actions: {
+        ActivateIntent: CallbackAction<ActivateIntent>(onInvoke: (_) {
+          go?.call();
+          return null;
+        }),
+      },
+      onFocusChange: (v) {
+        if (v != _focused) setState(() => _focused = v);
+      },
+      child: ValueListenableBuilder<bool>(
+        valueListenable: _keyNav,
+        builder: (context, keys, child) {
+          final ring = _focused && (keys || FocusManager.instance.highlightMode == FocusHighlightMode.traditional);
+          return CustomPaint(foregroundPainter: ring ? const _FocusRingPainter() : null, child: child);
+        },
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class _FocusRingPainter extends CustomPainter {
+  const _FocusRingPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = Paint()
+      ..isAntiAlias = false
+      ..color = Px.bloodLight;
+    // Just inside the control's edges: rows that clip their children (the
+    // poster rows) would cut off a ring drawn outside them.
+    const w = 2.0;
+    final r = Offset.zero & size;
+    // Four bars with the corners stepped in: a pixel ring, not a rounded one.
+    canvas.drawRect(Rect.fromLTWH(r.left + w, r.top, r.width - 2 * w, w), p);
+    canvas.drawRect(Rect.fromLTWH(r.left + w, r.bottom - w, r.width - 2 * w, w), p);
+    canvas.drawRect(Rect.fromLTWH(r.left, r.top + w, w, r.height - 2 * w), p);
+    canvas.drawRect(Rect.fromLTWH(r.right - w, r.top + w, w, r.height - 2 * w), p);
+  }
+
+  @override
+  bool shouldRepaint(covariant _FocusRingPainter oldDelegate) => false;
 }

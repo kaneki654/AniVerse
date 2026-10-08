@@ -17,7 +17,7 @@
     /* Arriving through the page dissolve: start covered so nothing flashes. */
     try { if (sessionStorage.getItem("av.dissolve") || sessionStorage.getItem("av.palette")) document.documentElement.classList.add("entering"); } catch (e) {}
     /* The chosen palette before first paint, so it never flashes the default. */
-    try { document.documentElement.dataset.theme = (JSON.parse(localStorage.getItem("av.settings") || "{}").theme) || "blood"; } catch (e) {}
+    try { var avs = JSON.parse(localStorage.getItem("av.settings") || "{}"); document.documentElement.dataset.theme = avs.theme || "blood"; document.documentElement.dataset.fx = avs.effects || "full"; } catch (e) {}
   </script>
   {% block head %}{% endblock %}
 </head>

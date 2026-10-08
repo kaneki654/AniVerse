@@ -1,12 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../services/api_service.dart';
+import '../services/download_service.dart';
+import '../services/native_bridge.dart';
 import '../services/history_service.dart';
 import '../services/net_speed.dart';
 import '../theme.dart';
@@ -168,6 +170,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     _speed.start();
     _watchdog = Timer.periodic(const Duration(seconds: 1), (_) => _checkHealth());
     _historyTimer = Timer.periodic(const Duration(seconds: 10), (_) => _saveProgress());
+    NativeBridge.onMedia = _onMedia;
     _resolve();
   }
 
@@ -181,6 +184,23 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       _secondLook = false;
       _refreshing = false;
     });
+
+    // A saved copy (classic_plus Downloads) plays without the server.
+    final copy = DownloadService.find(widget.animeId, widget.epNum, category: category);
+    if (copy != null && copy.done) {
+      final path = await DownloadService.mediaPath(copy);
+      if (gen != _generation || !mounted) return;
+      _sources = [
+        {'url': Uri.file(path).toString(), 'serverName': 'Downloaded', 'isM3U8': path.endsWith('.m3u8')},
+      ];
+      _intro = copy.intro;
+      _outro = copy.outro;
+      final p = HistoryService.progressFor(widget.animeId, widget.epNum);
+      final from = (p != null && p.positionMs > 10000 && !p.finished) ? p.position : Duration.zero;
+      setState(() => _phase = _Phase.opening);
+      if (await _openFirstWorking(start: from, gen: gen)) return;
+      if (gen != _generation || !mounted) return;
+    }
 
     var data = await ApiService.getSources(widget.animeId, widget.epNum, category);
     if (gen != _generation || !mounted) return;
@@ -311,10 +331,12 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     // hint it runs progressive MP4 extractors over an HLS playlist and fails
     // with "None of the available extractors could read the stream".
     final isHls = source['isM3U8'] == true || url.contains('m3u8');
-    final c = VideoPlayerController.networkUrl(
-      Uri.parse(url),
-      formatHint: isHls ? VideoFormat.hls : null,
-    );
+    final c = url.startsWith('file://')
+        ? VideoPlayerController.file(File(Uri.parse(url).toFilePath()))
+        : VideoPlayerController.networkUrl(
+            Uri.parse(url),
+            formatHint: isHls ? VideoFormat.hls : null,
+          );
 
     final rx0 = _speed.totalBytes;
     final began = DateTime.now();
@@ -507,6 +529,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     // Save on pause as well as on the timer, so stopping mid-episode and
     // closing the app keeps the exact spot.
     if (_wasPlaying && !v.isPlaying) _saveProgress();
+    if (_wasPlaying != v.isPlaying) _syncSession(v);
     _wasPlaying = v.isPlaying;
   }
 
@@ -737,12 +760,10 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   void _syncWakelock(bool playing) {
     if (playing == _awake) return;
     _awake = playing;
-    // The plugin sets FLAG_KEEP_SCREEN_ON on the activity window and throws
-    // NoActivityException when there is no foreground activity -- which is
-    // exactly when this listener can fire, since the controller keeps ticking
-    // as the app goes to the background. Android already clears the flag on the
-    // way out, so a failure here is nothing to recover from.
-    WakelockPlus.toggle(enable: playing).catchError((_) {});
+    // FLAG_KEEP_SCREEN_ON on the activity window (MainActivity.kt). This can
+    // fire as the app goes to the background, when there is no window to set it
+    // on; Android clears the flag on the way out anyway, so nothing is lost.
+    NativeBridge.keepScreenOn(playing);
   }
 
   /// Reload the current episode on the other audio track.
@@ -789,8 +810,72 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     );
   }
 
+  // --- remotes and media buttons ---------------------------------------------------------
+
+  /// Tells Android what is playing, for the lock screen and media buttons.
+  void _syncSession(VideoPlayerValue v) => NativeBridge.mediaSession(true,
+      title: widget.title ?? 'AniVerse',
+      subtitle: 'Episode ${widget.epNum}',
+      playing: v.isPlaying,
+      position: v.position.inMilliseconds,
+      duration: v.duration.inMilliseconds);
+
+  void _seekBy(VideoPlayerController c, int seconds) {
+    final to = c.value.position + Duration(seconds: seconds);
+    c.seekTo(to < Duration.zero ? Duration.zero : (to > c.value.duration ? c.value.duration : to));
+  }
+
+  /// A headset, car or remote button (MainActivity's media session).
+  void _onMedia(String action, int position) {
+    final c = _controller;
+    if (!mounted || c == null || !c.value.isInitialized) return;
+    switch (action) {
+      case 'play':
+        c.play();
+      case 'pause':
+        c.pause();
+      case 'forward':
+        _seekBy(c, 10);
+      case 'rewind':
+        _seekBy(c, -10);
+      case 'seek':
+        c.seekTo(Duration(milliseconds: position));
+    }
+    Future.delayed(const Duration(milliseconds: 250), () {
+      final now = _controller;
+      if (mounted && now != null) _syncSession(now.value);
+    });
+  }
+
+  /// TV remotes and keyboards: Select, Enter or Space plays and pauses, left
+  /// and right seek ten seconds, and the media keys work.
+  KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    final c = _controller;
+    if (c == null || !c.value.isInitialized || (e is! KeyDownEvent && e is! KeyRepeatEvent)) {
+      return KeyEventResult.ignored;
+    }
+    final k = e.logicalKey;
+    if (k == LogicalKeyboardKey.select || k == LogicalKeyboardKey.enter || k == LogicalKeyboardKey.space ||
+        k == LogicalKeyboardKey.gameButtonA || k == LogicalKeyboardKey.mediaPlayPause) {
+      c.value.isPlaying ? c.pause() : c.play();
+    } else if (k == LogicalKeyboardKey.mediaPlay) {
+      c.play();
+    } else if (k == LogicalKeyboardKey.mediaPause) {
+      c.pause();
+    } else if (k == LogicalKeyboardKey.arrowLeft || k == LogicalKeyboardKey.mediaRewind) {
+      _seekBy(c, -10);
+    } else if (k == LogicalKeyboardKey.arrowRight || k == LogicalKeyboardKey.mediaFastForward) {
+      _seekBy(c, 10);
+    } else {
+      return KeyEventResult.ignored;
+    }
+    return KeyEventResult.handled;
+  }
+
   @override
   void dispose() {
+    if (NativeBridge.onMedia == _onMedia) NativeBridge.onMedia = null;
+    NativeBridge.mediaSession(false);
     _generation++;
     WidgetsBinding.instance.removeObserver(this);
     _saveProgress();
@@ -807,7 +892,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     _controller?.dispose();
     _stale?.dispose();
     // Never leave the wakelock held after the player is gone.
-    if (_awake) WakelockPlus.disable().catchError((_) {});
+    if (_awake) NativeBridge.keepScreenOn(false);
     // Leave the device as the rest of the app expects to find it.
     SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -886,7 +971,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     final player = Stack(
       fit: StackFit.expand,
       children: [
-        Center(child: video),
+        Focus(autofocus: true, onKeyEvent: _onKey, child: Center(child: video)),
         AniVersePlayerControls(
           controller: controller,
           title: widget.title == null

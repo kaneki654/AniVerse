@@ -16,6 +16,9 @@ class AppSettings {
   /// The palette; the app rebuilds its whole tree when this changes.
   static final ValueNotifier<String> theme = ValueNotifier<String>('blood');
 
+  /// Bumped when the effects level changes; the app rebuilds for that too.
+  static final ValueNotifier<int> effectsChanged = ValueNotifier<int>(0);
+
   static Future<void> load() async {
     try {
       _prefs = await SharedPreferences.getInstance();
@@ -51,6 +54,18 @@ class AppSettings {
   static double get speed => _d('av.speed', 1.0);
   static String get quality => _s('av.quality', 'auto');
 
+  /// Downloads: only on Wi-Fi (or another unmetered network).
+  static bool get wifiOnly => _b('av.wifiOnly', true);
+
+  /// Downloads: the most they may take, in GB; 0 is no limit.
+  static double get downloadLimitGb => _d('av.downloadLimitGb', 0);
+
+  /// Downloads: delete an episode's copy once it has been watched to the end.
+  static bool get autoDeleteWatched => _b('av.autoDeleteWatched', false);
+
+  /// How much ambient animation: full | lite (fewer particles, no glow) | off.
+  static String get effects => _s('av.effects', 'full');
+
   /// The pixel-art logo intro as the app opens.
   static bool get intro => _b('av.intro', true);
 
@@ -69,6 +84,7 @@ class AppSettings {
       await p.setString('av.$key', value.toString());
     }
     if (key == 'theme') theme.value = value.toString();
+    if (key == 'effects') effectsChanged.value++;
     changes.value++;
   }
 }

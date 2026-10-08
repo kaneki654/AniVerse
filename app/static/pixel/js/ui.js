@@ -236,7 +236,7 @@ async function appPromo() {
   if (!rel || !rel.available) return;
   const mb = rel.size ? ` · ${(rel.size / 1048576).toFixed(0)} MB` : "";
   slot.append(h("div.app-promo.px-box", null,
-    h("img", { src: emblemUrl() || "/static/pixel/img/logo.png", alt: "", width: 34, height: 30, style: { imageRendering: "pixelated" } }),
+    h("img.emblem", { src: emblemUrl() || "/static/pixel/img/logo.png", alt: "", width: 34, height: 30, style: { imageRendering: "pixelated" } }),
     h("div.txt", null, h("b", null, "AniVerse Pixel for Android"), h("span", null, `Version ${rel.versionName}${mb}`)),
     h("a.px-btn.px-box.bevel.small", { href: "/app/aniverse.apk", download: "AniVerse-Pixel.apk" }, sprite("download", 1.4), "Get the app")));
 }
@@ -322,14 +322,18 @@ function achievementToasts() {
 export function initShell() {
   // The header emblem in the palette's colours (Blood keeps the crimson PNG).
   const emblem = emblemUrl();
-  if (emblem) document.querySelectorAll('img[src$="/pixel/img/logo.png"]').forEach((img) => { img.src = emblem; });
+  document.querySelectorAll('img[src$="/pixel/img/logo.png"]').forEach((img) => {
+    img.classList.add("emblem"); // so a palette switch can recolour it
+    if (emblem) img.src = emblem;
+  });
   hydrateSprites();
   const bg = document.querySelector("canvas.embers-bg");
   if (bg) embers(bg);
   pageTransitions();
   soundHooks();
   achievementToasts();
-  if ("serviceWorker" in navigator && location.protocol === "https:") {
+  // Secure origins only (the tunnel, or localhost): installable, and alerts by push.
+  if ("serviceWorker" in navigator && isSecureContext) {
     navigator.serviceWorker.register("/sw.js").catch(() => { /* installable is a bonus */ });
   }
   auth.onChange((user) => { if (user) watchlist.sync({ full: true }).then(checkAlerts); });

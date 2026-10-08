@@ -16,11 +16,34 @@ class NativeBridge {
   /// Called with an anime id when an alert notification is tapped.
   static void Function(String animeId)? onOpenAnime;
 
+  /// Media buttons -- headset, car, TV remote, lock screen -- while an episode
+  /// is open: play, pause, next, forward, rewind, or seek (to [position] ms).
+  static void Function(String action, int position)? onMedia;
+
+  /// The Chromecast being cast to, by name, or null when not casting.
+  static final ValueNotifier<String?> castDevice = ValueNotifier<String?>(null);
+
+  /// A cast ended, with where the TV had got to (ms), for the phone to carry on from.
+  static void Function(int positionMs)? onCastEnded;
+
   static void init() {
     _ch.setMethodCallHandler((call) async {
       switch (call.method) {
         case 'pipChanged':
           inPip.value = call.arguments == true;
+        case 'media':
+          final a = call.arguments;
+          if (a is Map) onMedia?.call('${a['action']}', (a['position'] as num?)?.toInt() ?? 0);
+        case 'cast':
+          final a = call.arguments;
+          if (a is! Map) return null;
+          if (a['state'] == 'connected') {
+            castDevice.value = '${a['device']}';
+          } else {
+            final was = castDevice.value;
+            castDevice.value = null;
+            if (was != null) onCastEnded?.call((a['position'] as num?)?.toInt() ?? 0);
+          }
         case 'openAnime':
           final id = call.arguments?.toString();
           if (id != null && id.isNotEmpty) onOpenAnime?.call(id);
@@ -45,6 +68,58 @@ class NativeBridge {
 
   static Future<bool> enterPip() async => await _call<bool>('enterPip') ?? false;
 
+  /// Whether the current network is metered (mobile data, or a hotspot).
+  static Future<bool> isMetered() async => await _call<bool>('isMetered') ?? false;
+
+  /// Keeps downloads running with the app in the background: a foreground
+  /// service with a progress notification while [active], none otherwise.
+  static Future<void> downloadsActive(bool active, {String text = '', int progress = -1}) =>
+      _call('downloadsActive', {'on': active, 'text': text, 'progress': progress});
+
+  /// Hold the screen on (while a video plays). Replaces the wakelock_plus
+  /// plugin, which pulled in package_info_plus and the Kotlin plugin with it.
+  static Future<void> keepScreenOn(bool on) => _call('keepScreenOn', {'on': on});
+
+  /// The system media session: what is playing and where, for the lock
+  /// screen and media buttons. [active] false takes it down.
+  static Future<void> mediaSession(bool active,
+          {String title = '', String subtitle = '', bool playing = false, int position = 0, int duration = 0,
+          bool hasNext = false}) =>
+      _call('mediaSession', {
+        'active': active,
+        'title': title,
+        'subtitle': subtitle,
+        'playing': playing,
+        'position': position,
+        'duration': duration,
+        'hasNext': hasNext,
+      });
+
+  /// Whether this device can cast at all (Google Play services is there).
+  static Future<bool> castAvailable() async => await _call<bool>('castAvailable') ?? false;
+
+  /// The list of Chromecasts to pick from, or the controls while casting.
+  static Future<bool> castPick() async => await _call<bool>('castPick') ?? false;
+
+  /// Hands the episode to the Chromecast, from [position] ms, with a WebVTT
+  /// [subtitles] track if there is one. The URLs must be reachable from the TV.
+  static Future<bool> castLoad(String url,
+          {String title = '', String subtitle = '', int position = 0, String? subtitles, bool hls = true}) async =>
+      await _call<bool>('castLoad', {
+        'url': url,
+        'title': title,
+        'subtitle': subtitle,
+        'position': position,
+        'subtitles': subtitles,
+        'hls': hls,
+      }) ??
+      false;
+
+  static Future<void> castStop() => _call('castStop');
+
+  /// The device a cast is already running to (one left over from before), if any.
+  static Future<String?> castCurrent() => _call<String>('castDevice');
+
   static Future<bool> notificationsAllowed() async => await _call<bool>('notificationsAllowed') ?? false;
   static Future<bool> requestNotifications() async => await _call<bool>('requestNotifications') ?? false;
   static Future<void> scheduleAlerts(bool on) => _call('scheduleAlerts', {'on': on});
@@ -58,13 +133,16 @@ class NativeBridge {
 /// achieve, hit, boss -- the website's set (scripts/make_sfx.py renders them).
 ///
 /// Each palette has its own voice: Blood as recorded, Neon cyber pitched up
-/// and bright, Sakura lower and softer.
+/// and bright, Sakura lower and softer, Game Boy a little brighter, Gold
+/// samurai deep, like a temple bell.
 class Sfx {
   static void play(String name) {
     if (!AppSettings.sfx) return;
     final (rate, gain) = switch (AppSettings.theme.value) {
       'neon' => (1.3, 1.0),
       'sakura' => (0.82, 0.75),
+      'gameboy' => (1.15, 0.9),
+      'samurai' => (0.7, 0.95),
       _ => (1.0, 1.0),
     };
     NativeBridge._call('sfx', {'name': name, 'volume': AppSettings.volume * gain, 'rate': rate});

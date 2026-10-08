@@ -2,7 +2,7 @@
 // the overlays (katana loader, blood-orb buffering, the boss fight when nothing
 // plays). Playback logic lives in watch.js; this only draws and reports what
 // the viewer does -- the app's player_controls.dart and buffer_overlay.dart.
-import { h, sprite, clear, katana, orb, fmtTime, animate, PixelCanvas, splat, shake } from "./px.js";
+import { h, sprite, clear, katana, orb, fmtTime, animate, PixelCanvas, splat, shake, fxStyle } from "./px.js";
 import { sfx } from "./sfx.js";
 
 export const pref = {
@@ -35,7 +35,7 @@ export function createPlayer(host, handlers) {
     h("button.skip10.px-box", { type: "button", "aria-label": "Forward 10 seconds", onclick: () => seekBy(10) }, sprite("forward", 2), "10"));
 
   const buf = h("i.buf"), done = h("i.done"), marks = h("div.marks");
-  const handle = h("span.handle", null, sprite("bloodDrop", 2.2));
+  const handle = h("span.handle", null, sprite("mark", 2.2));
   const tip = h("span.tip", { hidden: true });
   const seek = h("div.seek", { role: "slider", tabindex: "0", "aria-label": "Seek", "aria-valuemin": "0" },
     h("div.track", null, buf, marks, done), handle, tip);
@@ -362,6 +362,18 @@ export function createPlayer(host, handlers) {
     },
     hideBuffering() { bufStage.hidden = true; clear(bufStage); center.style.visibility = ""; },
     hideStage() { stage.hidden = true; clear(stage); },
+    /** Full-cover stage while the episode plays on a Chromecast: this page is the remote. */
+    casting(device, { onPlayPause, onStop }) {
+      currentOrb = null;
+      closeMenu();
+      clear(stage).append(
+        h("a.icon-btn.back", { href: handlers.backHref, "aria-label": "Back" }, sprite("back", 2.2)),
+        h("div.label", null, `Casting to ${device}`),
+        h("div.row", null,
+          h("button.px-btn.px-box.bevel.small", { type: "button", onclick: onPlayPause }, sprite("play", 1.4), "Play / pause"),
+          h("button.px-btn.dark.px-box.bevel.small", { type: "button", onclick: onStop }, "Stop casting")));
+      stage.hidden = false;
+    },
     /**
      * Failure screen with actions [{label, kind, run}]. With `boss`, the skull
      * is a boss to fight instead: knock its HP to zero and boss() runs (a retry).
@@ -411,6 +423,13 @@ const BOSS = [
   "...KrKWWWWKrK...", "...KrrKKKKrrK...", "....KrrrrrrK....", ".....KKKKKK.....",
 ];
 const BOSS_HP = 5;
+// Each palette has its own boss: Neon cyber a glitch virus, Sakura an oni mask.
+const BOSSES = {
+  gameboy: ["................", "...K........K...", "....K......K....", "...KKKKKKKKKK...", "..KRRRRRRRRRRK..", ".KRRWWRRRRWWRRK.", ".KRRWYRRRRWYRRK.", "KRRRRRRRRRRRRRRK", "KRHRRRRRRRRRRHRK", "KRKRRRRRRRRRRKRK", "KRKKRRRRRRRRKKRK", "KK.KRRRKKRRRK.KK", "...KRRK..KRRK...", "..KRRK....KRRK..", "..KKK......KKK..", "................"],
+  samurai: [".Y....YYYY....Y.", ".YY..YYYYYY..YY.", "..YYKKKKKKKKYY..", "...KRRRRRRRRK...", "..KRRRRRRRRRRK..", ".KRRRRRRRRRRRRK.", "KKKKKKKKKKKKKKKK", "KrrKWWKrrKWWKrrK", "KrKWYYWKKWYYWKrK", "KrrKWWKrrKWWKrrK", ".KrrrrrKKrrrrrK.", ".KrrKWKWWKWKrrK.", "..KrrrrrrrrrrK..", "..KRKRKRRKRKRK..", "...KRKRKKRKRK...", "....KKKKKKKK...."],
+  neon: ["..K..........K..", "...K........K...", "....KKKKKKKK....", "...KRRRRRRRRK...", "..KRHHRRRRRRRK..", ".KRHRRRRRRRRRRK.", "KRRRWWRRRRWWRRRK", "KRRWYYWRRWYYWRRK", "KRRRWWRRRRWWRRRK", "KRRRRRRRRRRRRRRK", ".KRrRKRKKRKRrRK.", ".KrrKWKWWKWKrrK.", "KK.KrrrrrrrrK.KK", "K..KKrKKKKrKK..K", "K...K.K..K.K...K", "...K..K..K..K..."],
+  sakura: [".K............K.", "KHK..........KHK", "KRHK.KKKKKK.KHRK", ".KRHKRRRRRRKHRK.", "..KRRRRRRRRRRK..", ".KRRRHRRRRHRRRK.", "KRRWWKRRRRKWWRRK", "KRWYYWKRRKWYYWRK", "KRRWWRRRRRRWWRRK", "KRRRRRRKKRRRRRRK", ".KRRRRRRRRRRRRK.", ".KRKWKWKKWKWKRK.", "..KRKWWWWWWKRK..", "...KRKKKKKKRK...", "....KKRRRRKK....", "......KKKK......"],
+};
 
 function bossFight(onDefeat) {
   const canvas = h("canvas", { width: "22", height: "22", "aria-hidden": "true" });
@@ -434,7 +453,7 @@ function bossFight(onDefeat) {
     pc.clear();
     const bob = dead ? 0 : frame % 4 < 2 ? 0 : 1;
     const blink = frame % 16 === 0;
-    BOSS.forEach((row, y) => {
+    (BOSSES[fxStyle()] || BOSS).forEach((row, y) => {
       for (let x = 0; x < row.length; x++) {
         let ch = row[x];
         if (ch === ".") continue;

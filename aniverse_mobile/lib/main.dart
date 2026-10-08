@@ -40,6 +40,12 @@ void main() async {
   // there on the first frame; the account check runs in the background.
   await HistoryService.load();
   await AuthService.load();
+  // Shared with the 2D UI: settings, My List, saved episodes, the Android side
+  // (lib/classic_plus has the classic screens for them).
+  await AppSettings.load();
+  await WatchlistService.load();
+  await DownloadService.load();
+  NativeBridge.init();
   runApp(const AniVerseApp());
 }
 

@@ -4,6 +4,7 @@ import re
 from urllib.parse import urljoin, quote, unquote, urlparse, parse_qs
 from datetime import date as dt
 import asyncio
+from contextlib import asynccontextmanager
 from typing import Any
 
 # Add libs to path
@@ -19,13 +20,60 @@ import httpx
 import anime_meta
 from app import accounts
 
-app = FastAPI()
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # New-episode alerts for the website, sent while it is closed (app/webpush.py).
+    from app import webpush as push
+    checker = asyncio.create_task(push.checker_loop())
+    yield
+    checker.cancel()
+
+
+app = FastAPI(lifespan=_lifespan)
+
+
+class _ProxyCors:
+    """Lets a Chromecast play through /proxy/*: the receiver fetches the
+    playlist, segments and subtitles itself, from its own origin, so the
+    responses must be readable cross-origin. Nothing there uses cookies or
+    credentials, so "*" gives away nothing. Plain ASGI rather than
+    @app.middleware, which would buffer every video segment through a queue."""
+
+    _HEADERS = [
+        (b"access-control-allow-origin", b"*"),
+        (b"access-control-allow-methods", b"GET, HEAD, OPTIONS"),
+        (b"access-control-allow-headers", b"Range, Content-Type"),
+        (b"access-control-expose-headers", b"Content-Length, Content-Range, Accept-Ranges"),
+    ]
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not scope["path"].startswith("/proxy/"):
+            return await self.inner(scope, receive, send)
+        if scope["method"] == "OPTIONS":
+            await send({"type": "http.response.start", "status": 204, "headers": self._HEADERS})
+            await send({"type": "http.response.body", "body": b""})
+            return
+
+        async def with_cors(message):
+            if message["type"] == "http.response.start":
+                message = {**message, "headers": [*message.get("headers", []), *self._HEADERS]}
+            await send(message)
+
+        await self.inner(scope, receive, with_cors)
+
+
+app.add_middleware(_ProxyCors)
 # Sign-in and per-account watch history for the mobile app.
 app.include_router(accounts.router)
 # AniList/MyAnimeList list tracking, and watch parties.
-from app import party, tracking  # noqa: E402
+from app import party, reports, tracking, webpush  # noqa: E402
 app.include_router(tracking.router)
 app.include_router(party.router)
+app.include_router(webpush.router)
+
 
 # The website's look. "pixel" (the default) is the 2D pixel-art UI that matches
 # the AniVerse Pixel app; "classic" is the original site, kept as it was. It is
@@ -656,10 +704,6 @@ async def _drop_dead_streams(client: httpx.AsyncClient, data: dict) -> list:
 # that episode for a few hours, which is long enough for providers to fix it
 # or for the cache to move on, and short enough that a mistaken report heals.
 
-REPORT_TTL = 6 * 3600
-_reports: dict = {}  # (anime, episode, category) -> {upstream url: expires}
-
-
 class StreamReport(BaseModel):
     episode_id: str
     category: str = "sub"
@@ -667,14 +711,10 @@ class StreamReport(BaseModel):
     reason: str = ""
 
 
-def _reported(anilist_id: str, ep: str, category: str) -> set:
-    now = time.time()
-    entry = _reports.get((anilist_id, str(ep), category)) or {}
-    return {u for u, until in entry.items() if until > now}
-
-
 @app.post("/api/report")
-async def report_stream(body: StreamReport):
+async def report_stream(body: StreamReport, request: Request):
+    """A viewer says this stream plays wrong. See app/reports.py for who it is
+    hidden from, and for how long."""
     try:
         anilist_id, ep = body.episode_id.split("/")
     except ValueError:
@@ -683,19 +723,17 @@ async def report_stream(body: StreamReport):
     upstream = (parse_qs(urlparse(body.url).query).get("url") or [body.url])[0]
     if not upstream.startswith(("http://", "https://")):
         return Response(status_code=400)
-    key = (anilist_id, ep, body.category if body.category in ("sub", "dub") else "sub")
-    entry = _reports.setdefault(key, {})
-    entry[upstream] = time.time() + REPORT_TTL
-    print(f"Report: {body.episode_id} ({key[2]}) {body.reason[:80]!r}: {upstream[:120]}")
-    if len(_reports) > 5000:  # keep it bounded: drop expired ones
-        now = time.time()
-        for k in [k for k, v in _reports.items() if all(t < now for t in v.values())]:
-            _reports.pop(k, None)
+    category = body.category if body.category in ("sub", "dub") else "sub"
+    try:
+        reports.record(anilist_id, ep, category, upstream, accounts._client_ip(request), body.reason)
+    except reports.RateLimited:
+        return Response(status_code=429)
+    print(f"Report: {body.episode_id} ({category}) {body.reason[:80]!r}: {upstream[:120]}")
     return {"ok": True}
 
 
 @app.get("/api/source")
-async def get_source(episode_id: str, server: str = "Auto", category: str = "sub",
+async def get_source(request: Request, episode_id: str, server: str = "Auto", category: str = "sub",
                      fresh: bool = False):
     try:
         anilist_id, ep_num = episode_id.split("/")
@@ -718,7 +756,7 @@ async def get_source(episode_id: str, server: str = "Auto", category: str = "sub
 
             # Streams viewers reported as broken (wrong episode, frozen, no
             # sound) stay out for a while; if that leaves nothing, look again.
-            bad = _reported(anilist_id, ep_num, category)
+            bad = reports.hidden(anilist_id, ep_num, category, accounts._client_ip(request))
             if bad and data.get("streams"):
                 kept = [st for st in data["streams"] if st["url"] not in bad]
                 if not kept:
