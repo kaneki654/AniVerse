@@ -35,6 +35,7 @@ const epHref = (n) => `/watch/${animeId}/${n}${partyCode ? `?party=${partyCode}`
 /** Another episode; in a party the room is told first so everyone comes along. */
 function goEpisode(n) {
   if (!party) { location.href = epHref(n); return; }
+  if (!party.canControl()) { party.toldLocked(); return; }
   party.sendEpisode(n);
   setTimeout(() => { location.href = epHref(n); }, 150);
 }
@@ -745,7 +746,8 @@ video.addEventListener("pause", () => { if (!video.ended) viewerDid(); });
 video.addEventListener("seeked", viewerDid);
 
 function joinParty() {
-  party = startParty({ code: partyCode, mount: actionsEl, getState: partyState, applyState: applyPartyState });
+  party = startParty({ code: partyCode, mount: actionsEl, stage: document.getElementById("player"),
+    getState: partyState, applyState: applyPartyState });
 }
 
 // In a party, episode links move the whole room (before the page-change effect sees the click).

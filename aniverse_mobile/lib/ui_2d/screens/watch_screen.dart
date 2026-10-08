@@ -17,6 +17,7 @@ import '../../services/party_service.dart';
 import '../pixel/pixel.dart';
 import '../pixel/pixel_widgets.dart';
 import '../pixel/sprites.dart';
+import '../pixel/theme_fx.dart';
 import '../theme_2d.dart';
 import '../widgets/aniverse_loader.dart';
 import '../widgets/aniverse_logo.dart';
@@ -1239,6 +1240,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
 
   /// Another episode: in a party the room is told first so everyone comes along.
   void _goEpisode(int ep, {String? anime}) {
+    if (anime == null && _party != null && !_party!.canControl) return _lockedOut();
     final code = _party?.code;
     if (anime == null && _party != null) _party!.sendEpisode(ep);
     _party?.close();
@@ -1281,10 +1283,20 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
 
   void _joinParty(String code) {
     _party?.close();
-    final p = PartyConnection(code: code, getState: _partyState, onState: _applyParty);
+    final p = PartyConnection(code: code, getState: _partyState, onState: _applyParty)..onLockedOut = _lockedOut;
     _party = p;
     p.connect();
     if (mounted) setState(() {});
+  }
+
+  DateTime _lockedToldAt = DateTime(2000);
+
+  /// Tried to steer a party the host has locked: say so, at most every few seconds.
+  void _lockedOut() {
+    if (!mounted || DateTime.now().difference(_lockedToldAt).inSeconds < 5) return;
+    _lockedToldAt = DateTime.now();
+    final host = _party?.host.value ?? '';
+    pixelToast(context, '${host.isEmpty ? 'The host' : host} is controlling playback.');
   }
 
   void _leaveParty() {
@@ -1578,6 +1590,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
           onToggleFullscreen: () => _toggleFullscreen(fullscreen),
           hideTransport: _bufferVisible,
         ),
+        if (_party != null) Positioned.fill(child: IgnorePointer(child: _ReactionLayer(party: _party!))),
         if (_castTo != null)
           Positioned.fill(
             child: ColoredBox(
@@ -1885,10 +1898,13 @@ class _PartyPanelState extends State<_PartyPanel> {
               Expanded(
                 child: ValueListenableBuilder<List<String>>(
                   valueListenable: p.members,
-                  builder: (_, m, __) => ValueListenableBuilder<String>(
-                    valueListenable: p.status,
-                    builder: (_, st, __) => Text(
-                      st.isNotEmpty ? st : '${m.length} watching: ${m.join(', ')}',
+                  builder: (_, m, __) => ListenableBuilder(
+                    listenable: Listenable.merge([p.status, p.host, p.locked]),
+                    builder: (_, __) => Text(
+                      p.status.value.isNotEmpty
+                          ? p.status.value
+                          : '${m.length} watching: ${m.map((x) => x == p.host.value ? '$x (host)' : x).join(', ')}'
+                              '${p.locked.value ? ' · host controls' : ''}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: PxFont.text(12, color: Px.ash),
@@ -1909,6 +1925,34 @@ class _PartyPanelState extends State<_PartyPanel> {
               ),
               PixelIconButton(sprite: Sprites.close, tooltip: 'Leave the party', color: Px.ash, scale: 1.8, size: 40, onPressed: widget.onLeave),
             ]),
+            // Reactions, and for the host the switch that keeps playback to them.
+            ListenableBuilder(
+              listenable: Listenable.merge([p.members, p.host, p.locked]),
+              builder: (context, _) => SizedBox(
+                height: 40,
+                child: ListView(scrollDirection: Axis.horizontal, children: [
+                  for (final e in partyReactions)
+                    PressableScale(
+                      onTap: () => p.react(e),
+                      child: Semantics(
+                        label: 'React $e',
+                        button: true,
+                        child: SizedBox(width: 38, child: Center(child: Text(e, style: const TextStyle(fontSize: 22)))),
+                      ),
+                    ),
+                  if (p.isHost && p.members.value.length > 1)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: PixelButton(
+                        label: p.locked.value ? 'Unlock' : 'Lock controls',
+                        kind: PixelButtonKind.dark,
+                        fontSize: 7,
+                        onPressed: () => p.setLocked(!p.locked.value),
+                      ),
+                    ),
+                ]),
+              ),
+            ),
             const SizedBox(height: 6),
             Expanded(
               child: ValueListenableBuilder<List<(String, String)>>(
@@ -1944,6 +1988,78 @@ class _PartyPanelState extends State<_PartyPanel> {
           ],
         ),
       ),
+    );
+  }
+}
+
+
+/// Party reactions floating up over the video, a couple of seconds each.
+class _ReactionLayer extends StatefulWidget {
+  final PartyConnection party;
+  const _ReactionLayer({required this.party});
+
+  @override
+  State<_ReactionLayer> createState() => _ReactionLayerState();
+}
+
+class _ReactionLayerState extends State<_ReactionLayer> {
+  final _live = <(int, String, double)>[]; // (id, emoji, x 0..1)
+  StreamSubscription<(String, String)>? _sub;
+  int _next = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _listen();
+  }
+
+  @override
+  void didUpdateWidget(_ReactionLayer old) {
+    super.didUpdateWidget(old);
+    if (old.party != widget.party) {
+      _sub?.cancel();
+      _listen();
+    }
+  }
+
+  void _listen() {
+    _sub = widget.party.reactions.stream.listen((r) {
+      if (!mounted || fxLevel == FxLevel.off) return;
+      final id = _next++;
+      setState(() => _live.add((id, r.$1, 0.1 + math.Random().nextDouble() * 0.75)));
+      Future.delayed(const Duration(milliseconds: 2600), () {
+        if (mounted) setState(() => _live.removeWhere((x) => x.$1 == id));
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (_, box) => Stack(children: [
+        for (final (id, emoji, x) in _live)
+          TweenAnimationBuilder<double>(
+            key: ValueKey(id),
+            tween: Tween(begin: 0, end: 1),
+            duration: const Duration(milliseconds: 2500),
+            builder: (_, t, child) {
+              // Whole steps, like everything else in the pixel UI.
+              final q = (t * 20).floor() / 20;
+              return Positioned(
+                left: box.maxWidth * x,
+                bottom: box.maxHeight * 0.12 + q * box.maxHeight * 0.6,
+                child: Opacity(opacity: q < 0.1 ? q * 10 : 1 - q, child: child),
+              );
+            },
+            child: Text(emoji, style: const TextStyle(fontSize: 30)),
+          ),
+      ]),
     );
   }
 }

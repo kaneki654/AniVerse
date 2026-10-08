@@ -209,6 +209,51 @@ class PartyTest(unittest.TestCase):
             texts = [a.receive_json()["text"] for _ in range(4)]
         self.assertIn("Slow down a little.", texts)
 
+    def test_the_host_can_lock_playback_and_hands_over_on_leaving(self):
+        state = {"type": "state", "anime": "1", "ep": 1, "category": "sub", "playing": True, "t": 10}
+        with self.client.websocket_connect("/ws/party/LOCK01?name=Host") as host:
+            hello = host.receive_json()
+            self.assertEqual((hello["host"], hello["locked"]), ("Host", False))
+            host.send_json(state)
+            with self.client.websocket_connect("/ws/party/LOCK01?name=Guest") as guest:
+                self.assertEqual(guest.receive_json()["host"], "Host")
+                host.receive_json()  # Guest joined
+                guest.send_json({"type": "lock", "on": True})  # not the host: ignored
+                host.send_json({"type": "lock", "on": True})
+                lock = guest.receive_json()
+                self.assertEqual((lock["type"], lock["on"]), ("lock", True))
+                host.receive_json()  # its own lock message
+                guest.send_json({**state, "t": 99})
+                back = guest.receive_json()
+                self.assertTrue(back["denied"])
+                self.assertEqual(back["state"]["t"], 10)  # snapped back to the host's
+            # Guest left: still host, still locked.
+            left = host.receive_json()
+            self.assertEqual((left["left"], left["host"], left["locked"]), ("Guest", "Host", True))
+
+    def test_host_leaving_hands_over_unlocked(self):
+        with self.client.websocket_connect("/ws/party/LOCK02?name=Host") as host:
+            host.receive_json()
+            with self.client.websocket_connect("/ws/party/LOCK02?name=Next") as nxt:
+                nxt.receive_json()
+                host.receive_json()
+                host.send_json({"type": "lock", "on": True})
+                nxt.receive_json()
+                host.close()
+                roster = nxt.receive_json()
+                self.assertEqual((roster["left"], roster["host"], roster["locked"]), ("Host", "Next", False))
+
+    def test_reactions_reach_the_others_from_a_fixed_set(self):
+        with self.client.websocket_connect("/ws/party/REACT1?name=A") as a:
+            a.receive_json()
+            with self.client.websocket_connect("/ws/party/REACT1?name=B") as b:
+                b.receive_json()
+                a.receive_json()
+                b.send_json({"type": "react", "emoji": "<script>"})  # not one of ours: dropped
+                b.send_json({"type": "react", "emoji": "🔥"})
+                got = a.receive_json()
+                self.assertEqual((got["type"], got["name"], got["emoji"]), ("react", "B", "🔥"))
+
     def test_bad_codes_are_refused(self):
         with self.assertRaises(Exception):
             with self.client.websocket_connect("/ws/party/no!") as ws:

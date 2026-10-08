@@ -979,6 +979,14 @@ body.shake main { animation: shake 0.18s steps(3); }
 .party-chat .sys { color: var(--ash-dark); }
 .party-send { display: flex; gap: 8px; width: 100%; }
 .party-send .px-input { padding-left: 12px; min-height: 38px; }
+.party-reacts { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+.react-btn { font-size: 20px; line-height: 1; padding: 6px 8px; background: var(--panel); border: 2px solid var(--black); cursor: pointer; }
+.react-btn:hover, .react-btn:focus-visible { border-color: var(--gold); }
+.party-react { position: absolute; bottom: 14%; z-index: 6; font-size: 34px; pointer-events: none;
+  animation: party-react-up 2.5s steps(20) forwards; }
+@keyframes party-react-up { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: 1; }
+  100% { transform: translateY(-220px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .party-react { animation-duration: 1.2s; } }
 
 /* --- the boss fight: the failure screen you can play --------------------------------------- */
 .boss { display: flex; flex-direction: column; align-items: center; gap: 10px; }
