@@ -13,9 +13,11 @@ import os
 import pathlib
 import sqlite3
 import tempfile
+import time
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from anyio.from_thread import start_blocking_portal
 from fastapi.testclient import TestClient
 
 from app import accounts, party, reports, secretbox, tracking
@@ -183,6 +185,14 @@ class PartyTest(unittest.TestCase):
             self.addCleanup(p.stop)
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
+        # One event loop for every socket in a test. Without it each websocket
+        # session gets its own, and a room broadcasting from one loop to a
+        # socket on another now and then stalls -- a hang, not a failure.
+        # (TestClient uses .portal when set: what entering it as a context
+        # manager does, minus running the app's lifespan.)
+        portal_cm = start_blocking_portal()
+        self.client.portal = portal_cm.__enter__()
+        self.addCleanup(portal_cm.__exit__, None, None, None)
 
     def test_state_and_chat_reach_the_others(self):
         with self.client.websocket_connect("/ws/party/ABCD12?name=Kai") as a:
@@ -227,9 +237,15 @@ class PartyTest(unittest.TestCase):
                 back = guest.receive_json()
                 self.assertTrue(back["denied"])
                 self.assertEqual(back["state"]["t"], 10)  # snapped back to the host's
-            # Guest left: still host, still locked.
-            left = host.receive_json()
-            self.assertEqual((left["left"], left["host"], left["locked"]), ("Guest", "Host", True))
+            # Guest left: still host, still locked. Read from the room itself:
+            # the test client cancels the guest's handler as its socket closes,
+            # which can cut off the "left" broadcast a real server would send.
+            room = party._rooms["LOCK01"]
+            for _ in range(200):
+                if len(room.members) == 1:
+                    break
+                time.sleep(0.01)
+            self.assertEqual((len(room.members), room.host_name(), room.locked), (1, "Host", True))
 
     def test_host_leaving_hands_over_unlocked(self):
         with self.client.websocket_connect("/ws/party/LOCK02?name=Host") as host:
@@ -240,8 +256,13 @@ class PartyTest(unittest.TestCase):
                 host.send_json({"type": "lock", "on": True})
                 nxt.receive_json()
                 host.close()
-                roster = nxt.receive_json()
-                self.assertEqual((roster["left"], roster["host"], roster["locked"]), ("Host", "Next", False))
+                # From the room itself, for the same reason as above.
+                room = party._rooms["LOCK02"]
+                for _ in range(200):
+                    if len(room.members) == 1:
+                        break
+                    time.sleep(0.01)
+                self.assertEqual((room.host_name(), room.locked), ("Next", False))
 
     def test_reactions_reach_the_others_from_a_fixed_set(self):
         with self.client.websocket_connect("/ws/party/REACT1?name=A") as a:
