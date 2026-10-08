@@ -1009,3 +1009,6 @@ html[data-fx="off"] canvas.embers-bg, html[data-fx="off"] canvas.drips { display
 .recent-searches { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
 .recent-searches .chip { padding: 6px 10px; font: 14px/1.3 var(--body); color: var(--bone); background: var(--panel); cursor: pointer; }
 .recent-searches .chip:hover, .recent-searches .chip:focus-visible { border-color: var(--gold); }
+
+/* High contrast (Settings): brighter secondary text on any palette */
+html[data-contrast="on"] { --ash: #e2dcd2; --ash-dark: #b4aca2; }

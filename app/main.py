@@ -542,9 +542,29 @@ def _read_published_release():
         return None
 
 
+def _published_split(release: dict, abi: str | None):
+    """The per-CPU build of the published release for `abi`, if there is a sound one."""
+    entry = ((release.get("abis") or {}).get(abi) if abi else None)
+    if not isinstance(entry, dict):
+        return None
+    try:
+        filename = entry["file"]
+        if not isinstance(filename, str) or pathlib.Path(filename).name != filename:
+            return None
+        apk = (_RELEASES_DIR / filename).resolve()
+        if (apk.parent != _RELEASES_DIR.resolve() or apk.suffix != ".apk" or not apk.is_file()
+                or type(entry["size"]) is not int or apk.stat().st_size != entry["size"]
+                or not re.fullmatch(r"[0-9a-f]{64}", entry["sha256"])):
+            return None
+        return entry, apk
+    except (OSError, KeyError, TypeError):
+        return None
+
+
 @app.get("/app/version.json")
-async def app_version(response: Response):
-    """What the installed app compares itself against."""
+async def app_version(response: Response, abi: str | None = None):
+    """What the installed app compares itself against. An app that says which
+    CPU it runs on (1.11 on) is pointed at the smaller build for it."""
     response.headers.update(_UPDATE_HEADERS)
     published = _read_published_release()
     result = {
@@ -558,17 +578,24 @@ async def app_version(response: Response):
         release, _ = published
         result.update({key: release[key] for key in ("versionName", "versionCode", "size", "sha256")})
         result["available"] = True
+        split = _published_split(release, abi)
+        if split:
+            entry, _ = split
+            result.update(url=f"/app/aniverse.apk?abi={quote(abi or '', safe='')}", size=entry["size"], sha256=entry["sha256"])
     return result
 
 
 @app.get("/app/aniverse.apk")
-async def app_apk():
+async def app_apk(abi: str | None = None):
     from fastapi.responses import FileResponse
     published = _read_published_release()
     if not published:
         return Response(content='{"detail":"no published APK available"}', status_code=404,
                         media_type="application/json", headers=_UPDATE_HEADERS)
-    _, apk = published
+    release, apk = published
+    split = _published_split(release, abi)
+    if split:
+        apk = split[1]
     return FileResponse(
         apk,
         media_type="application/vnd.android.package-archive",

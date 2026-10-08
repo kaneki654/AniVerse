@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../app_version.dart';
 import 'api_service.dart';
+import 'native_bridge.dart';
 
 /// Self-update over the same server the app already talks to.
 ///
@@ -18,10 +19,17 @@ import 'api_service.dart';
 class UpdateService {
   /// `{versionName, versionCode, url, size}` for the build on the server, or
   /// null when the check fails or nothing newer is published.
+  /// "?abi=arm64-v8a": the server answers with the build for this CPU, about a
+  /// third the size of the one for every phone.
+  static Future<String> _abiQuery() async {
+    final abi = await NativeBridge.abi();
+    return abi.isEmpty ? '' : '?abi=${Uri.encodeQueryComponent(abi)}';
+  }
+
   static Future<Map<String, dynamic>?> check() async {
     try {
       final response = await http
-          .get(Uri.parse('${ApiService.host}/app/version.json'))
+          .get(Uri.parse('${ApiService.host}/app/version.json${await _abiQuery()}'))
           .timeout(const Duration(seconds: 15));
       if (response.statusCode != 200) return null;
 
@@ -46,7 +54,7 @@ class UpdateService {
     void Function(double? progress)? onProgress,
   }) async {
     try {
-      final uri = Uri.parse('${ApiService.host}/app/aniverse.apk');
+      final uri = Uri.parse('${ApiService.host}/app/aniverse.apk${await _abiQuery()}');
       final request = http.Request('GET', uri);
       final response = await http.Client().send(request);
       if (response.statusCode != 200) {

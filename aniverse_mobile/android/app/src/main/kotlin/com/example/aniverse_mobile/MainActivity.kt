@@ -92,6 +92,8 @@ class MainActivity : FlutterActivity() {
                         result.success(null)
                     }
                     "enterPip" -> result.success(enterPip())
+                    // The CPU type, so updates download the build made for it.
+                    "abi" -> result.success(Build.SUPPORTED_ABIS.firstOrNull() ?: "")
                     // Android TV and other big screens driven by a remote.
                     "isTv" -> {
                         val ui = getSystemService(android.app.UiModeManager::class.java)

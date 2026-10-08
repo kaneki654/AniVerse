@@ -60,9 +60,12 @@ class AniVerse2DApp extends StatelessWidget {
                 [AppSettings.theme, AppSettings.effectsChanged]),
             builder: (context, _) {
               final theme = AppSettings.theme.value;
-              Px.apply(theme);
-              setFxLevel(AppSettings.effects);
-              final look = '$theme/${AppSettings.effects}';
+              final contrast = AppSettings.highContrast;
+              Px.apply(theme, highContrast: contrast);
+              // High contrast keeps the backgrounds calm: lite effects at most.
+              setFxLevel(contrast && AppSettings.effects == 'full' ? 'lite' : AppSettings.effects);
+              final scale = AppSettings.textScale;
+              final look = '$theme/${AppSettings.effects}/$contrast/$scale';
               if (_builtTheme != null && _builtTheme != look) {
                 navigatorKey = GlobalKey<NavigatorState>();
                 messengerKey = GlobalKey<ScaffoldMessengerState>();
@@ -75,6 +78,14 @@ class AniVerse2DApp extends StatelessWidget {
                 navigatorKey: navigatorKey,
                 scaffoldMessengerKey: messengerKey,
                 theme: AniVerseTheme.build(context),
+                // Text size from Settings, on top of the system's own.
+                builder: (context, child) {
+                  final mq = MediaQuery.of(context);
+                  return MediaQuery(
+                    data: mq.copyWith(textScaler: _Scaled(mq.textScaler, scale)),
+                    child: child ?? const SizedBox(),
+                  );
+                },
                 home: IntroGate(
                     enabled: AppSettings.intro,
                     ready: ready,
@@ -284,4 +295,25 @@ class _MainShellState extends State<MainShell> {
       ),
     );
   }
+}
+
+
+/// The system's text scaling times the app's own (Settings, Text size).
+class _Scaled extends TextScaler {
+  final TextScaler base;
+  final double factor;
+  const _Scaled(this.base, this.factor);
+
+  @override
+  double scale(double fontSize) => base.scale(fontSize) * factor;
+
+  @override
+  // ignore: deprecated_member_use
+  double get textScaleFactor => base.textScaleFactor * factor;
+
+  @override
+  bool operator ==(Object other) => other is _Scaled && other.base == base && other.factor == factor;
+
+  @override
+  int get hashCode => Object.hash(base, factor);
 }

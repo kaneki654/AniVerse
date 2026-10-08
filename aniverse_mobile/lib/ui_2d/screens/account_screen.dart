@@ -208,7 +208,7 @@ class _TileState extends State<_Tile> {
                 ),
               ),
               if (!widget.danger)
-                const PixelSprite(Sprites.chevron, scale: 1.6, color: Px.ashDark),
+                PixelSprite(Sprites.chevron, scale: 1.6, color: Px.ashDark),
             ],
           ),
         ),

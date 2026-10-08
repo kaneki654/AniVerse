@@ -149,6 +149,10 @@ class PartyConnection {
     }
   }
 
+  /// A message as if it came from the server, for tests.
+  @visibleForTesting
+  void handleMessage(String data) => _onMessage(data);
+
   void _onMessage(dynamic data) {
     Map m;
     try {

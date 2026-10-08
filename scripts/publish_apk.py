@@ -2,6 +2,11 @@
 
 Run from the repository root:
     python scripts/publish_apk.py aniverse_mobile/build/app/outputs/flutter-apk/app-release.apk
+
+With per-CPU builds (flutter build apk --split-per-abi -P force-version-code-ignoring-abi=true)
+published alongside the universal one, phones that say which CPU they have get
+an APK about a third of the size:
+    python scripts/publish_apk.py app-release.apk --split app-arm64-v8a-release.apk --split ...
 """
 
 import argparse
@@ -78,6 +83,7 @@ def inspect_apk(apk, aapt, apksigner, expected_package):
         check=True, capture_output=True, text=True,
     ).stdout
     package_line = next((line for line in badging.splitlines() if line.startswith("package:")), "")
+    native_line = next((line for line in badging.splitlines() if line.startswith("native-code:")), "")
     fields = dict(re.findall(r"(\w+)='([^']*)'", package_line))
     if fields.get("name") != expected_package:
         raise ValueError(f"Expected package {expected_package}, got {fields.get('name')!r}.")
@@ -86,31 +92,59 @@ def inspect_apk(apk, aapt, apksigner, expected_package):
     if code <= 0 or not name:
         raise ValueError("APK must have a positive versionCode and a versionName.")
     return {"package": expected_package, "versionName": name, "versionCode": code,
-            "signingSha256": [signer.lower() for signer in signers]}
+            "signingSha256": [signer.lower() for signer in signers],
+            "nativeCode": re.findall(r"'([^']+)'", native_line)}
 
 
-def publish_apk(source, releases_dir, aapt, apksigner, expected_package=EXPECTED_PACKAGE):
-    """Publish an immutable APK first, then atomically replace current.json."""
+def _stage(source, releases_dir, aapt, apksigner, expected_package):
+    """A verified copy of an APK in the releases folder: (path, metadata, sha256).
+    Inspected as copied, so a concurrent build cannot change it in between."""
+    with tempfile.NamedTemporaryFile(dir=releases_dir, suffix=".apk", delete=False) as staged:
+        staged_path = Path(staged.name)
+        with Path(source).open("rb") as original:
+            shutil.copyfileobj(original, staged)
+        staged.flush()
+        os.fsync(staged.fileno())
+    try:
+        meta = inspect_apk(staged_path, aapt, apksigner, expected_package)
+        with staged_path.open("rb") as apk_bytes:
+            digest = hashlib.file_digest(apk_bytes, "sha256").hexdigest()
+    except BaseException:
+        staged_path.unlink(missing_ok=True)
+        raise
+    return staged_path, meta, digest
+
+
+def publish_apk(source, releases_dir, aapt, apksigner, expected_package=EXPECTED_PACKAGE, splits=()):
+    """Publish immutable APKs first, then atomically replace current.json."""
     source, releases_dir = Path(source), Path(releases_dir)
     if not source.is_file():
         raise ValueError(f"APK not found: {source}")
+    for split in splits:
+        if not Path(split).is_file():
+            raise ValueError(f"APK not found: {split}")
     releases_dir.mkdir(parents=True, exist_ok=True)
     staged_path = None
     manifest_path = None
+    staged_splits = []
     try:
-        # Inspect the staged copy so a concurrent Flutter build cannot change
-        # the file between verification and publication.
-        with tempfile.NamedTemporaryFile(dir=releases_dir, suffix=".apk", delete=False) as staged:
-            staged_path = Path(staged.name)
-            with source.open("rb") as original:
-                shutil.copyfileobj(original, staged)
-            staged.flush()
-            os.fsync(staged.fileno())
-        release = inspect_apk(staged_path, aapt, apksigner, expected_package)
-        with staged_path.open("rb") as apk_bytes:
-            digest = hashlib.file_digest(apk_bytes, "sha256").hexdigest()
+        # Every per-CPU build must be the same release as the universal one.
+        abis = {}
+        for split in splits:
+            path, meta, digest = _stage(split, releases_dir, aapt, apksigner, expected_package)
+            staged_splits.append(path)
+            native = meta.pop("nativeCode", [])
+            if len(native) != 1:
+                raise ValueError(f"{split} is not a single-CPU build (native code: {native or 'none'}).")
+            abis[native[0]] = (path, meta, digest)
+        staged_path, release, digest = _stage(source, releases_dir, aapt, apksigner, expected_package)
+        release.pop("nativeCode", None)
         release.update({"file": f"aniverse-{release['versionCode']}-{digest[:16]}.apk",
                         "size": staged_path.stat().st_size, "sha256": digest})
+        for abi, (_, meta, _) in abis.items():
+            if {k: meta[k] for k in ("package", "versionCode", "versionName", "signingSha256")} != \
+                    {k: release[k] for k in ("package", "versionCode", "versionName", "signingSha256")}:
+                raise ValueError(f"The {abi} build is not the same release as the universal APK.")
         current_path = releases_dir / "current.json"
         if current_path.exists():
             previous = json.loads(current_path.read_text())
@@ -121,9 +155,17 @@ def publish_apk(source, releases_dir, aapt, apksigner, expected_package=EXPECTED
                 raise ValueError("Refusing to publish a lower versionCode.")
             if release["versionCode"] == previous["versionCode"] and release["sha256"] != previous["sha256"]:
                 raise ValueError("Changed APK must have a higher versionCode.")
+        if abis:
+            release["abis"] = {}
+            for abi, (path, meta, split_digest) in abis.items():
+                name = f"aniverse-{release['versionCode']}-{abi}-{split_digest[:16]}.apk"
+                release["abis"][abi] = {"file": name, "size": path.stat().st_size, "sha256": split_digest}
         destination = releases_dir / release["file"]
         os.replace(staged_path, destination)
         staged_path = None
+        for abi, (path, _, _) in abis.items():
+            os.replace(path, releases_dir / release["abis"][abi]["file"])
+        staged_splits = []
         with tempfile.NamedTemporaryFile(mode="w", dir=releases_dir, suffix=".json", delete=False) as manifest:
             manifest_path = Path(manifest.name)
             json.dump(release, manifest, indent=2)
@@ -135,7 +177,7 @@ def publish_apk(source, releases_dir, aapt, apksigner, expected_package=EXPECTED
         _fsync_directory(releases_dir)
         return release
     finally:
-        for temporary in (staged_path, manifest_path):
+        for temporary in (staged_path, manifest_path, *staged_splits):
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
 
@@ -143,6 +185,8 @@ def publish_apk(source, releases_dir, aapt, apksigner, expected_package=EXPECTED
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("apk", type=Path)
+    parser.add_argument("--split", type=Path, action="append", default=[],
+                        help="a per-CPU build of the same release (repeatable)")
     parser.add_argument("--releases-dir", type=Path, default=DEFAULT_RELEASES_DIR)
     parser.add_argument("--aapt", type=Path)
     parser.add_argument("--apksigner", type=Path)
@@ -150,7 +194,8 @@ def main():
     try:
         release = publish_apk(args.apk, args.releases_dir,
                               args.aapt or find_android_tool("aapt"),
-                              args.apksigner or find_android_tool("apksigner"))
+                              args.apksigner or find_android_tool("apksigner"),
+                              splits=args.split)
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as exc:
         parser.exit(1, f"Publication failed: {exc}\n")
     print(json.dumps(release, indent=2))

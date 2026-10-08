@@ -21,6 +21,8 @@ dependencies:
   google_sign_in: ^7.2.0
 
 dev_dependencies:
+  # A fake video player for the player-controls tests.
+  video_player_platform_interface: any
   flutter_launcher_icons: ^0.14.1
   flutter_test:
     sdk: flutter

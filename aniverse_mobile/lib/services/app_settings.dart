@@ -18,7 +18,8 @@ class AppSettings {
   /// The palette; the app rebuilds its whole tree when this changes.
   static final ValueNotifier<String> theme = ValueNotifier<String>('blood');
 
-  /// Bumped when the effects level changes; the app rebuilds for that too.
+  /// Bumped when the effects level, text size or high contrast changes; the
+  /// app rebuilds for those too.
   static final ValueNotifier<int> effectsChanged = ValueNotifier<int>(0);
 
   static Future<void> load() async {
@@ -168,7 +169,7 @@ class AppSettings {
       await p.setString('av.$key', value.toString());
     }
     if (key == 'theme') theme.value = value.toString();
-    if (key == 'effects') effectsChanged.value++;
+    if (key == 'effects' || key == 'textScale' || key == 'highContrast') effectsChanged.value++;
     changes.value++;
   }
 }

@@ -81,6 +81,9 @@ class NativeBridge {
   static bool isTv = false;
   static Future<void> detectTv() async => isTv = await _call<bool>('isTv') ?? false;
 
+  /// The phone's main CPU type ("arm64-v8a"...), '' when unknown.
+  static Future<String> abi() async => await _call<String>('abi') ?? '';
+
   static Future<bool> pipSupported() async => await _call<bool>('pipSupported') ?? false;
 
   /// Whether leaving the app now should shrink the video into a window.

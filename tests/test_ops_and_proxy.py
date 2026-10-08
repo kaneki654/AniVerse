@@ -197,6 +197,18 @@ class ReleaseRetentionTest(unittest.TestCase):
             self.hk.prune_releases(False)
         self.assertEqual(self.left(), [18, 19])
 
+    def test_a_release_counts_once_however_many_cpu_builds_it_has(self):
+        for code in (18, 19):
+            for abi in ("arm64-v8a", "armeabi-v7a"):
+                (self.rel / f"aniverse-{code}-{abi}-abc.apk").write_text("apk")
+        (self.rel / "current.json").write_text(json.dumps({
+            "file": "aniverse-19-abc.apk", "abis": {"arm64-v8a": {"file": "aniverse-19-arm64-v8a-abc.apk"}}}))
+        with patch.dict(os.environ, {"ANIVERSE_KEEP_APKS": "2"}):
+            self.hk.prune_releases(False)
+        left = sorted(p.name for p in self.rel.glob("*.apk"))
+        self.assertEqual({int(n.split("-")[1]) for n in left}, {18, 19})
+        self.assertEqual(len(left), 6)
+
     def test_disk_line_is_logged(self):
         line = self.hk.check_disk(False)[0]
         self.assertIn("GB free", line)

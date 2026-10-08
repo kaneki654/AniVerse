@@ -30,7 +30,7 @@ BACKUPS = ROOT / "backups"
 KEEP_DAYS = 14
 LOG_LIMIT = 10 * 1024 * 1024
 LOG_KEEP = 3
-# Old APKs kept besides the one published now; 0 keeps every one.
+# Old releases (versions) kept besides the one published now; 0 keeps every one.
 # ANIVERSE_KEEP_APKS in .aniverse_env changes it.
 KEEP_APKS_DEFAULT = 5
 DISK_LOW = 0.10
@@ -97,10 +97,12 @@ def prune_releases(dry: bool) -> list[str]:
     folder = ROOT / "data" / "releases"
     if not folder.is_dir():
         return []
+    # The published release's files: the universal APK and its per-CPU builds.
     try:
-        current = json.loads((folder / "current.json").read_text()).get("file")
-    except (OSError, ValueError):
-        current = None
+        manifest = json.loads((folder / "current.json").read_text())
+        current = {manifest.get("file")} | {a.get("file") for a in (manifest.get("abis") or {}).values()}
+    except (OSError, ValueError, AttributeError):
+        current = set()
 
     def code(p: Path) -> int:
         try:
@@ -112,9 +114,11 @@ def prune_releases(dry: bool) -> list[str]:
     keep = keep_apks()
     if keep == 0:
         return []
+    # Counted in releases, not files: a release can be several APKs (per CPU).
+    kept_codes = sorted({code(p) for p in apks})[-keep:]
     done = []
-    for apk in apks[:-keep]:
-        if apk.name == current:
+    for apk in apks:
+        if code(apk) in kept_codes or apk.name in current:
             continue
         done.append(f"remove old release {apk.name}")
         if not dry:

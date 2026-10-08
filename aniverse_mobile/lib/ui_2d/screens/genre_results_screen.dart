@@ -88,7 +88,7 @@ class _GenreResultsScreenState extends State<GenreResultsScreen> {
       body: _items.isEmpty && _loading
           ? const AniVerseLoadingScreen(label: 'LOADING')
           : _items.isEmpty
-              ? const Center(
+              ? Center(
                   child: Text('NOTHING FOUND',
                       style: TextStyle(fontFamily: 'PressStart2P', color: AniVerseTheme.textFaint, fontSize: 10)))
               : GridView.builder(

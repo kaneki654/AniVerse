@@ -45,7 +45,8 @@ void pixelToast(BuildContext context, String text, {String? action, VoidCallback
       content: Text(text),
       duration: const Duration(seconds: 4),
       persist: false,
-      action: action == null ? null : SnackBarAction(label: action, textColor: Px.bloodLight, onPressed: onAction ?? () {}),
+      action:
+          action == null ? null : SnackBarAction(label: action, textColor: Px.bloodLight, onPressed: onAction ?? () {}),
     ));
 }
 
@@ -60,10 +61,12 @@ class PixelSwitch extends StatelessWidget {
   const PixelSwitch({super.key, required this.value, required this.onChanged, required this.label});
 
   @override
-  Widget build(BuildContext context) => PixelFocus(onActivate: () {
+  Widget build(BuildContext context) => PixelFocus(
+      onActivate: () {
         Sfx.play('select');
         onChanged(!value);
-      }, child: _faceBuild(context));
+      },
+      child: _faceBuild(context));
 
   Widget _faceBuild(BuildContext context) {
     return Semantics(
@@ -150,17 +153,22 @@ class ChoiceChipButton extends StatelessWidget {
   Widget build(BuildContext context) => PixelFocus(onActivate: onTap, child: _faceBuild(context));
 
   Widget _faceBuild(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: PixelBox(
-        fill: Px.panelHigh,
-        shadow: 2,
-        padding: const EdgeInsets.fromLTRB(10, 8, 8, 7),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(label.toUpperCase(), style: PxFont.label(7, height: 1.3)),
-          const SizedBox(width: 6),
-          const PixelSprite(Sprites.chevron, scale: 1, color: Px.ash),
-        ]),
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: onTap,
+        child: PixelBox(
+          fill: Px.panelHigh,
+          shadow: 2,
+          padding: const EdgeInsets.fromLTRB(10, 8, 8, 7),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Text(label.toUpperCase(), style: PxFont.label(7, height: 1.3)),
+            const SizedBox(width: 6),
+            PixelSprite(Sprites.chevron, scale: 1, color: Px.ash),
+          ]),
+        ),
       ),
     );
   }
@@ -204,7 +212,8 @@ Future<T?> pickOption<T>(BuildContext context, String title, List<(T, String)> o
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 13),
                             child: Row(children: [
                               Expanded(child: Text(label.toUpperCase(), style: PxFont.label(8, height: 1.3))),
-                              if (value == current) SizedBox(width: 10, height: 10, child: ColoredBox(color: Px.bloodLight)),
+                              if (value == current)
+                                SizedBox(width: 10, height: 10, child: ColoredBox(color: Px.bloodLight)),
                             ]),
                           ),
                         ),
@@ -237,10 +246,22 @@ class BossFight extends StatefulWidget {
 class _BossFightState extends State<BossFight> {
   static const _hp = 5;
   static const _rows = [
-    '..K..........K..', '.KHK........KHK.', '.KRRK......KRRK.', '..KRRKKKKKKRRK..',
-    '...KRRRRRRRRK...', '..KRRRRRRRRRRK..', '.KRRWWRRRRWWRRK.', '.KRWYYWRRWYYWRK.',
-    '.KRRWWRRRRWWRRK.', '.KrRRRRRRRRRRrK.', '..KrRRRKKRRRrK..', '..KrRKWKKWKRrK..',
-    '...KrKWWWWKrK...', '...KrrKKKKrrK...', '....KrrrrrrK....', '.....KKKKKK.....',
+    '..K..........K..',
+    '.KHK........KHK.',
+    '.KRRK......KRRK.',
+    '..KRRKKKKKKRRK..',
+    '...KRRRRRRRRK...',
+    '..KRRRRRRRRRRK..',
+    '.KRRWWRRRRWWRRK.',
+    '.KRWYYWRRWYYWRK.',
+    '.KRRWWRRRRWWRRK.',
+    '.KrRRRRRRRRRRrK.',
+    '..KrRRRKKRRRrK..',
+    '..KrRKWKKWKRrK..',
+    '...KrKWWWWKrK...',
+    '...KrrKKKKrrK...',
+    '....KrrrrrrK....',
+    '.....KKKKKK.....',
   ];
   int hp = _hp;
   int flash = 0;
@@ -278,7 +299,8 @@ class _BossFightState extends State<BossFight> {
               frames: 4096,
               builder: (_, f) {
                 frame = f;
-                final painter = _BossPainter(ThemeBosses.current() ?? _rows, f, hp, flash > 0, deadAt == null ? null : f - deadAt!);
+                final painter =
+                    _BossPainter(ThemeBosses.current() ?? _rows, f, hp, flash > 0, deadAt == null ? null : f - deadAt!);
                 if (flash > 0) flash--;
                 return SizedBox(width: widget.size, height: widget.size, child: CustomPaint(painter: painter));
               },
@@ -289,7 +311,11 @@ class _BossFightState extends State<BossFight> {
         SizedBox(width: 180, child: PixelBar(fraction: hp / _hp, height: 12)),
         const SizedBox(height: 8),
         Text(
-          deadAt != null ? 'SLAIN. RETRYING…' : hp == _hp ? 'HIT THE GLITCH TO RETRY' : '$hp MORE HIT${hp == 1 ? '' : 'S'}',
+          deadAt != null
+              ? 'SLAIN. RETRYING…'
+              : hp == _hp
+                  ? 'HIT THE GLITCH TO RETRY'
+                  : '$hp MORE HIT${hp == 1 ? '' : 'S'}',
           style: PxFont.label(7, color: Px.ash),
         ),
       ],
@@ -344,7 +370,8 @@ class EmptyState extends StatelessWidget {
         children: [
           const PixelSprite(Sprites.skull, scale: 4.5),
           const SizedBox(height: 16),
-          Text(title.toUpperCase(), textAlign: TextAlign.center, style: PxFont.label(10).copyWith(shadows: PxFont.outline(1.2))),
+          Text(title.toUpperCase(),
+              textAlign: TextAlign.center, style: PxFont.label(10).copyWith(shadows: PxFont.outline(1.2))),
           const SizedBox(height: 10),
           Text(text, textAlign: TextAlign.center, style: PxFont.text(14, color: Px.ash, height: 1.45)),
           if (action != null) ...[const SizedBox(height: 18), action!],

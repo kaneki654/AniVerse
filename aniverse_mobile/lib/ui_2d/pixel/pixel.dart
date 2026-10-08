@@ -19,8 +19,10 @@ class Px {
   static Color bloodDeep = const Color(0xFF3D0107);
   static Color bloodLight = const Color(0xFFFF4D57);
   static const bone = Color(0xFFF2E8D5);
-  static const ash = Color(0xFF9A918C);
-  static const ashDark = Color(0xFF5A5250);
+  // Secondary text. Runtime, like the palette colours: High contrast in
+  // Settings brightens them on any palette.
+  static Color ash = const Color(0xFF9A918C);
+  static Color ashDark = const Color(0xFF5A5250);
   static const steel = Color(0xFFD5DCE6);
   static const steelDark = Color(0xFF7D8796);
   static Color gold = const Color(0xFFE8B23A);
@@ -64,7 +66,9 @@ class Px {
 
   /// Switches the palette. Widgets built before the switch keep their old
   /// colours, so the app rebuilds its whole tree after calling this.
-  static void apply(String name) {
+  static void apply(String name, {bool highContrast = false}) {
+    ash = highContrast ? const Color(0xFFE2DCD2) : const Color(0xFF9A918C);
+    ashDark = highContrast ? const Color(0xFFB4ACA2) : const Color(0xFF5A5250);
     final p = _palettes[name] ?? _palettes['blood']!;
     theme = _palettes.containsKey(name) ? name : 'blood';
     ink = Color(p[0]);
@@ -77,6 +81,8 @@ class Px {
     gold = Color(p[7]);
     goldDark = Color(p[8]);
     keys
+      ..['g'] = ash
+      ..['G'] = ashDark
       ..['k'] = ink
       ..['P'] = panel
       ..['R'] = blood

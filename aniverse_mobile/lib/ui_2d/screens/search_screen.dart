@@ -155,8 +155,8 @@ class _SearchScreenState extends State<SearchScreen> {
               hintText: 'Search anime...',
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              prefixIcon: const Padding(
-                padding: EdgeInsets.all(12),
+              prefixIcon: Padding(
+                padding: const EdgeInsets.all(12),
                 child: PixelSprite(Sprites.search, scale: 1.8, color: Px.ash),
               ),
               suffixIcon: _controller.text.isEmpty
@@ -290,8 +290,8 @@ class _SearchScreenState extends State<SearchScreen> {
                       ],
                     ),
                   ),
-                  const Padding(
-                    padding: EdgeInsets.only(right: 12),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12),
                     child: PixelSprite(Sprites.chevron, scale: 1.6, color: Px.ashDark),
                   ),
                 ],

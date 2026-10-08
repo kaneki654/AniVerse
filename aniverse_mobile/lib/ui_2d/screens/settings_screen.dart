@@ -91,7 +91,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'Server address',
             text: ApiService.host,
             onTap: _editServer,
-            control: const PixelSprite(Sprites.chevron, scale: 1.6, color: Px.ash),
+            control: PixelSprite(Sprites.chevron, scale: 1.6, color: Px.ash),
           ),
           const SizedBox(height: 12),
           const SectionHeader(title: 'Palette'),
