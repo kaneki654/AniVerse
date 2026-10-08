@@ -49,12 +49,14 @@ class PosterCard extends StatelessWidget {
   final Map<String, dynamic> anime;
   final VoidCallback onTap;
   final double? width;
+  final FocusNode? focusNode;
 
   const PosterCard({
     super.key,
     required this.anime,
     required this.onTap,
     this.width,
+    this.focusNode,
   });
 
   @override
@@ -65,6 +67,7 @@ class PosterCard extends StatelessWidget {
     final score = anime['averageScore'];
 
     final card = PressableScale(
+      focusNode: focusNode,
       onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

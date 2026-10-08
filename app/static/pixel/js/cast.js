@@ -7,8 +7,8 @@ const SDK = "https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFram
 
 let ready = null;
 let ctx = null, remote = null, control = null;
-let device = null, lastTime = 0;
-const listeners = new Set();
+let device = null, lastTime = 0, wasPlaying = false;
+const listeners = new Set(), progressListeners = new Set(), finishedListeners = new Set();
 
 /** Resolves true once this browser can cast (the SDK loads on first call). */
 export function castReady() {
@@ -39,8 +39,20 @@ function setUp() {
   });
   remote = new fw.RemotePlayer();
   control = new fw.RemotePlayerController(remote);
+  const report = () => progressListeners.forEach((fn) => fn({ time: remote.currentTime, duration: remote.duration, playing: !remote.isPaused }));
   control.addEventListener(fw.RemotePlayerEventType.CURRENT_TIME_CHANGED, () => {
     if (remote.currentTime > 0) lastTime = remote.currentTime;
+    report();
+  });
+  control.addEventListener(fw.RemotePlayerEventType.IS_PAUSED_CHANGED, report);
+  // Played to the end on the TV: the page can send the next episode.
+  control.addEventListener(fw.RemotePlayerEventType.PLAYER_STATE_CHANGED, () => {
+    const state = remote.playerState;
+    if (state === "PLAYING") wasPlaying = true;
+    if (state === "IDLE" && wasPlaying && remote.duration > 0 && lastTime >= remote.duration - 5) {
+      wasPlaying = false;
+      finishedListeners.forEach((fn) => fn());
+    }
   });
   ctx.addEventListener(fw.CastContextEventType.SESSION_STATE_CHANGED, (e) => {
     const S = fw.SessionState;
@@ -67,6 +79,18 @@ export function startCast() { ctx?.requestSession().catch(() => {}); }
 export function stopCast() { ctx?.endCurrentSession(true); }
 
 export function castPlayPause() { control?.playOrPause(); }
+
+/** fn({time, duration, playing}) about once a second while casting. */
+export function onCastProgress(fn) { progressListeners.add(fn); }
+
+/** fn() when the episode on the TV plays to its end. */
+export function onCastFinished(fn) { finishedListeners.add(fn); }
+
+export function castSeek(seconds) {
+  if (!remote || !control) return;
+  remote.currentTime = seconds;
+  control.seek();
+}
 
 /** Hands the episode over: absolute URLs the TV can reach, from `position` seconds. */
 export async function castLoad({ url, title, subtitle, position = 0, subtitles = null, hls = true }) {

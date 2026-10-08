@@ -26,6 +26,12 @@ class NativeBridge {
   /// A cast ended, with where the TV had got to (ms), for the phone to carry on from.
   static void Function(int positionMs)? onCastEnded;
 
+  /// Where the TV is while casting: (position ms, duration ms, playing).
+  static final ValueNotifier<(int, int, bool)> castProgress = ValueNotifier((0, 0, false));
+
+  /// The episode on the TV played to its end.
+  static void Function()? onCastFinished;
+
   static void init() {
     _ch.setMethodCallHandler((call) async {
       switch (call.method) {
@@ -44,6 +50,17 @@ class NativeBridge {
             castDevice.value = null;
             if (was != null) onCastEnded?.call((a['position'] as num?)?.toInt() ?? 0);
           }
+        case 'castProgress':
+          final a = call.arguments;
+          if (a is Map) {
+            castProgress.value = (
+              (a['position'] as num?)?.toInt() ?? 0,
+              (a['duration'] as num?)?.toInt() ?? 0,
+              a['playing'] == true,
+            );
+          }
+        case 'castFinished':
+          onCastFinished?.call();
         case 'openAnime':
           final id = call.arguments?.toString();
           if (id != null && id.isNotEmpty) onOpenAnime?.call(id);
@@ -60,6 +77,10 @@ class NativeBridge {
     }
   }
 
+  /// True on Android TV: bigger posters, a layout for the remote. Set once at start.
+  static bool isTv = false;
+  static Future<void> detectTv() async => isTv = await _call<bool>('isTv') ?? false;
+
   static Future<bool> pipSupported() async => await _call<bool>('pipSupported') ?? false;
 
   /// Whether leaving the app now should shrink the video into a window.
@@ -75,6 +96,19 @@ class NativeBridge {
   /// service with a progress notification while [active], none otherwise.
   static Future<void> downloadsActive(bool active, {String text = '', int progress = -1}) =>
       _call('downloadsActive', {'on': active, 'text': text, 'progress': progress});
+
+  /// This window's brightness 0..1 (the system's when the app hasn't set one).
+  static Future<double> brightness() async => await _call<double>('getBrightness') ?? 0.5;
+
+  /// Sets this window's brightness; null hands it back to the system.
+  static Future<void> setBrightness(double? value) => _call('setBrightness', {'value': value ?? -1.0});
+
+  /// The media volume 0..1, and setting it.
+  static Future<double> volume() async => await _call<double>('getVolume') ?? 0.5;
+  static Future<void> setVolume(double value) => _call('setVolume', {'value': value});
+
+  /// Android's share sheet for a PNG in the app's cache/share folder.
+  static Future<void> shareImage(String path, String text) => _call('shareImage', {'path': path, 'text': text});
 
   /// Hold the screen on (while a video plays). Replaces the wakelock_plus
   /// plugin, which pulled in package_info_plus and the Kotlin plugin with it.
@@ -116,6 +150,8 @@ class NativeBridge {
       false;
 
   static Future<void> castStop() => _call('castStop');
+  static Future<void> castSeek(int positionMs) => _call('castSeek', {'position': positionMs});
+  static Future<void> castPlayPause() => _call('castPlayPause');
 
   /// The device a cast is already running to (one left over from before), if any.
   static Future<String?> castCurrent() => _call<String>('castDevice');

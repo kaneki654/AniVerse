@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
+import '../../services/app_settings.dart';
 import '../widgets/pixel_extras.dart';
 import '../pixel/pixel.dart';
 import '../pixel/pixel_widgets.dart';
@@ -176,7 +177,10 @@ class _SearchScreenState extends State<SearchScreen> {
               setState(() {}); // keep the clear button in sync
               _onChanged(v);
             },
-            onSubmitted: _run,
+            onSubmitted: (v) {
+              AppSettings.addRecentSearch(v);
+              _run(v);
+            },
           ),
         ),
       ),
@@ -199,7 +203,37 @@ class _SearchScreenState extends State<SearchScreen> {
     if (_loading) {
       return const AniVerseLoadingScreen(label: 'SEARCHING');
     }
-    if (!_searched) return _message(Sprites.search, 'TYPE OR PICK A FILTER');
+    if (!_searched) {
+      final recent = AppSettings.recentSearches;
+      if (recent.isEmpty) return _message(Sprites.search, 'TYPE OR PICK A FILTER');
+      // Searches that led somewhere before, one tap to run again.
+      return ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 24), children: [
+        Row(children: [
+          Expanded(child: Text('RECENT SEARCHES', style: PxFont.label(8, color: Px.ash))),
+          PixelButton(
+            label: 'Clear',
+            kind: PixelButtonKind.dark,
+            fontSize: 7,
+            onPressed: () async {
+              await AppSettings.clearRecentSearches();
+              if (mounted) setState(() {});
+            },
+          ),
+        ]),
+        const SizedBox(height: 12),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final q in recent)
+            ChoiceChipButton(
+              label: q,
+              onTap: () {
+                _controller.text = q;
+                _run(q);
+                setState(() {});
+              },
+            ),
+        ]),
+      ]);
+    }
     if (_results.isEmpty) return _message(Sprites.skull, 'NO RESULTS');
 
     return ListView.separated(
@@ -225,10 +259,11 @@ class _SearchScreenState extends State<SearchScreen> {
         final status = anime['status'];
 
         return PressableScale(
-          onTap: () => Navigator.push(
-            context,
-            FadeScaleRoute(page: DetailScreen(id: anime['id'].toString())),
-          ),
+          onTap: () {
+            // Opening a result means the search found what it was for.
+            AppSettings.addRecentSearch(_controller.text);
+            Navigator.push(context, FadeScaleRoute(page: DetailScreen(id: anime['id'].toString())));
+          },
           child: SizedBox(
             height: 92,
             child: PixelBox(

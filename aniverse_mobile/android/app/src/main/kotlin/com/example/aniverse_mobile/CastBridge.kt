@@ -8,6 +8,8 @@ import androidx.mediarouter.app.MediaRouteControllerDialog
 import com.google.android.gms.cast.CastMediaControlIntent
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
+import com.google.android.gms.cast.MediaSeekOptions
+import com.google.android.gms.cast.MediaStatus
 import com.google.android.gms.cast.MediaMetadata
 import com.google.android.gms.cast.MediaTrack
 import com.google.android.gms.cast.framework.CastContext
@@ -16,6 +18,7 @@ import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.OptionsProvider
 import com.google.android.gms.cast.framework.SessionManagerListener
 import com.google.android.gms.cast.framework.SessionProvider
+import com.google.android.gms.cast.framework.media.RemoteMediaClient
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
@@ -92,6 +95,15 @@ class CastBridge(private val activity: Activity, private val channel: () -> Meth
             "castDevice" -> result.success(session?.takeIf { it.isConnected }?.castDevice?.friendlyName)
             "castPick" -> result.success(pick())
             "castLoad" -> result.success(load(call))
+            "castSeek" -> {
+                val pos = (call.argument<Number>("position") ?: 0).toLong()
+                session?.remoteMediaClient?.seek(MediaSeekOptions.Builder().setPosition(pos).build())
+                result.success(null)
+            }
+            "castPlayPause" -> {
+                session?.remoteMediaClient?.togglePlayback()
+                result.success(null)
+            }
             "castStop" -> {
                 cast?.sessionManager?.endCurrentSession(true)
                 result.success(null)
@@ -114,8 +126,37 @@ class CastBridge(private val activity: Activity, private val channel: () -> Meth
         return true
     }
 
+    // Where the TV is, every second, and when an episode ends there: the phone
+    // shows the position, offers skips, and sends the next episode.
+    private var watched: RemoteMediaClient? = null
+    private val progress = RemoteMediaClient.ProgressListener { position, duration ->
+        if (position > 0) lastPosition = position
+        channel()?.invokeMethod(
+            "castProgress",
+            mapOf("position" to position, "duration" to duration, "playing" to (watched?.isPlaying == true)),
+        )
+    }
+    private val status = object : RemoteMediaClient.Callback() {
+        override fun onStatusUpdated() {
+            val c = watched ?: return
+            if (c.playerState == MediaStatus.PLAYER_STATE_IDLE && c.idleReason == MediaStatus.IDLE_REASON_FINISHED) {
+                channel()?.invokeMethod("castFinished", null)
+            }
+        }
+    }
+
+    private fun watch(client: RemoteMediaClient) {
+        if (watched === client) return
+        watched?.removeProgressListener(progress)
+        watched?.unregisterCallback(status)
+        client.addProgressListener(progress, 1000)
+        client.registerCallback(status)
+        watched = client
+    }
+
     private fun load(call: MethodCall): Boolean {
         val client = session?.remoteMediaClient ?: return false
+        watch(client)
         val url = call.argument<String>("url") ?: return false
         val subs = call.argument<String>("subtitles")?.takeIf { it.isNotEmpty() }
         val meta = MediaMetadata(MediaMetadata.MEDIA_TYPE_TV_SHOW).apply {
@@ -149,6 +190,9 @@ class CastBridge(private val activity: Activity, private val channel: () -> Meth
     }
 
     fun dispose() {
+        watched?.removeProgressListener(progress)
+        watched?.unregisterCallback(status)
+        watched = null
         context?.sessionManager?.removeSessionManagerListener(listener, CastSession::class.java)
     }
 }

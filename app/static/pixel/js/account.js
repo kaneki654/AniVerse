@@ -2,7 +2,7 @@
 // screen. Accounts are shared with the app, so history follows you between them.
 // Also here: your level, rank and achievements (from watch history, so they
 // count without an account too) and the AniList / MyAnimeList connections.
-import { h, sprite, clear, toast } from "./px.js";
+import { h, sprite, clear, toast, SPRITES } from "./px.js";
 import { api, auth, history } from "./api.js";
 import { BADGES, stats, level, unlocked } from "./achievements.js";
 import { sfx } from "./sfx.js";
@@ -118,12 +118,66 @@ function progress(user) {
         h("span.muted", null, lv.level >= 99 ? `${lv.xp} XP · max level` : `${lv.xp} XP · ${toNext} to level ${lv.level + 1}`))),
     h("div.stat-row", null,
       stat(s.finished, "Episodes finished"), stat(s.anime, "Anime"), stat(s.streak, "Day streak"), stat(`${Math.floor(s.hours)}h`, "Watched")),
+    h("button.px-btn.dark.px-box.bevel.small", { type: "button", style: { marginBottom: "18px" }, onclick: () => shareCard(name) },
+      sprite("trophy", 1.4), "Share card"),
     sectionHead(`Achievements · ${got.size}/${BADGES.length}`),
     h("div.badges", null, BADGES.map((b) => h(`div.badge.px-box${got.has(b.id) ? "" : ".locked"}`, { title: got.has(b.id) ? "Unlocked" : "Locked" },
       sprite(b.sprite, 3), h("b", null, b.name), h("span", null, b.text)))),
     user ? null : h("p.muted", { style: { marginTop: "14px" } }, "Progress counts on this browser. Sign in to keep it with your account and the app."));
 }
 const stat = (value, label) => h("div.stat.px-box", null, h("b", null, String(value)), h("small", null, label));
+
+// --- the share card: the profile as a picture, drawn in the palette's colours --------------
+// The same frame colours as the app's Achievements.frameColor.
+const FRAME = { bronze: "#b06a2c", silver: "#c9d2de", gold: null, blood: null, legend: "#b48cff" };
+
+async function shareCard(name) {
+  const s = stats(), lv = level(s), got = BADGES.filter((b) => unlocked(s).includes(b.id));
+  const css = getComputedStyle(document.documentElement);
+  const v = (k, d) => css.getPropertyValue(k).trim() || d;
+  const W = 600, H = 380, cv = document.createElement("canvas");
+  cv.width = W * 2; cv.height = H * 2;
+  const g = cv.getContext("2d");
+  g.scale(2, 2);
+  g.imageSmoothingEnabled = false;
+  await document.fonts.load('16px "PressStart2P"').catch(() => {});
+  const font = (px) => `${px}px "PressStart2P", monospace`;
+  const frame = FRAME[lv.frame] || (lv.frame === "gold" ? v("--gold", "#e8b23a") : v("--blood-light", "#ff4d57"));
+  g.fillStyle = v("--ink", "#0d0709"); g.fillRect(0, 0, W, H);
+  g.fillStyle = frame; [[0, 0, W, 8], [0, H - 8, W, 8], [0, 0, 8, H], [W - 8, 0, 8, H]].forEach((r) => g.fillRect(...r));
+  g.textAlign = "center";
+  g.fillStyle = v("--blood", "#d10a1a"); g.font = font(22); g.fillText("ANIVERSE", W / 2, 56);
+  g.fillStyle = v("--bone", "#f2e8d5"); g.font = font(16); g.fillText(name.toUpperCase().slice(0, 22), W / 2, 100);
+  g.fillStyle = v("--gold", "#e8b23a"); g.font = font(12); g.fillText(`LV ${lv.level} · ${lv.rank.toUpperCase()}`, W / 2, 130);
+  g.fillStyle = v("--panel", "#1b1114"); g.fillRect(150, 146, 300, 12);
+  g.fillStyle = v("--blood", "#d10a1a"); g.fillRect(150, 146, 300 * lv.progress, 12);
+  [[s.finished, "EPISODES"], [s.anime, "ANIME"], [`${Math.floor(s.hours)}H`, "WATCHED"], [s.streak, "STREAK"]].forEach(([n, label], i) => {
+    const x = 90 + i * 140;
+    g.fillStyle = v("--bone", "#f2e8d5"); g.font = font(16); g.fillText(String(n), x, 200);
+    g.fillStyle = v("--ash", "#8a7f7a"); g.font = font(8); g.fillText(label, x, 220);
+  });
+  // The badges earned, as their sprites, centred in a row (two rows if many).
+  const cell = 3, per = Math.min(got.length, 9);
+  got.forEach((b, i) => {
+    const rows = SPRITES[b.sprite] || [], row = Math.floor(i / 9), col = i % 9, inRow = row ? got.length - 9 : per;
+    const x0 = W / 2 - (inRow * 48) / 2 + col * 48 + 8, y0 = 250 + row * 44;
+    g.fillStyle = v("--gold", "#e8b23a");
+    rows.forEach((line, y) => [...line].forEach((ch, x) => { if (ch !== ".") g.fillRect(x0 + x * cell, y0 + y * cell, cell, cell); }));
+  });
+  g.fillStyle = v("--ash", "#8a7f7a"); g.font = font(8); g.fillText(`${got.length}/${BADGES.length} BADGES`, W / 2, H - 22);
+
+  const blob = await new Promise((r) => cv.toBlob(r, "image/png"));
+  if (!blob) return;
+  const file = new File([blob], "aniverse-card.png", { type: "image/png" });
+  const text = `Level ${lv.level} ${lv.rank} on AniVerse`;
+  if (navigator.canShare?.({ files: [file] })) {
+    navigator.share({ files: [file], text }).catch(() => {});
+  } else {
+    const a = h("a", { href: URL.createObjectURL(blob), download: file.name });
+    document.body.append(a); a.click(); a.remove();
+    toast("Card saved as aniverse-card.png.");
+  }
+}
 
 // --- AniList / MyAnimeList ---------------------------------------------------------------------
 

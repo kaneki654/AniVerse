@@ -10,6 +10,7 @@ import 'api_service.dart';
 import 'app_settings.dart';
 import 'history_service.dart';
 import 'native_bridge.dart';
+import 'watchlist_service.dart';
 
 /// An episode saved for watching offline.
 class DownloadItem {
@@ -133,9 +134,20 @@ class DownloadService {
     HistoryService.changes.addListener(_deleteWatchedSoon);
     // Pick up whatever was cut off last time.
     if (_items.any((i) => i.status == 'queued')) Future.delayed(const Duration(seconds: 2), _pump);
+    // Smart downloads: once the app has settled, and after an episode is
+    // watched to the end.
+    Future.delayed(const Duration(seconds: 20), smartFill);
+    HistoryService.changes.addListener(_smartSoon);
   }
 
   // --- deleting watched episodes ---------------------------------------------------------
+
+  static Timer? _smartTimer;
+  static void _smartSoon() {
+    if (!AppSettings.smartDownloads) return;
+    _smartTimer?.cancel();
+    _smartTimer = Timer(const Duration(seconds: 30), smartFill);
+  }
 
   static Timer? _deleteTimer;
   static void _deleteWatchedSoon() {
@@ -288,6 +300,58 @@ class DownloadService {
       _running = false;
       if (!_items.any((i) => i.status == 'downloading')) NativeBridge.downloadsActive(false);
     }
+  }
+
+  // --- smart downloads and whole seasons -----------------------------------------------
+
+  /// Episodes out so far: the one before the next to air, or all of a finished show.
+  static int _aired(Map<String, dynamic> a) {
+    final next = a['nextAiringEpisode'];
+    if (next is Map && next['episode'] is num && (next['episode'] as num) > 1) return (next['episode'] as num).toInt() - 1;
+    if (a['status'] == 'NOT_YET_RELEASED') return 0;
+    final eps = a['episodes'];
+    return eps is num && eps > 0 ? eps.toInt() : 0;
+  }
+
+  static bool _filling = false;
+
+  /// Smart downloads: for each show on My List, the episode after the last one
+  /// watched to the end, once it has aired and isn't saved already -- one per
+  /// show, so a long backlog doesn't fill the phone. Returns how many it queued.
+  static Future<int> smartFill() async {
+    if (!AppSettings.smartDownloads || _filling) return 0;
+    _filling = true;
+    var added = 0;
+    try {
+      for (final e in WatchlistService.all().take(40)) {
+        final watched = HistoryService.episodesOf(e.animeId);
+        final done = watched.values.where((h) => h.finished).map((h) => h.episode).fold<int>(0, (m, n) => n > m ? n : m);
+        if (done == 0) continue; // not started: nothing to guess from
+        final next = done + 1;
+        if (watched[next]?.finished == true || find(e.animeId, next) != null) continue;
+        final info = await ApiService.getAnimeDetails(e.animeId);
+        if (info == null || _aired(info) < next) continue;
+        if (enqueue(animeId: e.animeId, episode: next, title: e.title, cover: e.cover)) added++;
+      }
+    } finally {
+      _filling = false;
+    }
+    return added;
+  }
+
+  /// Every aired episode of a show that isn't saved yet. Returns how many it queued.
+  static int enqueueSeason({
+    required String animeId,
+    required int aired,
+    String category = 'sub',
+    String title = '',
+    String cover = '',
+  }) {
+    var added = 0;
+    for (var ep = 1; ep <= aired; ep++) {
+      if (enqueue(animeId: animeId, episode: ep, category: category, title: title, cover: cover)) added++;
+    }
+    return added;
   }
 
   /// Settings changed (Wi-Fi only switched off, a higher limit): try again.

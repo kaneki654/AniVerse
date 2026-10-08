@@ -10,7 +10,7 @@ import { sfx } from "./sfx.js";
 import { initShell, reportError } from "./ui.js";
 import { createPlayer, pref } from "./player.js";
 import { startParty, newPartyCode, validCode } from "./party.js";
-import { castReady, castDevice, startCast, stopCast, castLoad, castPlayPause, onCastChange } from "./cast.js";
+import { castReady, castDevice, startCast, stopCast, castLoad, castPlayPause, castSeek, onCastChange, onCastProgress, onCastFinished } from "./cast.js";
 
 initShell();
 const root = document.getElementById("watch");
@@ -75,13 +75,21 @@ let canCast = false;
 castReady().then((ok) => { canCast = ok; });
 onCastChange(({ device, position }) => {
   if (!device) {
+    castStage = null;
     player.hideStage();
     if (position > 0) video.currentTime = position;
     if (phase === "playing") video.play().catch(() => {});
     return;
   }
+  castHere(device);
+});
+
+/** Sends this episode to the TV; before a stream is found, as soon as one is. */
+let castWaiting = false;
+function castHere(device) {
   const src = sources[sourceIndex];
-  if (!src) return;
+  if (!src || phase !== "playing") { castWaiting = true; return; }
+  castWaiting = false;
   video.pause();
   const abs = (u) => new URL(u, location.href).href;
   castLoad({
@@ -92,8 +100,22 @@ onCastChange(({ device, position }) => {
     subtitles: captionsOn() && currentTrack ? abs(currentTrack.url) : null,
     hls: src.isM3U8 === true || /m3u8/.test(src.url),
   }).then((ok) => { if (!ok) toast("The TV wouldn't take this stream. Try another server."); });
-  player.casting(device, { onPlayPause: castPlayPause, onStop: stopCast });
+  castStage = player.casting(device, { onPlayPause: castPlayPause, onStop: stopCast });
   sfx("select");
+}
+
+// While casting: the TV's position, a skip button inside a marked range, and
+// the next episode when one ends there (the session carries over to the page).
+let castStage = null;
+onCastProgress(({ time, duration }) => {
+  if (!castStage || !castDevice()) return;
+  castStage.update({ time, duration });
+  const inRange = (r) => r && time >= r.start && time < r.end - 1;
+  const hit = [["Skip recap", skipMarks.recap], ["Skip intro", skipMarks.intro], ["Skip outro", skipMarks.outro]].find(([, r]) => inRange(r));
+  castStage.setSkip(hit ? hit[0] : null, () => hit && castSeek(hit[1].end));
+});
+onCastFinished(() => {
+  if (castDevice() && aired && ep < aired) { toast(`Episode ${ep + 1} is next on ${castDevice()}.`); goEpisode(ep + 1); }
 });
 
 // --- link speed ---------------------------------------------------------------------
@@ -289,6 +311,7 @@ function openSource(src, start, g) {
 let startedOnce = false;
 function attached() {
   phase = "playing";
+  if (castWaiting && castDevice()) setTimeout(() => castHere(castDevice()), 0);
   reconnectTries = 0;
   mediaRecovered = false;
   player.hideStage();
@@ -430,15 +453,16 @@ async function reconnect() {
 // its neighbour's. That last can take a couple of minutes the first time, so a
 // "pending" answer is asked again, and better times replace earlier ones.
 
-let skipMarks = { intro: null, outro: null };
+let skipMarks = { intro: null, outro: null, recap: null };
 let skipTimer = 0;
 
 function loadSkipTimes(src) {
   clearTimeout(skipTimer);
   const g = gen;
-  skipMarks = { intro: src?.intro || null, outro: src?.outro || null };
+  skipMarks = { intro: src?.intro || null, outro: src?.outro || null, recap: null };
   player.setMarkers(skipMarks.intro, skipMarks.outro);
-  if (skipMarks.intro && skipMarks.outro) return;
+  // Recaps only come from the server (AniSkip), and only from episode 2 on.
+  if (skipMarks.intro && skipMarks.outro && ep <= 1) return;
   const ask = async (attempt) => {
     if (g !== gen) return;
     const d = video.duration;
@@ -446,8 +470,9 @@ function loadSkipTimes(src) {
     const r = await api.skipTimes(animeId, ep, d, src?.serverName, category);
     if (g !== gen || !r) return;
     // The source's own markers are exact for it; fill only what it lacks.
-    skipMarks = { intro: src?.intro || r.intro || skipMarks.intro, outro: src?.outro || r.outro || skipMarks.outro };
-    player.setMarkers(skipMarks.intro, skipMarks.outro);
+    skipMarks = { intro: src?.intro || r.intro || skipMarks.intro, outro: src?.outro || r.outro || skipMarks.outro,
+      recap: r.recap || skipMarks.recap };
+    player.setMarkers(skipMarks.intro, skipMarks.outro, skipMarks.recap);
     if (r.pending && attempt < 4) skipTimer = setTimeout(() => ask(attempt + 1), [60, 90, 150, 300][attempt] * 1000);
   };
   ask(0);

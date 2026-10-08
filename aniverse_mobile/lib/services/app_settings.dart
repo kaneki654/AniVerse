@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -71,6 +73,88 @@ class AppSettings {
 
   /// The detail screen's episode view: grid | list.
   static String get epView => _s('av.epView', 'grid');
+
+  // --- 1.11: player, downloads, alerts, accessibility ---------------------------------
+
+  /// Seconds the skip buttons, double-tap, arrow keys and media keys jump.
+  static int get seekStep => _d('av.seekStep', 10).round();
+
+  /// Subtitle text colour: white | yellow | cyan | green.
+  static String get subColor => _s('av.subColor', 'white');
+
+  /// Recaps at the start of an episode are skipped without asking.
+  static bool get skipRecap => _b('av.skipRecap', false);
+
+  /// The next episode of each show on My List downloads by itself (on Wi-Fi
+  /// when Wi-Fi only is on).
+  static bool get smartDownloads => _b('av.smartDownloads', false);
+
+  /// Alert quiet hours, local time: no notifications from [quietFrom] until
+  /// [quietTo] (hours 0-23); -1 is off. Read by AlertCheck.kt too.
+  static int get quietFrom => _d('av.quietFrom', -1).round();
+  static int get quietTo => _d('av.quietTo', 8).round();
+
+  /// Text size: 1.0, 1.15 or 1.3 times.
+  static double get textScale => _d('av.textScale', 1.0);
+
+  /// Brighter text and borders on top of the palette, for low vision.
+  static bool get highContrast => _b('av.highContrast', false);
+
+  static Map<String, dynamic> _map(String key) {
+    try {
+      final v = json.decode(_s(key, '{}'));
+      return v is Map<String, dynamic> ? v : {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static List<String> _list(String key) {
+    try {
+      final v = json.decode(_s(key, '[]'));
+      return v is List ? [for (final x in v) x.toString()] : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Per-show memory, kept to the most recent [_perShowMax] shows.
+  static const _perShowMax = 200;
+  static Future<void> _setIn(String key, String anime, Object? value) async {
+    final m = _map('av.$key')..remove(anime);
+    if (value != null) m[anime] = value;
+    while (m.length > _perShowMax) {
+      m.remove(m.keys.first);
+    }
+    await set(key, json.encode(m));
+  }
+
+  /// The playback speed last used for this show, if any.
+  static double? speedFor(String anime) => (_map('av.showSpeed')[anime] as num?)?.toDouble();
+  static Future<void> setSpeedFor(String anime, double speed) => _setIn('showSpeed', anime, speed);
+
+  /// Whether the next episode of this show plays by itself at the end.
+  static bool autoNextFor(String anime) => _map('av.showAutoNext')[anime] != false;
+  static Future<void> setAutoNextFor(String anime, bool on) => _setIn('showAutoNext', anime, on ? null : false);
+
+  /// Shows on My List whose new-episode alerts are muted (read by AlertCheck.kt).
+  static bool alertsFor(String anime) => !_list('av.alertsMuted').contains(anime);
+  static Future<void> setAlertsFor(String anime, bool on) async {
+    final l = _list('av.alertsMuted')..remove(anime);
+    if (!on) l.add(anime);
+    await set('alertsMuted', json.encode(l));
+  }
+
+  /// Searches that led somewhere, newest first.
+  static List<String> get recentSearches => _list('av.recentSearches');
+  static Future<void> addRecentSearch(String q) async {
+    final t = q.trim();
+    if (t.length < 2) return;
+    final l = [t, ...recentSearches.where((x) => x.toLowerCase() != t.toLowerCase())];
+    await set('recentSearches', json.encode(l.take(10).toList()));
+  }
+
+  static Future<void> clearRecentSearches() => set('recentSearches', '[]');
 
   static Future<void> set(String key, Object value) async {
     final p = _prefs ??= await SharedPreferences.getInstance();

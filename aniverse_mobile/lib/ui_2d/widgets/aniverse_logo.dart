@@ -134,8 +134,9 @@ class FadeScaleRoute<T> extends PageRouteBuilder<T> {
 class PressableScale extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
+  final FocusNode? focusNode;
 
-  const PressableScale({super.key, required this.child, required this.onTap});
+  const PressableScale({super.key, required this.child, required this.onTap, this.focusNode});
 
   @override
   State<PressableScale> createState() => _PressableScaleState();
@@ -145,7 +146,8 @@ class _PressableScaleState extends State<PressableScale> {
   bool _down = false;
 
   @override
-  Widget build(BuildContext context) => PixelFocus(onActivate: widget.onTap, child: _faceBuild(context));
+  Widget build(BuildContext context) =>
+      PixelFocus(onActivate: widget.onTap, focusNode: widget.focusNode, child: _faceBuild(context));
 
   Widget _faceBuild(BuildContext context) {
     return GestureDetector(

@@ -67,7 +67,7 @@ export function createPlayer(host, handlers) {
   clear(host).append(video, captions, hud, skipFloat, bufStage, stage);
 
   // --- state shown -----------------------------------------------------------------
-  let duration = 0, intro = null, outro = null, dragging = null;
+  let duration = 0, intro = null, outro = null, recap = null, dragging = null;
 
   const syncVolume = () => {
     clear(volIcon).append(sprite(video.muted || video.volume === 0 ? "mute" : "volume", 2));
@@ -115,7 +115,7 @@ export function createPlayer(host, handlers) {
     seek.setAttribute("aria-valuetext", `${fmtTime(t)} of ${fmtTime(duration)}`);
     // Skip intro / outro while inside either range.
     const inRange = (r) => r && t >= r.start && t < r.end - 1;
-    const range = inRange(intro) ? ["Skip intro", intro] : inRange(outro) ? ["Skip outro", outro] : null;
+    const range = inRange(recap) ? ["Skip recap", recap] : inRange(intro) ? ["Skip intro", intro] : inRange(outro) ? ["Skip outro", outro] : null;
     if (range) {
       if (skipFloat._for !== range[0]) {
         skipFloat._for = range[0];
@@ -320,7 +320,7 @@ export function createPlayer(host, handlers) {
       if (capText.textContent !== text) capText.textContent = text;
       captions.hidden = false;
     },
-    setMarkers(i, o) { intro = i; outro = o; paintMarks(); },
+    setMarkers(i, o, r = null) { intro = i; outro = o; recap = r; paintMarks(); },
     /** Subtitle look: size s|m|l|xl, and the dark box behind the text or not. */
     captionStyle({ size = "m", bg = true } = {}) {
       captions.classList.remove("sz-s", "sz-l", "sz-xl");
@@ -363,16 +363,30 @@ export function createPlayer(host, handlers) {
     hideBuffering() { bufStage.hidden = true; clear(bufStage); center.style.visibility = ""; },
     hideStage() { stage.hidden = true; clear(stage); },
     /** Full-cover stage while the episode plays on a Chromecast: this page is the remote. */
+    /** Returns {update({time, duration}), setSkip(label | null, run)} for the TV's progress. */
     casting(device, { onPlayPause, onStop }) {
       currentOrb = null;
       closeMenu();
+      const where = h("div.label.muted");
+      const skipSlot = h("span");
       clear(stage).append(
         h("a.icon-btn.back", { href: handlers.backHref, "aria-label": "Back" }, sprite("back", 2.2)),
         h("div.label", null, `Casting to ${device}`),
+        where,
         h("div.row", null,
           h("button.px-btn.px-box.bevel.small", { type: "button", onclick: onPlayPause }, sprite("play", 1.4), "Play / pause"),
+          skipSlot,
           h("button.px-btn.dark.px-box.bevel.small", { type: "button", onclick: onStop }, "Stop casting")));
       stage.hidden = false;
+      let shown = null;
+      return {
+        update({ time, duration }) { where.textContent = duration > 0 ? `${fmtTime(time)} / ${fmtTime(duration)}` : ""; },
+        setSkip(label, run) {
+          if (label === shown) return;
+          shown = label;
+          clear(skipSlot).append(...(label ? [h("button.px-btn.bone.px-box.bevel.small", { type: "button", onclick: () => { sfx("skip"); run(); } }, sprite("forward", 1.4), label)] : []));
+        },
+      };
     },
     /**
      * Failure screen with actions [{label, kind, run}]. With `boss`, the skull

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../services/app_settings.dart';
 import '../../services/native_bridge.dart';
 import '../pixel/blood.dart';
 import '../pixel/pixel.dart';
@@ -21,6 +22,9 @@ class AniVersePlayerControls extends StatefulWidget {
   final String title;
   final Map<String, dynamic>? intro;
   final Map<String, dynamic>? outro;
+
+  /// The "previously on" at the start, when AniSkip knows it.
+  final Map<String, dynamic>? recap;
   final VoidCallback? onNextEpisode;
   final String category;
   final VoidCallback? onToggleCategory;
@@ -53,6 +57,7 @@ class AniVersePlayerControls extends StatefulWidget {
     required this.title,
     this.intro,
     this.outro,
+    this.recap,
     this.onNextEpisode,
     this.category = 'sub',
     this.onToggleCategory,
@@ -79,6 +84,50 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
   /// HUD button does.
   final FocusNode _focus = FocusNode(debugLabel: 'player');
 
+  /// Seconds a skip jumps (Settings).
+  int get _step => AppSettings.seekStep;
+
+  /// A short note in the middle of the picture: "+10", "BRIGHTNESS 60%".
+  final ValueNotifier<(String, double?)?> _hint = ValueNotifier(null);
+  Timer? _hintTimer;
+  void _showHint(String text, [double? level]) {
+    _hint.value = (text, level);
+    _hintTimer?.cancel();
+    _hintTimer = Timer(const Duration(milliseconds: 800), () => _hint.value = null);
+  }
+
+  // Double-tap the left or right of the picture to skip back or forward.
+  double _tapX = 0;
+  void _doubleTap() {
+    final w = context.size?.width ?? 1;
+    final back = _tapX < w / 2;
+    _seekBy(back ? -_step : _step);
+    _showHint(back ? '-$_step' : '+$_step');
+  }
+
+  // Full screen: swipe up or down on the left for brightness, on the right for volume.
+  bool? _dragBrightness;
+  double _dragLevel = 0.5;
+  Future<void> _dragStart(DragStartDetails d) async {
+    final w = context.size?.width ?? 1;
+    final brightness = d.localPosition.dx < w / 2;
+    _dragBrightness = brightness;
+    _dragLevel = brightness ? await NativeBridge.brightness() : await NativeBridge.volume();
+  }
+
+  void _dragUpdate(DragUpdateDetails d) {
+    final which = _dragBrightness;
+    if (which == null) return;
+    final h = context.size?.height ?? 1;
+    _dragLevel = (_dragLevel - d.delta.dy / (h * 0.8)).clamp(0.0, 1.0);
+    if (which) {
+      NativeBridge.setBrightness(_dragLevel);
+    } else {
+      NativeBridge.setVolume(_dragLevel);
+    }
+    _showHint(which ? 'BRIGHTNESS' : 'VOLUME', _dragLevel);
+  }
+
   /// Remote and keyboard: Select plays and pauses, left and right seek, up
   /// and down bring the HUD up and move round its buttons, media keys work.
   KeyEventResult _onKey(FocusNode node, KeyEvent e) {
@@ -94,7 +143,7 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.mediaFastForward || k == LogicalKeyboardKey.mediaRewind) {
-      _seekBy(k == LogicalKeyboardKey.mediaFastForward ? 10 : -10);
+      _seekBy(k == LogicalKeyboardKey.mediaFastForward ? _step : -_step);
       _setVisible(true);
       return KeyEventResult.handled;
     }
@@ -124,7 +173,7 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
       return KeyEventResult.handled;
     }
     if (k == LogicalKeyboardKey.arrowLeft || k == LogicalKeyboardKey.arrowRight) {
-      _seekBy(k == LogicalKeyboardKey.arrowRight ? 10 : -10);
+      _seekBy(k == LogicalKeyboardKey.arrowRight ? _step : -_step);
       _setVisible(true);
       return KeyEventResult.handled;
     }
@@ -163,6 +212,8 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
 
   @override
   void dispose() {
+    _hintTimer?.cancel();
+    _hint.dispose();
     _focus.dispose();
     _hideTimer?.cancel();
     _c.removeListener(_onTick);
@@ -226,7 +277,10 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
     String label = '';
     // Until a second before the end: landing on the end itself after a skip
     // should not leave the button up.
-    if (widget.intro != null && pos >= (widget.intro!['start'] ?? 0) && pos < (widget.intro!['end'] ?? 0) - 1) {
+    if (widget.recap != null && pos >= (widget.recap!['start'] ?? 0) && pos < (widget.recap!['end'] ?? 0) - 1) {
+      active = widget.recap;
+      label = 'Skip recap';
+    } else if (widget.intro != null && pos >= (widget.intro!['start'] ?? 0) && pos < (widget.intro!['end'] ?? 0) - 1) {
       active = widget.intro;
       label = 'Skip intro';
     } else if (widget.outro != null && pos >= (widget.outro!['start'] ?? 0) && pos < (widget.outro!['end'] ?? 0) - 1) {
@@ -261,9 +315,36 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
       onKeyEvent: _onKey,
       child: GestureDetector(
         onTap: _toggleVisible,
+        onDoubleTapDown: (d) => _tapX = d.localPosition.dx,
+        onDoubleTap: _doubleTap,
+        onVerticalDragStart: widget.isFullscreen ? _dragStart : null,
+        onVerticalDragUpdate: widget.isFullscreen ? _dragUpdate : null,
+        onVerticalDragEnd: widget.isFullscreen ? (_) => _dragBrightness = null : null,
         behavior: HitTestBehavior.opaque,
         child: Stack(
           children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ValueListenableBuilder<(String, double?)?>(
+                  valueListenable: _hint,
+                  builder: (_, hint, __) => hint == null
+                      ? const SizedBox.shrink()
+                      : Center(
+                          child: PixelBox(
+                            fill: const Color(0xCC050305),
+                            padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                            child: Column(mainAxisSize: MainAxisSize.min, children: [
+                              Text(hint.$1, style: PxFont.label(10, color: Px.bone)),
+                              if (hint.$2 != null) ...[
+                                const SizedBox(height: 8),
+                                SizedBox(width: 120, child: PixelBar(fraction: hint.$2!, height: 8)),
+                              ],
+                            ]),
+                          ),
+                        ),
+                ),
+              ),
+            ),
             // While the HUD is hidden the skip button floats bottom-right, so an
             // intro can still be skipped mid-watch.
             if (skip != null && !_visible) Positioned(right: 16, bottom: 20, child: skip),
@@ -346,11 +427,11 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            _SkipTen(sprite: Sprites.rewind, size: compact ? 44 : 52, onTap: () => _seekBy(-10)),
+                            _SkipTen(sprite: Sprites.rewind, seconds: _step, size: compact ? 44 : 52, onTap: () => _seekBy(-_step)),
                             SizedBox(width: compact ? 18 : 22),
                             _PlayButton(playing: value.isPlaying, size: compact ? 54 : 68, onTap: _togglePlay),
                             SizedBox(width: compact ? 18 : 22),
-                            _SkipTen(sprite: Sprites.forward, size: compact ? 44 : 52, onTap: () => _seekBy(10)),
+                            _SkipTen(sprite: Sprites.forward, seconds: _step, size: compact ? 44 : 52, onTap: () => _seekBy(_step)),
                           ],
                         ),
                       ),
@@ -481,8 +562,9 @@ class _PlayButtonState extends State<_PlayButton> {
 class _SkipTen extends StatelessWidget {
   final Sprite sprite;
   final double size;
+  final int seconds;
   final VoidCallback onTap;
-  const _SkipTen({required this.sprite, required this.onTap, this.size = 52});
+  const _SkipTen({required this.sprite, required this.onTap, this.seconds = 10, this.size = 52});
 
   @override
   Widget build(BuildContext context) => PixelFocus(onActivate: onTap, child: _faceBuild(context));
@@ -490,7 +572,7 @@ class _SkipTen extends StatelessWidget {
   Widget _faceBuild(BuildContext context) {
     return Semantics(
       button: true,
-      label: sprite == Sprites.rewind ? 'Back 10 seconds' : 'Forward 10 seconds',
+      label: sprite == Sprites.rewind ? 'Back $seconds seconds' : 'Forward $seconds seconds',
       excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,
@@ -506,7 +588,7 @@ class _SkipTen extends StatelessWidget {
               children: [
                 PixelSprite(sprite, scale: 2, color: Px.bone),
                 const SizedBox(height: 3),
-                Text('10', style: PxFont.label(7, color: Px.bone, height: 1)),
+                Text('$seconds', style: PxFont.label(7, color: Px.bone, height: 1)),
               ],
             ),
           ),

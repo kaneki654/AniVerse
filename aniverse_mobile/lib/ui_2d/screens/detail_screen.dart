@@ -80,6 +80,24 @@ class _DetailScreenState extends State<DetailScreen> {
     pixelToast(context, ok ? 'Episode $ep is downloading. It will be under Saved.' : 'Episode $ep is already saved or on its way.');
   }
 
+  /// Every aired episode not yet saved, after a confirmation with the count.
+  Future<void> _downloadAll() async {
+    final aired = _aired;
+    final missing = [for (var ep = 1; ep <= aired; ep++) if (DownloadService.find(widget.id, ep) == null) ep].length;
+    if (missing == 0) {
+      pixelToast(context, 'Every aired episode is already saved or on its way.');
+      return;
+    }
+    final go = await pickOption<bool>(context, 'Download $missing episode${missing == 1 ? '' : 's'}?', [
+      (true, 'Download ${missing == aired ? 'all $aired' : 'the $missing not saved yet'}'),
+      (false, 'Cancel'),
+    ], null);
+    if (go != true || !mounted) return;
+    final n = DownloadService.enqueueSeason(animeId: widget.id, aired: aired, title: _title, cover: _cover ?? '');
+    Sfx.play('select');
+    pixelToast(context, '$n episode${n == 1 ? '' : 's'} queued. ${AppSettings.wifiOnly ? 'They download on Wi-Fi. ' : ''}They will be under Saved.');
+  }
+
   void _openEpisode(int number) {
     Navigator.push(
       context,
@@ -245,6 +263,17 @@ class _DetailScreenState extends State<DetailScreen> {
                   Row(
                     children: [
                       const Expanded(child: SectionHeader(title: 'Episodes')),
+                      if (released && _aired > 1)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14, left: 8),
+                          child: PixelIconButton(
+                            sprite: Sprites.download,
+                            tooltip: 'Download every episode',
+                            color: Px.ash,
+                            framed: true,
+                            onPressed: _downloadAll,
+                          ),
+                        ),
                       if (released)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 14, left: 8),

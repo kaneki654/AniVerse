@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 
 import '../services/api_service.dart';
 import '../services/download_service.dart';
+import '../services/error_reporter.dart';
 import '../services/native_bridge.dart';
 import '../services/history_service.dart';
 import '../services/net_speed.dart';
@@ -295,6 +296,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   }
 
   void _fail(String reason) {
+    ErrorReporter.playback(widget.animeId, widget.epNum, category, reason);
     setState(() {
       _phase = _Phase.failed;
       _failReason = reason;

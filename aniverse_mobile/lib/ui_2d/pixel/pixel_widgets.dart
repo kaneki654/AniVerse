@@ -582,7 +582,10 @@ class PixelFocus extends StatefulWidget {
   final Widget child;
   final VoidCallback? onActivate;
   final bool autofocus;
-  const PixelFocus({super.key, required this.child, this.onActivate, this.autofocus = false});
+
+  /// For a parent that moves focus itself (a poster row remembering its place).
+  final FocusNode? focusNode;
+  const PixelFocus({super.key, required this.child, this.onActivate, this.autofocus = false, this.focusNode});
 
   @override
   State<PixelFocus> createState() => _PixelFocusState();
@@ -626,6 +629,7 @@ class _PixelFocusState extends State<PixelFocus> {
     return FocusableActionDetector(
       enabled: go != null,
       autofocus: widget.autofocus,
+      focusNode: widget.focusNode,
       actions: {
         ActivateIntent: CallbackAction<ActivateIntent>(onInvoke: (_) {
           go?.call();

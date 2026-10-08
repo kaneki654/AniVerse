@@ -76,6 +76,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     const sizes = [('s', 'Small'), ('m', 'Medium'), ('l', 'Large'), ('xl', 'Extra large')];
+    const subColors = [('white', 'White'), ('yellow', 'Yellow'), ('cyan', 'Cyan'), ('green', 'Green')];
+    const textSizes = [(1.0, 'Normal'), (1.15, 'Large'), (1.3, 'Largest')];
     const volumes = [(0.15, 'Quiet'), (0.35, 'Normal'), (0.7, 'Loud')];
     String labelOf<T>(List<(T, String)> opts, T v) => opts.firstWhere((o) => o.$1 == v, orElse: () => opts[1]).$2;
 
@@ -186,6 +188,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
             control: PixelSwitch(label: 'Background audio', value: AppSettings.bgAudio, onChanged: (v) => _set('bgAudio', v)),
           ),
           SettingRow(
+            title: 'Skip length',
+            text: 'How far the skip buttons, a double-tap and the remote jump.',
+            control: ChoiceChipButton(
+              label: '${AppSettings.seekStep} seconds',
+              onTap: () async {
+                final v = await pickOption(context, 'Skip length',
+                    const [(5.0, '5 seconds'), (10.0, '10 seconds'), (15.0, '15 seconds'), (30.0, '30 seconds')],
+                    AppSettings.seekStep.toDouble());
+                if (v != null) _set('seekStep', v);
+              },
+            ),
+          ),
+          SettingRow(
+            title: 'Skip recaps',
+            text: 'Jump past the "previously on" at the start of an episode by itself, when it is known.',
+            control: PixelSwitch(label: 'Skip recaps', value: AppSettings.skipRecap, onChanged: (v) => _set('skipRecap', v)),
+          ),
+          SettingRow(
+            title: 'Subtitle colour',
+            text: 'The colour subtitles are drawn in.',
+            control: ChoiceChipButton(
+              label: labelOf(subColors, AppSettings.subColor),
+              onTap: () async {
+                final v = await pickOption(context, 'Subtitle colour', subColors, AppSettings.subColor);
+                if (v != null) _set('subColor', v);
+              },
+            ),
+          ),
+          SettingRow(
             title: 'Subtitle size',
             text: 'How big subtitles are drawn.',
             control: ChoiceChipButton(
@@ -240,6 +271,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           SettingRow(
+            title: 'Smart downloads',
+            text: 'The next episode of each show on My List downloads by itself once it airs.',
+            control: PixelSwitch(label: 'Smart downloads', value: AppSettings.smartDownloads, onChanged: (v) async {
+              await _set('smartDownloads', v);
+              if (v) DownloadService.smartFill();
+            }),
+          ),
+          SettingRow(
             title: 'Delete when watched',
             text: "Remove an episode's saved copy once you've watched it to the end.",
             control: PixelSwitch(label: 'Delete when watched', value: AppSettings.autoDeleteWatched, onChanged: (v) => _set('autoDeleteWatched', v)),
@@ -251,6 +290,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             text: 'A notification when a show on My List airs a new episode, even with the app closed.',
             control: PixelSwitch(label: 'New-episode alerts', value: AppSettings.alerts, onChanged: _toggleAlerts),
           ),
+          if (AppSettings.alerts)
+            SettingRow(
+              title: 'Quiet hours',
+              text: 'No alerts at night; they arrive when quiet hours end.',
+              control: ChoiceChipButton(
+                label: AppSettings.quietFrom < 0 ? 'Off' : '${AppSettings.quietFrom}:00 - ${AppSettings.quietTo}:00',
+                onTap: () async {
+                  final v = await pickOption(context, 'Quiet hours',
+                      const [(-1.0, 'Off'), (22.0, '22:00 - 08:00'), (23.0, '23:00 - 08:00'), (0.0, '00:00 - 08:00')],
+                      AppSettings.quietFrom.toDouble());
+                  if (v != null) _set('quietFrom', v);
+                },
+              ),
+            ),
           if (AppSettings.alerts)
             Align(
               alignment: Alignment.centerLeft,
@@ -265,6 +318,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 },
               ),
             ),
+          const SizedBox(height: 10),
+          const SectionHeader(title: 'Accessibility'),
+          SettingRow(
+            title: 'Text size',
+            text: 'Make the text bigger everywhere in the app.',
+            control: ChoiceChipButton(
+              label: labelOf(textSizes, AppSettings.textScale),
+              onTap: () async {
+                final v = await pickOption(context, 'Text size', textSizes, AppSettings.textScale);
+                if (v != null) _set('textScale', v);
+              },
+            ),
+          ),
+          SettingRow(
+            title: 'High contrast',
+            text: 'Brighter text and borders, and calmer backgrounds, on any palette.',
+            control: PixelSwitch(label: 'High contrast', value: AppSettings.highContrast, onChanged: (v) => _set('highContrast', v)),
+          ),
           const SizedBox(height: 28),
           Center(
             child: Text('ANIVERSE PIXEL $kAppVersionName (BUILD $kAppBuildNumber)', style: PxFont.label(6, color: Px.ashDark)),

@@ -92,6 +92,14 @@ class MainActivity : FlutterActivity() {
                         result.success(null)
                     }
                     "enterPip" -> result.success(enterPip())
+                    // Android TV and other big screens driven by a remote.
+                    "isTv" -> {
+                        val ui = getSystemService(android.app.UiModeManager::class.java)
+                        result.success(
+                            ui?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION ||
+                                packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK)
+                        )
+                    }
                     "isMetered" -> {
                         val cm = getSystemService(android.net.ConnectivityManager::class.java)
                         result.success(cm?.isActiveNetworkMetered ?: false)
@@ -103,6 +111,46 @@ class MainActivity : FlutterActivity() {
                             call.argument<String>("text") ?: "",
                             call.argument<Int>("progress") ?: -1,
                         )
+                        result.success(null)
+                    }
+                    // Swipe gestures in the full-screen player: this window's
+                    // brightness (-1 hands it back to the system) and media volume.
+                    "getBrightness" -> {
+                        val own = window.attributes.screenBrightness
+                        result.success(
+                            if (own >= 0) own.toDouble()
+                            else try {
+                                android.provider.Settings.System.getInt(
+                                    contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS
+                                ) / 255.0
+                            } catch (_: Exception) { 0.5 }
+                        )
+                    }
+                    "setBrightness" -> {
+                        val v = (call.argument<Double>("value") ?: -1.0).toFloat()
+                        runOnUiThread {
+                            window.attributes = window.attributes.apply {
+                                screenBrightness = if (v < 0) WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                                else v.coerceIn(0.01f, 1f)
+                            }
+                        }
+                        result.success(null)
+                    }
+                    "getVolume" -> {
+                        val am = getSystemService(android.media.AudioManager::class.java)
+                        val max = am?.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC) ?: 0
+                        result.success(
+                            if (am == null || max == 0) 0.5
+                            else am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC).toDouble() / max
+                        )
+                    }
+                    "setVolume" -> {
+                        val am = getSystemService(android.media.AudioManager::class.java)
+                        if (am != null) {
+                            val max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+                            val v = (call.argument<Double>("value") ?: 0.5).coerceIn(0.0, 1.0)
+                            am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, Math.round(v * max).toInt(), 0)
+                        }
                         result.success(null)
                     }
                     "keepScreenOn" -> {
@@ -125,6 +173,22 @@ class MainActivity : FlutterActivity() {
                         )
                         result.success(null)
                     }
+                    "shareImage" -> {
+                        val file = java.io.File(call.argument<String>("path") ?: "")
+                        val sent = try {
+                            val uri = androidx.core.content.FileProvider.getUriForFile(this@MainActivity, "$packageName.files", file)
+                            val send = Intent(Intent.ACTION_SEND)
+                                .setType("image/png")
+                                .putExtra(Intent.EXTRA_STREAM, uri)
+                                .putExtra(Intent.EXTRA_TEXT, call.argument<String>("text") ?: "")
+                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            startActivity(Intent.createChooser(send, "Share your AniVerse card"))
+                            true
+                        } catch (_: Exception) {
+                            false
+                        }
+                        result.success(sent)
+                    }
                     "notificationsAllowed" -> result.success(notificationsAllowed())
                     "requestNotifications" -> requestNotifications(result)
                     "scheduleAlerts" -> {
@@ -138,9 +202,7 @@ class MainActivity : FlutterActivity() {
                     }.start()
                     // The anime a tapped alert was about, once, for the Dart side to open.
                     "takeLaunchAnime" -> {
-                        val id = intent?.getStringExtra(AlertCheck.EXTRA_ANIME)
-                        intent?.removeExtra(AlertCheck.EXTRA_ANIME)
-                        result.success(id)
+                        result.success(intent?.let { takeAlert(it) })
                     }
                     else -> result.notImplemented()
                 }
@@ -151,10 +213,16 @@ class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        intent.getStringExtra(AlertCheck.EXTRA_ANIME)?.let {
-            intent.removeExtra(AlertCheck.EXTRA_ANIME)
-            native?.invokeMethod("openAnime", it)
-        }
+        takeAlert(intent)?.let { native?.invokeMethod("openAnime", it) }
+    }
+
+    /** The alert a launch came from, once: "animeId" or "animeId:episode" to play it. */
+    private fun takeAlert(intent: Intent): String? {
+        val id = intent.getStringExtra(AlertCheck.EXTRA_ANIME) ?: return null
+        val ep = intent.getIntExtra(AlertCheck.EXTRA_EPISODE, 0)
+        intent.removeExtra(AlertCheck.EXTRA_ANIME)
+        intent.removeExtra(AlertCheck.EXTRA_EPISODE)
+        return if (ep > 0) "$id:$ep" else id
     }
 
     // --- picture in picture --------------------------------------------------------------

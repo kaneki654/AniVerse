@@ -22,6 +22,7 @@ import 'screens/home_screen.dart';
 import 'screens/mylist_screen.dart';
 import 'screens/schedule_screen.dart';
 import 'screens/search_screen.dart';
+import 'screens/watch_screen.dart';
 import 'theme_2d.dart';
 import 'widgets/aniverse_logo.dart';
 import 'widgets/pixel_extras.dart';
@@ -134,9 +135,21 @@ class _MainShellState extends State<MainShell> {
     if (AuthService.signedIn) WatchlistService.sync(full: true);
   }
 
-  void _openAnime(String id) {
-    AniVerse2DApp.navigatorKey.currentState
-        ?.push(FadeScaleRoute(page: DetailScreen(id: id)));
+  /// A tapped alert: "animeId:episode" plays the new episode, a bare id
+  /// (older alerts) opens the show.
+  void _openAnime(String alert) {
+    final parts = alert.split(':');
+    final ep = parts.length > 1 ? int.tryParse(parts[1]) : null;
+    final nav = AniVerse2DApp.navigatorKey.currentState;
+    if (ep == null) {
+      nav?.push(FadeScaleRoute(page: DetailScreen(id: parts[0])));
+      return;
+    }
+    final e = WatchlistService.entry(parts[0]);
+    nav?.push(FadeScaleRoute(
+      backdrop: false,
+      page: WatchScreen(animeId: parts[0], epNum: ep, title: e?.title, cover: e?.cover),
+    ));
   }
 
   // The aired counts last fetched, so My List edits recount without refetching.

@@ -10,6 +10,7 @@ import 'package:video_player/video_player.dart';
 import '../../services/api_service.dart';
 import '../../services/app_settings.dart';
 import '../../services/download_service.dart';
+import '../../services/error_reporter.dart';
 import '../../services/history_service.dart';
 import '../../services/native_bridge.dart';
 import '../../services/net_speed.dart';
@@ -81,6 +82,19 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   String category = 'sub';
   Map<String, dynamic>? _intro;
   Map<String, dynamic>? _outro;
+
+  /// The "previously on" at the start (AniSkip), skipped once by itself when
+  /// Settings says so.
+  Map<String, dynamic>? _recap;
+  bool _recapSkipped = false;
+
+  /// Subtitle timing for this episode, from the player menu.
+  Duration _subOffset = Duration.zero;
+
+  /// Sleep timer: pause at a time, or at the end of this episode.
+  Timer? _sleepTimer;
+  DateTime? _sleepAt;
+  bool _sleepAtEnd = false;
   bool? _hasDub;
   List<Map<String, dynamic>> _sources = const [];
   int _sourceIndex = 0;
@@ -241,6 +255,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     });
     NativeBridge.castDevice.addListener(_onCast);
     NativeBridge.onCastEnded = _onCastEnded;
+    NativeBridge.onCastFinished = _onCastFinished;
     final code = widget.partyCode;
     if (code != null && PartyConnection.validCode(code)) _joinParty(code.toUpperCase());
     WidgetsBinding.instance.addObserver(this);
@@ -403,6 +418,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   }
 
   void _fail(String reason) {
+    ErrorReporter.playback(widget.animeId, widget.epNum, category, reason);
     Sfx.play('error');
     setState(() {
       _phase = _Phase.failed;
@@ -553,10 +569,17 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     _bufferingSince = null;
     _rxAtBufferAdvance = _speed.totalBytes;
     c.addListener(_onValue);
+    // Still casting from the last episode: this one goes to the TV too.
+    if (NativeBridge.castDevice.value != null) {
+      _castTo = NativeBridge.castDevice.value;
+      Future.microtask(_castCurrent);
+    }
     // Opening is not something to tell the party about.
     _remoteUntil = DateTime.now().add(const Duration(milliseconds: 1500));
     c.play();
-    c.setPlaybackSpeed(AppSettings.speed).catchError((_) {});
+    // This show's own speed if one was picked for it, else the last one used.
+    c.setPlaybackSpeed(AppSettings.speedFor(widget.animeId) ?? AppSettings.speed).catchError((_) {});
+    if (_subOffset != Duration.zero) c.setCaptionOffset(-_subOffset); // see the menu's subtitle timing
     if (!_startedOnce) {
       _startedOnce = true;
       Sfx.play('start');
@@ -605,9 +628,12 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       setState(() {
         _intro = own('intro');
         _outro = own('outro');
+        _recap = null;
+        _recapSkipped = false;
       });
     }
-    if (_intro != null && _outro != null) return;
+    // Only the server knows recaps, and only from episode 2 on.
+    if (_intro != null && _outro != null && widget.epNum <= 1) return;
     final gen = _generation;
     Future<void> ask() async {
       final d = c.value.duration;
@@ -619,6 +645,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       setState(() {
         _intro = own('intro') ?? got('intro') ?? _intro;
         _outro = own('outro') ?? got('outro') ?? _outro;
+        _recap = got('recap') ?? _recap;
       });
       if (r['pending'] == true && attempt < 4) {
         const waits = [60, 90, 150, 300];
@@ -759,7 +786,14 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
       _prefetched = true;
       ApiService.getSources(widget.animeId, widget.epNum + 1, category);
     }
-    if (v.isCompleted && !_upNext && _aired > widget.epNum && d > 0) _startUpNext();
+    if (v.isCompleted && _sleepAtEnd) {
+      // The sleep timer was set for the end of this episode: stop here.
+      _cancelSleep();
+      pixelToast(context, 'Sleep timer: stopped at the end of the episode.');
+    } else if (v.isCompleted && !_upNext && _aired > widget.epNum && d > 0 && AppSettings.autoNextFor(widget.animeId)) {
+      _startUpNext();
+    }
+    _autoSkipRecap(v);
   }
 
   void _learnBitrate(Duration newEnd) {
@@ -1048,8 +1082,13 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     final choice = await pickOption<String>(context, 'Player', [
       if (vs.length > 1) ('quality', 'Quality · $_qualityLabel${AppSettings.dataSaver ? ' (data saver)' : ''}'),
       ('speed', 'Speed · ${speed == 1 ? 'normal' : '${speed}x'}'),
+      ('sleep', 'Sleep timer · $_sleepLabel'),
+      if (_aired > widget.epNum)
+        ('autonext', 'Auto-play next · ${AppSettings.autoNextFor(widget.animeId) ? 'on' : 'off'} (this show)'),
       if (tracks.isNotEmpty) ('subs', 'Subtitles · ${_captionsOn ? (tracks.where((t) => t['url'] == _trackUrl).firstOrNull?['label'] ?? 'on') : 'off'}'),
       ('size', 'Subtitle size · ${AppSettings.subSize.toUpperCase()}'),
+      if (tracks.isNotEmpty)
+        ('subtiming', 'Subtitle timing · ${_subOffset == Duration.zero ? 'as is' : '${_subOffset.isNegative ? '' : '+'}${_subOffset.inMilliseconds / 1000}s'}'),
       if (!_offline && (saved == null || saved.status == 'failed')) ('download', 'Download this episode'),
       if (_party == null) ('party', 'Start a watch party') else ('invite', 'Party ${_party!.code} · copy invite'),
       if (_party == null) ('join', 'Join a party by code'),
@@ -1076,6 +1115,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
         ], speed);
         if (pick == null) return;
         await AppSettings.set('speed', pick);
+        await AppSettings.setSpeedFor(widget.animeId, pick);
         await _controller?.setPlaybackSpeed(pick);
       case 'subs':
         final pick = await pickOption<String>(context, 'Subtitles', [
@@ -1092,6 +1132,23 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
             _loadCaptions(c, src, track: tracks.firstWhere((t) => t['url'] == pick));
           }
         }
+      case 'sleep':
+        final pick = await pickOption<int>(context, 'Sleep timer', const [
+          (0, 'Off'), (15, '15 minutes'), (30, '30 minutes'), (45, '45 minutes'), (60, '1 hour'), (-1, 'End of this episode'),
+        ], null);
+        if (pick != null) _setSleep(pick);
+      case 'autonext':
+        await AppSettings.setAutoNextFor(widget.animeId, !AppSettings.autoNextFor(widget.animeId));
+      case 'subtiming':
+        // Earlier (negative) shows the line sooner; for subtitles that lag the voice.
+        final pick = await pickOption<int>(context, 'Subtitle timing', [
+          for (var ms = -3000; ms <= 3000; ms += 500) (ms, ms == 0 ? 'As is' : '${ms > 0 ? '+' : ''}${ms / 1000}s ${ms < 0 ? '(sooner)' : '(later)'}'),
+        ], _subOffset.inMilliseconds);
+        if (pick == null) return;
+        // video_player shows a caption at position + offset: a positive offset
+        // brings lines sooner, so the menu's "later" is the negative one.
+        setState(() => _subOffset = Duration(milliseconds: pick));
+        _controller?.setCaptionOffset(Duration(milliseconds: -pick));
       case 'size':
         final pick = await pickOption<String>(context, 'Subtitle size',
             const [('s', 'Small'), ('m', 'Medium'), ('l', 'Large'), ('xl', 'Extra large')], AppSettings.subSize);
@@ -1171,6 +1228,11 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     if (!mounted || device == _castTo) return;
     setState(() => _castTo = device);
     if (device == null) return;
+    _castCurrent();
+  }
+
+  /// Sends what is open here to the TV, from where it is.
+  void _castCurrent() {
     final c = _controller;
     final src = _sources.isEmpty ? null : _sources[_sourceIndex];
     final url = src?['url']?.toString() ?? '';
@@ -1186,6 +1248,26 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
         subtitles: _captionsOn ? _trackUrl : null,
         hls: src?['isM3U8'] == true || url.contains('m3u8'));
     Sfx.play('select');
+  }
+
+  /// The episode on the TV ended: on to the next one there, if this show auto-plays.
+  void _onCastFinished() {
+    if (!mounted || _castTo == null) return;
+    if (_aired > widget.epNum && AppSettings.autoNextFor(widget.animeId)) {
+      pixelToast(context, 'Episode ${widget.epNum + 1} is next on $_castTo.');
+      _goEpisode(widget.epNum + 1);
+    }
+  }
+
+  /// A skip offered on the casting screen: the range the TV is inside, if any.
+  (String, int)? _castSkip(int positionMs) {
+    final pos = positionMs ~/ 1000;
+    for (final (label, r) in [('Skip recap', _recap), ('Skip intro', _intro), ('Skip outro', _outro)]) {
+      if (r != null && pos >= ((r['start'] as num?) ?? 0) && pos < ((r['end'] as num?) ?? 0) - 1) {
+        return (label, (r['end'] as num).toInt() * 1000);
+      }
+    }
+    return null;
   }
 
   /// Back on the phone: carry on from where the TV got to.
@@ -1272,6 +1354,47 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
         _goEpisode(widget.epNum + 1);
       }
     });
+  }
+
+  void _autoSkipRecap(VideoPlayerValue v) {
+    final r = _recap;
+    if (r == null || _recapSkipped || !AppSettings.skipRecap) return;
+    final pos = v.position.inSeconds;
+    if (pos < ((r['start'] as num?) ?? 0) || pos >= ((r['end'] as num?) ?? 0) - 1) return;
+    _recapSkipped = true;
+    _controller?.seekTo(Duration(seconds: (r['end'] as num).toInt()));
+    pixelToast(context, 'Skipped the recap.');
+  }
+
+  // --- sleep timer -------------------------------------------------------------------
+
+  void _setSleep(int minutes) {
+    _cancelSleep();
+    if (minutes < 0) {
+      _sleepAtEnd = true;
+    } else if (minutes > 0) {
+      _sleepAt = DateTime.now().add(Duration(minutes: minutes));
+      _sleepTimer = Timer(Duration(minutes: minutes), () {
+        _controller?.pause();
+        _cancelSleep();
+        if (mounted) pixelToast(context, 'Sleep timer: paused.');
+      });
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _cancelSleep() {
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepAt = null;
+    _sleepAtEnd = false;
+  }
+
+  String get _sleepLabel {
+    if (_sleepAtEnd) return 'end of episode';
+    final at = _sleepAt;
+    if (at == null) return 'off';
+    return 'in ${math.max(1, at.difference(DateTime.now()).inMinutes)} min';
   }
 
   void _cancelUpNext() {
@@ -1448,7 +1571,11 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     if (NativeBridge.onMedia == _onMedia) NativeBridge.onMedia = null;
     NativeBridge.mediaSession(false);
     NativeBridge.castDevice.removeListener(_onCast);
+    // The full-screen brightness swipe only lasts while the player is open.
+    NativeBridge.setBrightness(null);
+    _cancelSleep();
     if (NativeBridge.onCastEnded == _onCastEnded) NativeBridge.onCastEnded = null;
+    if (NativeBridge.onCastFinished == _onCastFinished) NativeBridge.onCastFinished = null;
     _skipTimer?.cancel();
     _generation++;
     WidgetsBinding.instance.removeObserver(this);
@@ -1575,6 +1702,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
               : '${widget.title} · EP ${widget.epNum}',
           intro: _intro,
           outro: _outro,
+          recap: _recap,
           category: category,
           onToggleCategory: _toggleCategory,
           captionsOn: _hasCaptions ? _captionsOn : null,
@@ -1600,9 +1728,43 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
                   Text('CASTING TO ${_castTo!.toUpperCase()}',
                       textAlign: TextAlign.center,
                       style: PxFont.label(fullscreen ? 11 : 9, color: Px.gold).copyWith(shadows: PxFont.outline(1.2))),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 10),
+                  ValueListenableBuilder<(int, int, bool)>(
+                    valueListenable: NativeBridge.castProgress,
+                    builder: (context, p, _) {
+                      final (pos, dur, playing) = p;
+                      final skip = _castSkip(pos);
+                      String t(int ms) => '${ms ~/ 60000}:${((ms ~/ 1000) % 60).toString().padLeft(2, '0')}';
+                      return Column(mainAxisSize: MainAxisSize.min, children: [
+                        if (dur > 0) Text('${t(pos)} / ${t(dur)}', style: PxFont.label(8, color: Px.bone)),
+                        const SizedBox(height: 10),
+                        Row(mainAxisSize: MainAxisSize.min, children: [
+                          PixelButton(
+                            label: playing ? 'Pause' : 'Play',
+                            icon: playing ? Sprites.pause : Sprites.play,
+                            fontSize: 8,
+                            onPressed: NativeBridge.castPlayPause,
+                          ),
+                          if (skip != null) ...[
+                            const SizedBox(width: 10),
+                            PixelButton(
+                              label: skip.$1,
+                              icon: Sprites.forward,
+                              kind: PixelButtonKind.bone,
+                              fontSize: 8,
+                              onPressed: () {
+                                Sfx.play('skip');
+                                NativeBridge.castSeek(skip.$2);
+                              },
+                            ),
+                          ],
+                        ]),
+                      ]);
+                    },
+                  ),
+                  const SizedBox(height: 10),
                   Row(mainAxisSize: MainAxisSize.min, children: [
-                    PixelButton(label: 'Controls', fontSize: 8, onPressed: NativeBridge.castPick),
+                    PixelButton(label: 'Controls', kind: PixelButtonKind.dark, fontSize: 8, onPressed: NativeBridge.castPick),
                     const SizedBox(width: 12),
                     PixelButton(
                         label: 'Stop casting', kind: PixelButtonKind.dark, fontSize: 8, onPressed: NativeBridge.castStop),
@@ -1824,6 +1986,14 @@ class _Captions extends StatelessWidget {
   /// Subtitle size from Settings.
   static double get _scale => switch (AppSettings.subSize) { 's' => 0.8, 'l' => 1.25, 'xl' => 1.5, _ => 1.0 };
 
+  /// Subtitle colour from Settings.
+  static Color get _color => switch (AppSettings.subColor) {
+        'yellow' => const Color(0xFFFFE14D),
+        'cyan' => const Color(0xFF5EE7FF),
+        'green' => const Color(0xFF7CFF6B),
+        _ => Px.bone,
+      };
+
   @override
   Widget build(BuildContext context) {
     // The bottom bar is a seek track plus a row of buttons: 92dp tall in
@@ -1844,7 +2014,7 @@ class _Captions extends StatelessWidget {
               child: Text(
                 text,
                 textAlign: TextAlign.center,
-                style: PxFont.text((fullscreen ? 17 : 12) * _scale, color: Px.bone, height: 1.25)
+                style: PxFont.text((fullscreen ? 17 : 12) * _scale, color: _color, height: 1.25)
                     .copyWith(shadows: PxFont.outline(1.2)),
               ),
             ),
