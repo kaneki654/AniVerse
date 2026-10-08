@@ -316,9 +316,12 @@ class _PixelButtonState extends State<PixelButton> {
     );
 
     return Semantics(
+      container: true, // its own node: a screen reader can focus and press it
       button: true,
       enabled: _enabled,
       label: widget.label,
+      // The gesture below is hidden from screen readers, so the tap is offered here.
+      onTap: _enabled ? widget.onPressed : null,
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -387,8 +390,10 @@ class _PixelIconButtonState extends State<PixelIconButton> {
   Widget _faceBuild(BuildContext context) {
     final icon = PixelSprite(widget.sprite, scale: widget.scale, color: widget.color);
     return Semantics(
+      container: true, // its own node: a screen reader can focus and press it
       button: true,
       label: widget.tooltip,
+      onTap: widget.onPressed,
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,

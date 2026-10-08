@@ -697,6 +697,9 @@ class _ShareCardDialogState extends State<_ShareCardDialog> {
         ]);
     return Dialog(
       backgroundColor: Colors.transparent,
+      // No dialog frame: the card has its own, and the buttons sit outside it.
+      shape: const RoundedRectangleBorder(),
+      elevation: 0,
       insetPadding: const EdgeInsets.all(20),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         RepaintBoundary(

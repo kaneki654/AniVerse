@@ -527,8 +527,10 @@ class _PlayButtonState extends State<_PlayButton> {
 
   Widget _faceBuild(BuildContext context) {
     return Semantics(
+      container: true, // its own node: a screen reader can focus and press it
       button: true,
       label: widget.playing ? 'Pause' : 'Play',
+      onTap: widget.onTap,
       excludeSemantics: true,
       child: GestureDetector(
         onTapDown: (_) => setState(() => _down = true),
@@ -573,8 +575,10 @@ class _SkipTen extends StatelessWidget {
 
   Widget _faceBuild(BuildContext context) {
     return Semantics(
+      container: true, // its own node: a screen reader can focus and press it
       button: true,
       label: sprite == Sprites.rewind ? 'Back $seconds seconds' : 'Forward $seconds seconds',
+      onTap: onTap,
       excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,
@@ -612,8 +616,10 @@ class _CaptionsToggle extends StatelessWidget {
 
   Widget _faceBuild(BuildContext context) {
     return Semantics(
+      container: true, // its own node: a screen reader can focus and press it
       button: true,
       label: 'Subtitles ${on ? 'on' : 'off'}. Tap to turn ${on ? 'off' : 'on'}',
+      onTap: onTap,
       excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,
@@ -641,8 +647,10 @@ class _AudioToggle extends StatelessWidget {
 
   Widget _faceBuild(BuildContext context) {
     return Semantics(
+      container: true, // its own node: a screen reader can focus and press it
       button: true,
       label: 'Audio: ${category == 'sub' ? 'subtitles' : 'dub'}. Tap to switch',
+      onTap: onTap,
       excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,

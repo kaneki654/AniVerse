@@ -153,6 +153,7 @@ class _PressableScaleState extends State<PressableScale> {
 
   Widget _faceBuild(BuildContext context) {
     return Semantics(
+      container: true, // its own node: a screen reader can focus and press it
       button: true,
       child: GestureDetector(
         onTapDown: (_) => setState(() => _down = true),

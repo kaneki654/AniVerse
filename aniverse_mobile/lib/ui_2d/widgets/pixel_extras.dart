@@ -70,9 +70,11 @@ class PixelSwitch extends StatelessWidget {
 
   Widget _faceBuild(BuildContext context) {
     return Semantics(
+      container: true, // its own node: a screen reader can focus and press it
       toggled: value,
       label: label,
       button: true,
+      onTap: () => onChanged(!value),
       excludeSemantics: true,
       child: GestureDetector(
         onTap: () {
@@ -154,8 +156,10 @@ class ChoiceChipButton extends StatelessWidget {
 
   Widget _faceBuild(BuildContext context) {
     return Semantics(
+      container: true, // its own node: a screen reader can focus and press it
       button: true,
       label: label,
+      onTap: onTap,
       excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,
@@ -290,6 +294,7 @@ class _BossFightState extends State<BossFight> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Semantics(
+          container: true, // its own node: a screen reader can focus and press it
           button: true,
           label: 'Hit the glitch ($hp hits left) to retry',
           child: GestureDetector(
