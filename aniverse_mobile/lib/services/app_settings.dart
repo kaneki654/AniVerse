@@ -138,6 +138,11 @@ class AppSettings {
   static bool autoNextFor(String anime) => _map('av.showAutoNext')[anime] != false;
   static Future<void> setAutoNextFor(String anime, bool on) => _setIn('showAutoNext', anime, on ? null : false);
 
+  /// Watching this show in its official Tagalog dub: Continue Watching and the
+  /// episode list open the Tagalog player until SUB / DUB is picked again.
+  static bool tagalogFor(String anime) => _map('av.showAudio')[anime] == 'tl';
+  static Future<void> setTagalogFor(String anime, bool on) => _setIn('showAudio', anime, on ? 'tl' : null);
+
   /// Shows on My List whose new-episode alerts are muted (read by AlertCheck.kt).
   static bool alertsFor(String anime) => !_list('av.alertsMuted').contains(anime);
   static Future<void> setAlertsFor(String anime, bool on) async {

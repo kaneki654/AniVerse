@@ -252,4 +252,13 @@ function renderActions(el, a, aired, resume) {
     el.append(h("a.px-btn.px-box.bevel", { href: `/watch/${a.id}/1` }, sprite("play", 1.6), "Watch EP 1"));
   }
   el.append(followButton(a, aired), h("a.px-btn.dark.px-box.bevel", { href: "#episodes" }, "Episodes"));
+  // An official Tagalog dub, from the licensee's YouTube channel.
+  api.tagalog(a.id).then((t) => {
+    if (!t || !el.isConnected) return;
+    const eps = Object.keys(t.episodes).map(Number).sort((x, y) => x - y);
+    const target = resume && t.episodes[resume.ep] ? resume.ep : eps[0];
+    el.append(h("a.px-btn.px-box.bevel", { href: `/watch/${a.id}/${target}?audio=tl`,
+      title: `Official Tagalog dub from ${t.channel} on YouTube (Philippines only)` },
+      sprite("play", 1.6), `Tagalog dub · ${eps.length} EP${eps.length === 1 ? "" : "S"}`));
+  });
 }

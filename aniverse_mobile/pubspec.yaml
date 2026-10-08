@@ -1,7 +1,7 @@
 name: aniverse_mobile
 description: A new Flutter project.
 publish_to: 'none'
-version: 1.11.0+23
+version: 1.12.0+24
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -19,6 +19,8 @@ dependencies:
   shimmer: ^4.0.0
   url_launcher: ^6.2.1
   google_sign_in: ^7.2.0
+  webview_flutter: ^4.14.1
+  webview_flutter_android: ^4.14.1
 
 dev_dependencies:
   # A fake video player for the player-controls tests.

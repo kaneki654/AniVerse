@@ -12,6 +12,22 @@ const SECTIONS = [["Trending Now", "trending"], ["Popular", "popular"], ["Latest
 // History is local, so it shows while the server answers.
 root.append(continueWatching());
 
+/** Official Tagalog dubs (Muse PH and Ani-One PH on YouTube), after Trending. */
+function tagalogShelf() {
+  api.tagalogAll().then(({ media }) => {
+    const shows = (media || []).filter((m) => m.title);
+    if (!shows.length) return;
+    const section = h("section.section", null, sectionHead("Tagalog Dub"),
+      shelf(shows.map((m) => {
+        const card = posterCard(m);
+        card.querySelector(".badge")?.remove();
+        card.querySelector(".frame")?.append(h("span.badge", null, "TAGALOG"));
+        return card;
+      })));
+    (shelves[0]?.isConnected ? shelves[0] : root.lastChild).after(section);
+  });
+}
+
 /** Up to two shelves of recommendations, for the shows watched most recently. */
 function becauseYouWatched(anchor) {
   const recent = history.latestPerAnime().slice(0, 2);
@@ -41,6 +57,7 @@ api.home().then((data) => {
   const spotlight = heroSpotlight(data.trending.length ? data.trending : data.popular);
   hero.replaceWith(spotlight);
   becauseYouWatched(spotlight);
+  tagalogShelf();
   SECTIONS.forEach(([title, key], i) => {
     const items = data[key];
     if (!items.length) { shelves[i].remove(); return; }

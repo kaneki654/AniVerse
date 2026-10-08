@@ -153,6 +153,15 @@ void main() {
       expect(AppSettings.alertsFor('1'), isTrue);
     });
 
+    test('watching in Tagalog is remembered per show until Sub / Dub is picked', () async {
+      expect(AppSettings.tagalogFor('140960'), isFalse);
+      await AppSettings.setTagalogFor('140960', true);
+      expect(AppSettings.tagalogFor('140960'), isTrue);
+      expect(AppSettings.tagalogFor('171018'), isFalse);
+      await AppSettings.setTagalogFor('140960', false);
+      expect(AppSettings.tagalogFor('140960'), isFalse);
+    });
+
     test('recent searches: newest first, no repeats, at most ten', () async {
       for (var i = 0; i < 12; i++) {
         await AppSettings.addRecentSearch('show $i');

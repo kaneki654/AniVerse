@@ -25,6 +25,7 @@ import '../widgets/aniverse_logo.dart';
 import '../widgets/buffer_overlay.dart';
 import '../widgets/pixel_extras.dart';
 import '../widgets/player_controls.dart';
+import 'tagalog_watch_screen.dart';
 
 class WatchScreen extends StatefulWidget {
   final String animeId;
@@ -210,6 +211,10 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
   bool _startedOnce = false;
   bool _pipSupported = false;
 
+  /// The official Tagalog dub of this anime, if there is one (app/tagalog.py).
+  Map<String, dynamic>? _tagalog;
+  bool get _tagalogHere => (_tagalog?['episodes'] as Map?)?.containsKey('${widget.epNum}') ?? false;
+
   /// Chromecast: whether this device can cast, and the TV it is casting to.
   bool _castAvailable = false;
   String? _castTo;
@@ -250,6 +255,9 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     });
     NativeBridge.inPip.addListener(_onPip);
     NativeBridge.onMedia = _onMedia;
+    ApiService.tagalog(widget.animeId).then((t) {
+      if (mounted && t != null) setState(() => _tagalog = t);
+    });
     NativeBridge.castAvailable().then((v) {
       if (mounted) setState(() => _castAvailable = v);
     });
@@ -271,7 +279,24 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     _speed.start();
     _watchdog = Timer.periodic(const Duration(seconds: 1), (_) => _checkHealth());
     _historyTimer = Timer.periodic(const Duration(seconds: 10), (_) => _saveProgress());
-    _resolve();
+    // Watching this show in Tagalog: straight to the Tagalog player when this
+    // episode is dubbed, without starting a stream here first.
+    if (AppSettings.tagalogFor(widget.animeId)) {
+      ApiService.tagalog(widget.animeId).then((t) {
+        if (!mounted) return;
+        if (t != null && (t['episodes'] as Map?)?.containsKey('${widget.epNum}') == true && _party == null) {
+          Navigator.of(context).pushReplacement(FadeScaleRoute(
+            backdrop: false,
+            page: TagalogWatchScreen(
+                animeId: widget.animeId, epNum: widget.epNum, dub: t, title: widget.title, cover: widget.cover),
+          ));
+        } else {
+          _resolve();
+        }
+      });
+    } else {
+      _resolve();
+    }
   }
 
   // --- finding and opening a stream -----------------------------------------------
@@ -1083,6 +1108,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     final choice = await pickOption<String>(context, 'Player', [
       if (vs.length > 1) ('quality', 'Quality · $_qualityLabel${AppSettings.dataSaver ? ' (data saver)' : ''}'),
       ('speed', 'Speed · ${speed == 1 ? 'normal' : '${speed}x'}'),
+      if (_tagalogHere && _party == null) ('tagalog', 'Tagalog dub (official, on YouTube)'),
       ('sleep', 'Sleep timer · $_sleepLabel'),
       if (_aired > widget.epNum)
         ('autonext', 'Auto-play next · ${AppSettings.autoNextFor(widget.animeId) ? 'on' : 'off'} (this show)'),
@@ -1133,6 +1159,13 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
             _loadCaptions(c, src, track: tracks.firstWhere((t) => t['url'] == pick));
           }
         }
+      case 'tagalog':
+        _saveProgress();
+        Navigator.of(context).pushReplacement(FadeScaleRoute(
+          backdrop: false,
+          page: TagalogWatchScreen(
+              animeId: widget.animeId, epNum: widget.epNum, dub: _tagalog!, title: widget.title, cover: widget.cover),
+        ));
       case 'sleep':
         final pick = await pickOption<int>(context, 'Sleep timer', const [
           (0, 'Off'), (15, '15 minutes'), (30, '30 minutes'), (45, '45 minutes'), (60, '1 hour'), (-1, 'End of this episode'),

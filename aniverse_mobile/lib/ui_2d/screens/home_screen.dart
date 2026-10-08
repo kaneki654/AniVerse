@@ -202,6 +202,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const _BecauseYouWatched(),
                 const SizedBox(height: 24),
                 _buildSection('Trending Now', homeData!['trending']),
+                const _TagalogRow(),
                 const SizedBox(height: 24),
                 _buildSection('Popular', homeData!['popular']),
                 const SizedBox(height: 24),
@@ -348,5 +349,35 @@ class _BecauseYouWatchedState extends State<_BecauseYouWatched> {
         PosterRow(title: 'Because you watched $title', animes: recs),
       ],
     ]);
+  }
+}
+
+
+/// Official Tagalog dubs (Muse Philippines and Ani-One Philippines on YouTube).
+class _TagalogRow extends StatefulWidget {
+  const _TagalogRow();
+
+  @override
+  State<_TagalogRow> createState() => _TagalogRowState();
+}
+
+class _TagalogRowState extends State<_TagalogRow> {
+  List<Map<String, dynamic>> _shows = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    ApiService.tagalogShows().then((s) {
+      if (mounted) setState(() => _shows = s);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_shows.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: PosterRow(title: 'Tagalog Dub', animes: _shows),
+    );
   }
 }

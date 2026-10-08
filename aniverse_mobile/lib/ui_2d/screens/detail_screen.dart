@@ -16,6 +16,7 @@ import '../widgets/aniverse_logo.dart';
 import '../widgets/continue_watching.dart';
 import '../widgets/pixel_extras.dart';
 import '../widgets/poster_card.dart';
+import 'tagalog_watch_screen.dart';
 import 'watch_screen.dart';
 
 class DetailScreen extends StatefulWidget {
@@ -36,6 +37,9 @@ class _DetailScreenState extends State<DetailScreen> {
   Map<int, Map<String, dynamic>> _epInfo = const {};
   bool _listView = AppSettings.epView == 'list';
 
+  /// The official Tagalog dub, when this anime has one (app/tagalog.py).
+  Map<String, dynamic>? _tagalog;
+
   /// Collapsed height of the header, measured from the top of the screen.
   static const double _expandedHeight = 330;
 
@@ -43,6 +47,9 @@ class _DetailScreenState extends State<DetailScreen> {
   void initState() {
     super.initState();
     _loadDetails();
+    ApiService.tagalog(widget.id).then((t) {
+      if (mounted && t != null) setState(() => _tagalog = t);
+    });
   }
 
   Future<void> _loadDetails() async {
@@ -96,6 +103,30 @@ class _DetailScreenState extends State<DetailScreen> {
     final n = DownloadService.enqueueSeason(animeId: widget.id, aired: aired, title: _title, cover: _cover ?? '');
     Sfx.play('select');
     pixelToast(context, '$n episode${n == 1 ? '' : 's'} queued. ${AppSettings.wifiOnly ? 'They download on Wi-Fi. ' : ''}They will be under Saved.');
+  }
+
+  /// Watch the official Tagalog dub: from the episode last watched if it is
+  /// dubbed, else the first dubbed one.
+  Widget _tagalogButton() {
+    final dub = _tagalog!;
+    final eps = (dub['episodes'] as Map).keys.map((k) => int.parse('$k')).toList()..sort();
+    final last = HistoryService.episodesOf(widget.id).keys.fold<int>(0, (m, n) => n > m ? n : m);
+    final start = eps.contains(last) ? last : eps.first;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: PixelButton(
+        label: 'Tagalog dub · ${eps.length} EP${eps.length == 1 ? '' : 'S'}',
+        icon: Sprites.play,
+        fontSize: 8,
+        onPressed: () => Navigator.push(
+          context,
+          FadeScaleRoute(
+            backdrop: false,
+            page: TagalogWatchScreen(animeId: widget.id, epNum: start, dub: dub, title: _title, cover: _cover),
+          ),
+        ),
+      ),
+    );
   }
 
   void _openEpisode(int number) {
@@ -254,6 +285,7 @@ class _DetailScreenState extends State<DetailScreen> {
                       );
                     },
                   ),
+                  if (_tagalog != null) _tagalogButton(),
                   if (released)
                     _ResumeBanner(
                       animeId: widget.id,

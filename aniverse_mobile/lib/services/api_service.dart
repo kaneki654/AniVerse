@@ -355,6 +355,35 @@ class ApiService {
     }
   }
 
+  // --- official Tagalog dubs (app/tagalog.py on the web server) --------------------------
+
+  static List<Map<String, dynamic>>? _tagalogShows;
+  static final Map<String, Map<String, dynamic>?> _tagalogFor = {};
+
+  /// Anime with an official Tagalog dub, as poster data (cached for the run).
+  static Future<List<Map<String, dynamic>>> tagalogShows() async {
+    final cached = _tagalogShows;
+    if (cached != null) return cached;
+    try {
+      final body = await _getJson('$webUrl/api/tagalog');
+      final media = body is Map ? (body['media'] as List? ?? const []) : const [];
+      return _tagalogShows = [for (final m in media) if (m is Map && m['title'] != null) Map<String, dynamic>.from(m)];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// {channel, region, episodes: {"1": youtube id}} for one anime, or null.
+  static Future<Map<String, dynamic>?> tagalog(String id) async {
+    if (_tagalogFor.containsKey(id)) return _tagalogFor[id];
+    try {
+      final body = await _getJson('$webUrl/api/tagalog/${Uri.encodeComponent(id)}');
+      return _tagalogFor[id] = body is Map ? Map<String, dynamic>.from(body) : null;
+    } catch (_) {
+      return null; // 404: no dub. Not cached, so a failed lookup is tried again.
+    }
+  }
+
   /// Per-episode titles, synopses, screenshots and air dates, or [].
   static Future<List<Map<String, dynamic>>> episodes(String id) async {
     try {

@@ -23,13 +23,16 @@ from app import accounts, proxy_hosts
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     # New-episode alerts for the website, sent while it is closed (app/webpush.py).
-    from app import ops as server_ops, webpush as push
+    from app import ops as server_ops, tagalog as tagalog_dubs, webpush as push
     checker = asyncio.create_task(push.checker_loop())
     # Free disk space, logged while it runs low (app/ops.py).
     disk_watch = asyncio.create_task(server_ops.watch_disk())
+    # New weekly Tagalog-dub episodes, from the licensees' RSS feeds (app/tagalog.py).
+    tagalog_watch = asyncio.create_task(tagalog_dubs.refresh_loop())
     yield
     checker.cancel()
     disk_watch.cancel()
+    tagalog_watch.cancel()
 
 
 app = FastAPI(lifespan=_lifespan)
@@ -72,7 +75,7 @@ app.add_middleware(_ProxyCors)
 # Sign-in and per-account watch history for the mobile app.
 app.include_router(accounts.router)
 # AniList/MyAnimeList list tracking, and watch parties.
-from app import ops, party, reports, tracking, webpush  # noqa: E402
+from app import ops, party, reports, tagalog, tracking, webpush  # noqa: E402
 app.include_router(tracking.router)
 app.include_router(party.router)
 app.include_router(webpush.router)
@@ -80,6 +83,8 @@ app.include_router(webpush.router)
 # a save that fails because the disk is full answers 507 with a readable message.
 app.include_router(ops.router)
 ops.install(app)
+# Official Tagalog dubs (the licensees' YouTube channels), and their player page.
+app.include_router(tagalog.router)
 
 
 # The website's look. "pixel" (the default) is the 2D pixel-art UI that matches
