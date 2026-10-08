@@ -263,6 +263,30 @@ class DownloadService {
 
   static Timer? _wifiTimer;
 
+  // --- checks while a download runs ---------------------------------------------------
+
+  static DateTime _netCheckedAt = DateTime(2000);
+  static bool _metered = false;
+
+  /// Mid-download, at most every 15 s: still on a network downloads may use?
+  /// On mobile data with Wi-Fi only on, the episode stops and waits for Wi-Fi.
+  static Future<void> _checkNetwork() async {
+    if (!AppSettings.wifiOnly) return;
+    if (DateTime.now().difference(_netCheckedAt).inSeconds >= 15) {
+      _netCheckedAt = DateTime.now();
+      _metered = await NativeBridge.isMetered();
+    }
+    if (_metered) throw _WaitForWifi();
+  }
+
+  static Future<void> _checkLimit() async {
+    final limit = _limitBytes;
+    if (limit != null && await totalBytes() > limit) {
+      throw StateError('The storage limit (${AppSettings.downloadLimitGb.toStringAsFixed(0)} GB) filled up '
+          'part way through. Delete some episodes, or raise the limit in Settings.');
+    }
+  }
+
   static Future<void> _pump() async {
     if (_running) return;
     _running = true;
@@ -396,11 +420,18 @@ class DownloadService {
           _changed(item);
           return;
         } catch (e) {
+          if (e is _WaitForWifi) rethrow; // not this source's fault: try again on Wi-Fi
           lastError = e;
           debugPrint('download from ${src['serverName']} failed: $e');
         }
       }
       throw lastError ?? StateError('No stream would download.');
+    } on _WaitForWifi {
+      // Off Wi-Fi part way: pick it up again (what is saved is kept) on Wi-Fi.
+      item.status = 'waiting';
+      _changed(item);
+      _wifiTimer?.cancel();
+      _wifiTimer = Timer(const Duration(seconds: 30), resume);
     } catch (e) {
       if (_cancelled.contains(item.key)) return;
       item
@@ -464,12 +495,14 @@ class DownloadService {
     // server or quality, numbered differently -- mixing the two makes a broken
     // video. The local playlist (durations and file names, no expiring links)
     // tells them apart.
+    // With the stream's host: two providers can cut an episode the same way.
+    final marker = '${Uri.parse(playlistUrl).host}\n$local';
     final partial = File('${dir.path}/partial.m3u8');
-    if (!await partial.exists() || await partial.readAsString() != local) {
+    if (!await partial.exists() || await partial.readAsString() != marker) {
       for (final (_, f) in jobs) {
         if (await f.exists()) await f.delete();
       }
-      await partial.writeAsString(local);
+      await partial.writeAsString(marker);
     }
 
     var doneCount = 0;
@@ -484,11 +517,8 @@ class DownloadService {
           await _fetchTo(u, f);
         }
         item.bytes += await f.length();
-        final limit = _limitBytes;
-        if (limit != null && await totalBytes() > limit) {
-          throw StateError('The storage limit (${AppSettings.downloadLimitGb.toStringAsFixed(0)} GB) filled up '
-              'part way through. Delete some episodes, or raise the limit in Settings.');
-        }
+        await _checkLimit();
+        await _checkNetwork();
         doneCount++;
         item.progress = doneCount / jobs.length;
         if (doneCount % 4 == 0 || doneCount == jobs.length) _changed(item);
@@ -566,10 +596,21 @@ class DownloadService {
           throw StateError('Cancelled');
         }
         sink.add(chunk);
+        final before = got;
         got += chunk.length;
         item.bytes = got;
         if (total > 0) item.progress = got / total;
         _changed(item);
+        // Every 4 MB: the storage limit, and still on Wi-Fi if it must be.
+        if (before ~/ (4 << 20) != got ~/ (4 << 20)) {
+          try {
+            await _checkLimit();
+            await _checkNetwork();
+          } catch (_) {
+            await sink.close();
+            rethrow;
+          }
+        }
       }
       await sink.close();
       await File('${f.path}.part').rename(f.path);
@@ -593,3 +634,6 @@ class DownloadService {
     item.hasSubs = true;
   }
 }
+
+/// Thrown mid-download when Wi-Fi went away and Wi-Fi only is on.
+class _WaitForWifi implements Exception {}

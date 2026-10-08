@@ -7,6 +7,7 @@ import { api, auth, history } from "./api.js";
 import { BADGES, stats, level, unlocked } from "./achievements.js";
 import { sfx } from "./sfx.js";
 import { initShell, sectionHead } from "./ui.js";
+import { push } from "./push.js";
 
 initShell();
 const root = document.getElementById("account");
@@ -248,7 +249,7 @@ function profile(user) {
       h("div.actions", null,
         h("a.px-btn.dark.px-box.bevel", { href: "/history" }, sprite("clock", 1.6), "History"),
         h("a.px-btn.dark.px-box.bevel", { href: "/settings" }, sprite("gear", 1.6), "Settings"),
-        h("button.px-btn.px-box.bevel", { type: "button", onclick: async () => { await history.sync(); await auth.logout(); render(); } }, sprite("logout", 1.6), "Sign out"))));
+        h("button.px-btn.px-box.bevel", { type: "button", onclick: async () => { await history.sync(); await auth.logout(); push.sync(); render(); } }, sprite("logout", 1.6), "Sign out"))));
   tracking(track);
 }
 

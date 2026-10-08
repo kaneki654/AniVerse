@@ -22,12 +22,20 @@ class PixelBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final still = (MediaQuery.maybeDisableAnimationsOf(context) ?? false) || fxLevel == FxLevel.off;
     return Stack(
       fit: StackFit.expand,
       children: [
         ColoredBox(color: Px.ink),
-        if (!still) const Positioned.fill(child: IgnorePointer(child: RepaintBoundary(child: EmberField()))),
+        // Follows Settings > Effects as it changes, without a rebuild of the app.
+        ValueListenableBuilder<FxLevel>(
+          valueListenable: fxLevelChanged,
+          builder: (context, level, _) {
+            final still = (MediaQuery.maybeDisableAnimationsOf(context) ?? false) || level == FxLevel.off;
+            return still
+                ? const SizedBox.shrink()
+                : const Positioned.fill(child: IgnorePointer(child: RepaintBoundary(child: EmberField())));
+          },
+        ),
         const Positioned.fill(
           child: IgnorePointer(child: RepaintBoundary(child: CustomPaint(painter: _ScanlinePainter()))),
         ),

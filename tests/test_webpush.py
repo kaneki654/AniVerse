@@ -53,7 +53,7 @@ class _Isolated(unittest.TestCase):
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
 
-    def subscribe(self, endpoint="https://push.example.net/abc", watch=None, headers=None):
+    def subscribe(self, endpoint="https://fcm.googleapis.com/fcm/send/abc", watch=None, headers=None):
         return self.client.post("/api/push/subscribe", headers=headers or {}, json={
             "subscription": {"endpoint": endpoint, "keys": {"p256dh": RECEIVER_PUBLIC, "auth": AUTH}},
             "watch": watch or [],
@@ -123,8 +123,25 @@ class CheckTest(_Isolated):
             asyncio.run(webpush.check_once(None, sender))  # pyright: ignore[reportArgumentType]
         self.assertEqual(sent[0]["body"], "3 new episodes, up to episode 13")
 
+    def test_signing_out_detaches_the_account(self):
+        r = self.client.post("/api/auth/register", json={"username": "LeaveFan", "password": "test-password-42"})
+        self.subscribe(headers={"Authorization": f"Bearer {r.json()['token']}"})
+        with webpush._conn() as conn:
+            self.assertIsNotNone(conn.execute("SELECT user_id FROM push_subs").fetchone()[0])
+        self.subscribe()  # the same browser, signed out, syncs its own list
+        with webpush._conn() as conn:
+            self.assertIsNone(conn.execute("SELECT user_id FROM push_subs").fetchone()[0])
+
     def test_rejects_non_https_endpoints(self):
         self.assertEqual(self.subscribe(endpoint="http://evil.example/x").status_code, 400)
+        # Only the browsers' push services: anything else would let a caller
+        # aim the server's POSTs (and /test's report of the answer) anywhere.
+        for url in ("https://evil.example/x", "https://127.0.0.1/x", "https://fcm.googleapis.com.evil.example/x",
+                    "https://fcm.googleapis.com:8443/x"):
+            self.assertEqual(self.subscribe(endpoint=url).status_code, 400, url)
+        for url in ("https://updates.push.services.mozilla.com/wpush/v2/x", "https://web.push.apple.com/x",
+                    "https://wns2-par02p.notify.windows.com/w/?token=x"):
+            self.assertEqual(self.subscribe(endpoint=url).status_code, 200, url)
 
 
 if __name__ == "__main__":

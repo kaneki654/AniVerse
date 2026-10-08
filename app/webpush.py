@@ -97,9 +97,10 @@ def vapid_key() -> ec.EllipticCurvePrivateKey:
         path = accounts.DATA_DIR / "vapid.pem"
         try:
             loaded = serialization.load_pem_private_key(path.read_bytes(), password=None)
-            assert isinstance(loaded, ec.EllipticCurvePrivateKey)
+            if not isinstance(loaded, ec.EllipticCurvePrivateKey):
+                raise ValueError("vapid.pem is not an EC key")  # not an assert: python -O drops those
             _vapid = loaded
-        except (OSError, ValueError, AssertionError):
+        except (OSError, ValueError):
             _vapid = ec.generate_private_key(ec.SECP256R1())
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(_vapid.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
@@ -188,9 +189,18 @@ class Endpoint(BaseModel):
     endpoint: str
 
 
+# The browsers' push services. A subscription's endpoint is always on one of
+# these; anything else would have this server POST to an address of the
+# caller's choosing (and report back how it answered) -- not a subscription.
+PUSH_SERVICES = ("fcm.googleapis.com", "push.services.mozilla.com", "notify.windows.com",
+                 "push.apple.com", "web.push.apple.com")
+
+
 def _check_endpoint(url: str) -> None:
-    # Push services are https; anything else is not a subscription.
-    if not url.startswith("https://") or len(url) > 1000:
+    parts = urlparse(url) if len(url) <= 1000 else None
+    host = (parts.hostname or "").lower() if parts else ""
+    if (not parts or parts.scheme != "https" or parts.port not in (None, 443)
+            or not any(host == s or host.endswith("." + s) for s in PUSH_SERVICES)):
         raise HTTPException(status_code=400, detail="Not a push subscription")
 
 
@@ -214,7 +224,9 @@ def subscribe(body: SubscribeBody, authorization: Optional[str] = Header(None)):
         conn.execute(
             "INSERT INTO push_subs (endpoint, p256dh, auth, user_id, watch, created) VALUES (?, ?, ?, ?, ?, ?)"
             " ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth,"
-            " user_id = COALESCE(excluded.user_id, push_subs.user_id), watch = excluded.watch, failures = 0",
+            # Signed out (no account on this request) means no account's list:
+            # alerts follow what this browser sends from then on.
+            " user_id = excluded.user_id, watch = excluded.watch, failures = 0",
             (body.subscription.endpoint, body.subscription.keys.p256dh, body.subscription.keys.auth,
              user_id, watch, int(time.time())),
         )
@@ -231,6 +243,7 @@ def unsubscribe(body: Endpoint):
 @router.post("/test")
 async def test_push(body: Endpoint):
     """A test notification to one subscription, from Settings."""
+    _check_endpoint(body.endpoint)
     with _conn() as conn:
         row = conn.execute("SELECT * FROM push_subs WHERE endpoint = ?", (body.endpoint,)).fetchone()
     if not row:

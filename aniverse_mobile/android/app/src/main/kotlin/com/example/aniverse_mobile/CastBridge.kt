@@ -185,7 +185,11 @@ class CastBridge(private val activity: Activity, private val channel: () -> Meth
             .apply { if (track != null) setActiveTrackIds(longArrayOf(1)) }
             .build()
         lastPosition = 0
-        client.load(request)
+        // The TV can still refuse it (a stream it cannot fetch or decode): say so,
+        // so the phone does not sit paused behind the casting screen.
+        client.load(request).setResultCallback { r ->
+            if (!r.status.isSuccess) channel()?.invokeMethod("castLoadFailed", r.status.statusCode)
+        }
         return true
     }
 

@@ -65,7 +65,10 @@ class AniVerse2DApp extends StatelessWidget {
               // High contrast keeps the backgrounds calm: lite effects at most.
               setFxLevel(contrast && AppSettings.effects == 'full' ? 'lite' : AppSettings.effects);
               final scale = AppSettings.textScale;
-              final look = '$theme/${AppSettings.effects}/$contrast/$scale';
+              // Only a change of colours needs a fresh app (const widgets keep
+              // the colours they were built with), and that loses the open
+              // screens. Effects and text size follow on their own.
+              final look = '$theme/$contrast';
               if (_builtTheme != null && _builtTheme != look) {
                 navigatorKey = GlobalKey<NavigatorState>();
                 messengerKey = GlobalKey<ScaffoldMessengerState>();

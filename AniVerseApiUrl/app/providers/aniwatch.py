@@ -3,7 +3,11 @@ import re
 import httpx
 import urllib.parse
 from typing import Dict, Any, List, Optional
-from selectolax.parser import HTMLParser
+try:
+    # selectolax 1.0 removed the Modest parser; Lexbor (0.3+) is its replacement.
+    from selectolax.lexbor import LexborHTMLParser as HTMLParser
+except ImportError:  # pragma: no cover - selectolax older than 0.3
+    from selectolax.parser import HTMLParser  # type: ignore[assignment]
 
 from .base import BaseProvider
 from ..extractors import megaplay

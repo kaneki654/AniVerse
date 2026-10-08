@@ -26,9 +26,13 @@ STORE = Path(__file__).resolve().parents[2] / "data" / "health.json"
 def save(path: Path = STORE) -> None:
     """Write the last day of events, atomically."""
     cutoff = time.time() - 86400
+    # The scheduler runs this on a worker thread while requests keep appending:
+    # deque.copy() is one step, where iterating the live deque could raise
+    # "deque mutated during iteration".
+    attempts, resolves = _attempts.copy(), _resolves.copy()
     body = {
-        "attempts": [list(a) for a in _attempts if a[0] > cutoff],
-        "resolves": [list(r) for r in _resolves if r[0] > cutoff],
+        "attempts": [list(a) for a in attempts if a[0] > cutoff],
+        "resolves": [list(r) for r in resolves if r[0] > cutoff],
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")

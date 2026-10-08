@@ -256,6 +256,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     NativeBridge.castDevice.addListener(_onCast);
     NativeBridge.onCastEnded = _onCastEnded;
     NativeBridge.onCastFinished = _onCastFinished;
+    NativeBridge.onCastLoadFailed = _castFailed;
     final code = widget.partyCode;
     if (code != null && PartyConnection.validCode(code)) _joinParty(code.toUpperCase());
     WidgetsBinding.instance.addObserver(this);
@@ -1246,8 +1247,20 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
         subtitle: 'Episode ${widget.epNum}${category == 'dub' ? ' (dub)' : ''}',
         position: (c?.value.position ?? _lastGoodPosition).inMilliseconds,
         subtitles: _captionsOn ? _trackUrl : null,
-        hls: src?['isM3U8'] == true || url.contains('m3u8'));
+        hls: src?['isM3U8'] == true || url.contains('m3u8')).then((ok) {
+      if (!ok) _castFailed();
+    });
     Sfx.play('select');
+  }
+
+  /// The TV would not take the stream: stop casting and carry on here, rather
+  /// than sit paused behind the casting screen.
+  void _castFailed() {
+    if (!mounted) return;
+    pixelToast(context, "${_castTo ?? 'The TV'} couldn't play this stream. Playing it here instead.");
+    NativeBridge.castStop();
+    setState(() => _castTo = null);
+    _controller?.play();
   }
 
   /// The episode on the TV ended: on to the next one there, if this show auto-plays.
@@ -1576,6 +1589,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     _cancelSleep();
     if (NativeBridge.onCastEnded == _onCastEnded) NativeBridge.onCastEnded = null;
     if (NativeBridge.onCastFinished == _onCastFinished) NativeBridge.onCastFinished = null;
+    if (NativeBridge.onCastLoadFailed == _castFailed) NativeBridge.onCastLoadFailed = null;
     _skipTimer?.cancel();
     _generation++;
     WidgetsBinding.instance.removeObserver(this);

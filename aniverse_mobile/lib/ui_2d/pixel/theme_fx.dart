@@ -21,12 +21,17 @@ enum FxStyle { blood, neon, sakura, gameboy, samurai }
 /// How much ambient animation the viewer wants (Settings > Effects).
 enum FxLevel { full, lite, off }
 
+/// Told when the effects level changes, so effects already on screen can follow
+/// without the whole app being rebuilt.
+final ValueNotifier<FxLevel> fxLevelChanged = ValueNotifier(FxLevel.full);
+
 FxLevel fxLevel = FxLevel.full;
 
 /// Called when the setting changes (and at start).
 void setFxLevel(String level) {
   fxLevel = switch (level) { 'lite' => FxLevel.lite, 'off' => FxLevel.off, _ => FxLevel.full };
   PixelCanvas.bloomEnabled = fxLevel == FxLevel.full;
+  fxLevelChanged.value = fxLevel;
 }
 
 /// Particle counts are scaled by this: half for Lite.

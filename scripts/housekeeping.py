@@ -43,6 +43,13 @@ def keep_apks() -> int:
         return KEEP_APKS_DEFAULT
 
 
+# The keys the databases need: secret.key decrypts the stored AniList/MAL
+# tokens, vapid.pem signs web push (subscriptions are tied to it), and
+# report_salt keeps stream reports from the same people counted together.
+# A restored database without them is half a backup.
+KEYS = ("secret.key", "vapid.pem", "report_salt")
+
+
 def databases() -> list[Path]:
     return [p for p in [ROOT / "data" / "aniverse.db", *sorted((ROOT / "AniVerseApiUrl" / "data").glob("*.db"))] if p.is_file()]
 
@@ -71,6 +78,17 @@ def backup(dry: bool) -> list[str]:
         done.append(f"remove old backup {old.relative_to(ROOT)}")
         if not dry:
             shutil.rmtree(old, ignore_errors=True)
+    for name in KEYS:
+        key = ROOT / "data" / name
+        if not key.is_file():
+            continue
+        target = day / name
+        done.append(f"backup data/{name} -> {target.relative_to(ROOT)}")
+        if dry:
+            continue
+        day.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(key, target)
+        os.chmod(target, 0o600)  # a key, not a log
     return done
 
 

@@ -99,7 +99,10 @@ function castHere(device) {
     position: video.currentTime || 0,
     subtitles: captionsOn() && currentTrack ? abs(currentTrack.url) : null,
     hls: src.isM3U8 === true || /m3u8/.test(src.url),
-  }).then((ok) => { if (!ok) toast("The TV wouldn't take this stream. Try another server."); });
+  }).then((ok) => {
+    // Refused by the TV: stop casting (which hands playback back to this page).
+    if (!ok) { toast("The TV couldn't play this stream. Playing it here instead."); stopCast(); }
+  });
   castStage = player.casting(device, { onPlayPause: castPlayPause, onStop: stopCast });
   sfx("select");
 }

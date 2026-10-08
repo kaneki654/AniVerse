@@ -32,6 +32,9 @@ class NativeBridge {
   /// The episode on the TV played to its end.
   static void Function()? onCastFinished;
 
+  /// The TV would not play what it was sent.
+  static void Function()? onCastLoadFailed;
+
   static void init() {
     _ch.setMethodCallHandler((call) async {
       switch (call.method) {
@@ -61,6 +64,8 @@ class NativeBridge {
           }
         case 'castFinished':
           onCastFinished?.call();
+        case 'castLoadFailed':
+          onCastLoadFailed?.call();
         case 'openAnime':
           final id = call.arguments?.toString();
           if (id != null && id.isNotEmpty) onOpenAnime?.call(id);
