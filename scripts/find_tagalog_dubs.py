@@ -1,7 +1,7 @@
 """Build app/tagalog_dubs.json: official Tagalog dubs, episode by episode.
 
 The Tagalog dubs come from the Philippine licensees' own YouTube channels
-(Muse Philippines, Ani-One Philippines), free and legal to watch there and
+(Muse Philippines, Ani-One Philippines, Ani-One PH Collection), free and legal to watch there and
 embeddable -- but only in the Philippines, and some (Ani-One's ULTRA) only for
 paying channel members, which are left out. AniVerse plays them in YouTube's
 own embedded player, so the views and the ads stay with the channel.
@@ -10,6 +10,8 @@ Run by hand to (re)build the catalogue:
 
     python scripts/find_tagalog_dubs.py            # writes app/tagalog_dubs.json
     python scripts/find_tagalog_dubs.py --dry-run  # just prints what it found
+    python scripts/find_tagalog_dubs.py --only sentenced_hero,my_hero_academia
+                                                   # redo these shows, keep the rest
 
 It reads the channels' public pages and official RSS feeds. Each episode is
 checked to be watchable (not members-only, not removed) before it is listed.
@@ -33,12 +35,16 @@ OUT = ROOT / "app" / "tagalog_dubs.json"
 CHANNELS = {
     "muse_ph": {"name": "Muse Philippines", "id": "UC6sKhWSlPSWIh6e4ukisDHQ"},
     "anione_ph": {"name": "Ani-One Philippines", "id": "UCZGEjiTMwMv-Mf-t3VLBlJQ"},
+    # Whole seasons as one "full marathon" video each.
+    "anione_ph_collection": {"name": "Ani-One PH Collection", "id": "UCKwe-CrlORY6sF8kLsFB5qw"},
 }
 
 # Each show: where it is, how its episode titles read (group 1 = the channel's
 # episode number; no group = a single video), and which AniList entry covers
 # which of the channel's episode numbers -- the channels number straight
-# through the seasons, AniList splits them.
+# through the seasons, AniList splits them. A show that is only up as marathon
+# videos lists them under "marathons" instead; its episodes are cut from their
+# chapters ("Episode #14" at 00:23:50, ...).
 SHOWS = [
     {
         "key": "spy_family", "title": "SPY x FAMILY", "search": "Spy x Family", "channel": "muse_ph",
@@ -80,6 +86,17 @@ SHOWS = [
         "playlists": ["PLJ6dlV7_7bdUOjaty29yMSaHFCBp_97f5"],
         "queries": ["Gachiakuta TAG Dub", "Gachiakuta Episode TAG Dub"],
         "seasons": [{"anilist": 178025, "first": 1, "last": 24}],
+    },
+    {
+        "key": "sentenced_hero", "title": "Sentenced to Be a Hero", "channel": "anione_ph",
+        "pattern": r"^《Sentenced to Be a Hero》 #(\d+) \(TAG Dub\)",
+        "queries": ["Sentenced to Be a Hero TAG Dub", "《Sentenced to Be a Hero》 TAG Dub Ani-One Philippines"],
+        "seasons": [{"anilist": 167152, "first": 1, "last": 12}],
+    },
+    {
+        "key": "my_hero_academia", "title": "My Hero Academia", "channel": "anione_ph_collection",
+        "marathons": ["c7qks5U3dX0", "qTMlq6PF1pI"],  # Season 1 (Ep 1-13), Season 2 (Ep 14-38)
+        "seasons": [{"anilist": 21459, "first": 1, "last": 13}, {"anilist": 21856, "first": 14, "last": 38}],
     },
 ]
 
@@ -137,11 +154,43 @@ def watchable(video_id: str) -> tuple[bool, str]:
     return status == "OK", reason
 
 
+def chapters(video_id: str) -> dict[int, list[int]]:
+    """A marathon video's episodes: {episode: [start, end]} in seconds, from its chapters."""
+    page = fetch(f"https://www.youtube.com/watch?v={video_id}")
+    marks = [(int(n), int(ms) // 1000) for n, ms in re.findall(
+        r'"chapterRenderer":\{"title":\{"simpleText":"Episode #?(\d+)[^"]*"\},"timeRangeStartMillis":(\d+)', page)]
+    if not marks:  # no chapter bar: the description's "00:23:50 - Episode #15" lines
+        m = re.search(r'"shortDescription":"((?:[^"\\]|\\.)*)"', page)
+        desc = json.loads(f'"{m.group(1)}"') if m else ""
+        for t, n in re.findall(r"^\s*((?:\d+:)?\d+:\d\d)\s*-\s*Episode\s*#?(\d+)", desc, re.M):
+            secs = 0
+            for part in t.split(":"):
+                secs = secs * 60 + int(part)
+            marks.append((int(n), secs))
+    length = re.search(r'"lengthSeconds":"(\d+)"', page)
+    ends = [start for _, start in marks[1:]] + [int(length.group(1)) if length else 0]
+    return {n: [start, end] for (n, start), end in zip(marks, ends) if end > start}
+
+
 def episode_of(show: dict, title: str) -> int | None:
     m = re.search(show["pattern"], title, re.I)
     if not m:
         return None
     return int(m.group(1)) if m.groups() else 1
+
+
+def build_marathons(show: dict, pause: float) -> tuple[dict[str, str], dict[str, list[int]]]:
+    episodes, clips = {}, {}
+    for video in show["marathons"]:
+        ok, reason = watchable(video)
+        time.sleep(pause)
+        if not ok:
+            print(f"    skip {show['key']} marathon {video}: {reason or 'not watchable'}", file=sys.stderr)
+            continue
+        for ep, clip in chapters(video).items():
+            episodes[str(ep)], clips[str(ep)] = video, clip
+        time.sleep(pause)
+    return episodes, clips
 
 
 def build(show: dict, pause: float) -> dict[str, str]:
@@ -192,14 +241,31 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--pause", type=float, default=0.6, help="seconds between requests")
+    ap.add_argument("--only", help="comma-separated show keys to redo; the others are kept as they are")
     args = ap.parse_args()
+    only = set(args.only.split(",")) if args.only else None
+    unknown = (only or set()) - {s["key"] for s in SHOWS}
+    if unknown:
+        ap.error(f"no such show: {', '.join(sorted(unknown))}")
+    kept = {}
+    if only and OUT.exists():
+        kept = {s["key"]: s for s in json.loads(OUT.read_text(encoding="utf-8"))["shows"]}
     shows = []
     for show in SHOWS:
-        episodes = build(show, args.pause)
+        if only and show["key"] not in only and show["key"] in kept:
+            shows.append(kept[show["key"]])
+            continue
+        clips = {}
+        if show.get("marathons"):
+            episodes, clips = build_marathons(show, args.pause)
+        else:
+            episodes = build(show, args.pause)
+        first = min(s["first"] for s in show["seasons"])
         last = max(s["last"] for s in show["seasons"])
-        missing = [e for e in range(1, last + 1) if str(e) not in episodes]
+        missing = [e for e in range(first, last + 1) if str(e) not in episodes]
         print(f"{show['key']:<24} {len(episodes):>3} episodes" + (f"  (missing {missing})" if missing else ""))
-        shows.append({k: show[k] for k in ("key", "title", "channel", "pattern", "seasons")} | {"episodes": episodes})
+        entry = {k: show[k] for k in ("key", "title", "channel", "pattern", "seasons") if k in show}
+        shows.append(entry | {"episodes": episodes} | ({"clips": clips} if clips else {}))
     catalogue = {
         "updated": time.strftime("%Y-%m-%d"),
         "about": "Official Tagalog dubs on the licensees' YouTube channels; built by scripts/find_tagalog_dubs.py.",

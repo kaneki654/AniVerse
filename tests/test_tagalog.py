@@ -70,6 +70,36 @@ class MappingTest(_WithFake):
         self.assertEqual(client.get("/tagalog/185660/9").status_code, 404)  # not dubbed (yet)
 
 
+class MarathonTest(_WithFake):
+    """A season only up as one marathon video: each episode is a clip of it."""
+
+    def setUp(self):
+        super().setUp()
+        cat = json.loads(json.dumps(FAKE))
+        cat["shows"].append({
+            "key": "mha", "title": "My Hero Academia", "channel": "muse_ph",
+            "seasons": [{"anilist": 21459, "first": 1, "last": 2}, {"anilist": 21856, "first": 3, "last": 4}],
+            "episodes": {"1": "marathonS1A", "2": "marathonS1A", "3": "marathonS2B", "4": "marathonS2B"},
+            "clips": {"1": [0, 1470], "2": [1470, 2940], "3": [0, 1430], "4": [1430, 2860]},
+        })
+        (self.dir / "tagalog_dubs.json").write_text(json.dumps(cat))
+        tagalog.reset()
+
+    def test_clips_follow_the_season_mapping(self):
+        s2 = tagalog.for_anime(21856)
+        assert s2 is not None
+        self.assertEqual(s2["episodes"], {"1": "marathonS2B", "2": "marathonS2B"})
+        self.assertEqual(s2["clips"], {"1": [0, 1430], "2": [1430, 2860]})
+        self.assertNotIn("clips", tagalog.for_anime(171018) or {})
+
+    def test_the_page_plays_only_the_episode(self):
+        page = TestClient(app).get("/tagalog/21856/2?start=60").text
+        self.assertIn('videoId: "marathonS2B"', page)
+        self.assertIn("start = 60, base = 1430, end = 2860", page)
+        plain = TestClient(app).get("/tagalog/171018/1").text
+        self.assertIn("base = 0, end = 0", plain)
+
+
 class RefreshTest(_WithFake):
     def feed(self, entries):
         items = "".join(f"<entry><yt:videoId>{v}</yt:videoId><title>{t}</title></entry>" for v, t in entries)
@@ -112,7 +142,11 @@ class CatalogueTest(unittest.TestCase):
         seen_anilist = set()
         for show in cat["shows"]:
             self.assertIn(show["channel"], cat["channels"])
-            re.compile(show["pattern"])
+            if "pattern" in show:
+                re.compile(show["pattern"])
+            for ep, (start, end) in show.get("clips", {}).items():
+                self.assertIn(ep, show["episodes"])
+                self.assertLess(start, end)
             for season in show["seasons"]:
                 self.assertNotIn(season["anilist"], seen_anilist)
                 seen_anilist.add(season["anilist"])

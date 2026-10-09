@@ -11,6 +11,9 @@ nothing is downloaded or proxied.
   per show, the channel's episode videos and which AniList entry covers which
   of the channel's episode numbers (the channels number straight through the
   seasons; AniList splits them).
+- Some dubs are only up as one long "full marathon" video a season. Those
+  episodes are clips of it -- "clips": {episode: [start, end]} in seconds,
+  from the video's own chapters -- and play just that part.
 - New weekly episodes of those shows are picked up from the channels' official
   RSS feeds every few hours (data/tagalog_new.json), each checked to be free to
   watch -- not an early "members only" upload.
@@ -79,7 +82,8 @@ def reset() -> None:
 
 
 def for_anime(anilist_id: int) -> dict[str, Any] | None:
-    """{title, channel, channelUrl, region, episodes: {anilist episode: video id}}, or None."""
+    """{title, channel, channelUrl, region, episodes: {anilist episode: video id}}, or None.
+    A show cut from marathon videos also has clips: {anilist episode: [start, end]}."""
     cat = _load()
     for show in cat.get("shows", []):
         for season in show.get("seasons", []):
@@ -91,7 +95,7 @@ def for_anime(anilist_id: int) -> dict[str, Any] | None:
             if not episodes:
                 return None
             ch = cat.get("channels", {}).get(show["channel"], {})
-            return {
+            found = {
                 "anilist": anilist_id,
                 "title": show.get("title", ""),
                 "channel": ch.get("name", ""),
@@ -99,6 +103,10 @@ def for_anime(anilist_id: int) -> dict[str, Any] | None:
                 "region": cat.get("region", ["PH"]),
                 "episodes": episodes,
             }
+            clips = show.get("clips", {})
+            if clips:
+                found["clips"] = {str(n - first + 1): clips[str(n)] for n in range(first, last + 1) if str(n) in clips}
+            return found
     return None
 
 
@@ -177,14 +185,18 @@ _PAGE = """<!doctype html>
     try { if (window.AniVerse) window.AniVerse.postMessage(s); } catch (e) {}
     try { if (window.parent !== window) window.parent.postMessage(m, "*"); } catch (e) {}
   }
-  var player, start = __START__;
+  // base/end: where this episode is in a marathon video (0/0: the whole video).
+  var player, start = __START__, base = __BASE__, end = __END__, done = false;
+  function ended() { if (!done) { done = true; tell({ type: "ended" }); } }
   function onYouTubeIframeAPIReady() {
+    var vars = { autoplay: 1, playsinline: 1, rel: 0, start: base + start, origin: location.origin };
+    if (end) vars.end = end;
     player = new YT.Player("player", {
       videoId: "__VIDEO__",
-      playerVars: { autoplay: 1, playsinline: 1, rel: 0, start: start, origin: location.origin },
+      playerVars: vars,
       events: {
         onReady: function () { player.playVideo(); tell({ type: "ready" }); },
-        onStateChange: function (e) { if (e.data === 0) tell({ type: "ended" }); },
+        onStateChange: function (e) { if (e.data === 0) ended(); },
         onError: function (e) {
           var note = document.getElementById("note");
           note.style.display = "flex";
@@ -198,11 +210,24 @@ _PAGE = """<!doctype html>
   }
   setInterval(function () {
     if (!player || !player.getCurrentTime) return;
-    tell({ type: "progress", t: player.getCurrentTime(), d: player.getDuration(), playing: player.getPlayerState() === 1 });
+    var now = player.getCurrentTime();
+    if (end && now >= end) { player.pauseVideo(); ended(); }
+    tell({ type: "progress", t: Math.max(0, Math.min(now, end || now) - base),
+           d: end ? end - base : player.getDuration(), playing: player.getPlayerState() === 1 });
   }, 5000);
 </script>
 <script src="https://www.youtube.com/iframe_api"></script>
 </body></html>"""
+
+
+def _clip(found: dict[str, Any] | None, episode: int) -> tuple[int, int]:
+    """(start, end) of the episode in its marathon video; (0, 0) for a video of its own."""
+    clip = (found or {}).get("clips", {}).get(str(episode))
+    try:
+        start, end = int(clip[0]), int(clip[1])  # type: ignore[index]
+    except (TypeError, ValueError, IndexError):
+        return 0, 0
+    return (start, end) if 0 <= start < end else (0, 0)
 
 
 @router.get("/tagalog/{anilist_id}/{episode}", response_class=HTMLResponse)
@@ -212,8 +237,10 @@ def tagalog_page(anilist_id: int, episode: int, start: int = 0):
     if not video or not re.fullmatch(r"[A-Za-z0-9_-]{6,20}", video):
         raise HTTPException(status_code=404, detail="No Tagalog dub for this episode")
     title = html.escape(f"{(found or {}).get('title', '')} · EP {episode} · Tagalog")
+    base, end = _clip(found, episode)
     page = (_PAGE.replace("__TITLE__", title).replace("__VIDEO__", video)
-            .replace("__START__", str(max(0, min(start, 6 * 3600)))))
+            .replace("__START__", str(max(0, min(start, 6 * 3600))))
+            .replace("__BASE__", str(base)).replace("__END__", str(end)))
     return HTMLResponse(page, headers={"Cache-Control": "no-store"})
 
 
@@ -240,7 +267,8 @@ async def refresh_once(client: httpx.AsyncClient) -> int:
         titles = [html.unescape(t) for t in re.findall(r"<title>([^<]+)</title>", r.text)[1:]]
         for video, title in zip(ids, titles):
             for show in cat.get("shows", []):
-                if show.get("channel") != key:
+                # Marathon-cut shows have no per-episode uploads to look for.
+                if show.get("channel") != key or not show.get("pattern"):
                     continue
                 m = re.search(show["pattern"], title, re.I)
                 if not m:

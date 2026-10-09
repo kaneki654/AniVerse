@@ -1,5 +1,5 @@
 {
- "updated": "2026-10-08",
+ "updated": "2026-10-09",
  "about": "Official Tagalog dubs on the licensees' YouTube channels; built by scripts/find_tagalog_dubs.py.",
  "region": [
   "PH"
@@ -12,6 +12,10 @@
   "anione_ph": {
    "name": "Ani-One Philippines",
    "id": "UCZGEjiTMwMv-Mf-t3VLBlJQ"
+  },
+  "anione_ph_collection": {
+   "name": "Ani-One PH Collection",
+   "id": "UCKwe-CrlORY6sF8kLsFB5qw"
   }
  },
  "shows": [
@@ -278,6 +282,244 @@
     "22": "y5NZEafCz8Y",
     "23": "ksjQc-zeCYw",
     "24": "v_xidoe_Wts"
+   }
+  },
+  {
+   "key": "sentenced_hero",
+   "title": "Sentenced to Be a Hero",
+   "channel": "anione_ph",
+   "pattern": "^《Sentenced to Be a Hero》 #(\\d+) \\(TAG Dub\\)",
+   "seasons": [
+    {
+     "anilist": 167152,
+     "first": 1,
+     "last": 12
+    }
+   ],
+   "episodes": {
+    "1": "8z26Voa-adI",
+    "2": "BVRp_VpklQA",
+    "3": "BbfAOSZ-LTc",
+    "4": "AdCpMnziov0",
+    "5": "0YL4FxGlQf4",
+    "6": "ZGqB_cv7wp8",
+    "7": "5lt3JqOtYvI",
+    "8": "Tq7VKcPhsNE",
+    "9": "s041NvkVMDY",
+    "10": "d5ffxocxFec",
+    "11": "cNXCGvbtlOI",
+    "12": "LSm8FLkTaxs"
+   }
+  },
+  {
+   "key": "my_hero_academia",
+   "title": "My Hero Academia",
+   "channel": "anione_ph_collection",
+   "seasons": [
+    {
+     "anilist": 21459,
+     "first": 1,
+     "last": 13
+    },
+    {
+     "anilist": 21856,
+     "first": 14,
+     "last": 38
+    }
+   ],
+   "episodes": {
+    "1": "c7qks5U3dX0",
+    "2": "c7qks5U3dX0",
+    "3": "c7qks5U3dX0",
+    "4": "c7qks5U3dX0",
+    "5": "c7qks5U3dX0",
+    "6": "c7qks5U3dX0",
+    "7": "c7qks5U3dX0",
+    "8": "c7qks5U3dX0",
+    "9": "c7qks5U3dX0",
+    "10": "c7qks5U3dX0",
+    "11": "c7qks5U3dX0",
+    "12": "c7qks5U3dX0",
+    "13": "c7qks5U3dX0",
+    "14": "qTMlq6PF1pI",
+    "15": "qTMlq6PF1pI",
+    "16": "qTMlq6PF1pI",
+    "17": "qTMlq6PF1pI",
+    "18": "qTMlq6PF1pI",
+    "19": "qTMlq6PF1pI",
+    "20": "qTMlq6PF1pI",
+    "21": "qTMlq6PF1pI",
+    "22": "qTMlq6PF1pI",
+    "23": "qTMlq6PF1pI",
+    "24": "qTMlq6PF1pI",
+    "25": "qTMlq6PF1pI",
+    "26": "qTMlq6PF1pI",
+    "27": "qTMlq6PF1pI",
+    "28": "qTMlq6PF1pI",
+    "29": "qTMlq6PF1pI",
+    "30": "qTMlq6PF1pI",
+    "31": "qTMlq6PF1pI",
+    "32": "qTMlq6PF1pI",
+    "33": "qTMlq6PF1pI",
+    "34": "qTMlq6PF1pI",
+    "35": "qTMlq6PF1pI",
+    "36": "qTMlq6PF1pI",
+    "37": "qTMlq6PF1pI",
+    "38": "qTMlq6PF1pI"
+   },
+   "clips": {
+    "1": [
+     0,
+     1470
+    ],
+    "2": [
+     1470,
+     2940
+    ],
+    "3": [
+     2940,
+     4399
+    ],
+    "4": [
+     4399,
+     5860
+    ],
+    "5": [
+     5860,
+     7330
+    ],
+    "6": [
+     7330,
+     8796
+    ],
+    "7": [
+     8796,
+     10251
+    ],
+    "8": [
+     10251,
+     11706
+    ],
+    "9": [
+     11706,
+     13161
+    ],
+    "10": [
+     13161,
+     14616
+    ],
+    "11": [
+     14616,
+     16071
+    ],
+    "12": [
+     16071,
+     17525
+    ],
+    "13": [
+     17525,
+     18999
+    ],
+    "14": [
+     0,
+     1430
+    ],
+    "15": [
+     1430,
+     2860
+    ],
+    "16": [
+     2860,
+     4290
+    ],
+    "17": [
+     4290,
+     5720
+    ],
+    "18": [
+     5720,
+     7151
+    ],
+    "19": [
+     7151,
+     8581
+    ],
+    "20": [
+     8581,
+     10011
+    ],
+    "21": [
+     10011,
+     11441
+    ],
+    "22": [
+     11441,
+     12871
+    ],
+    "23": [
+     12871,
+     14301
+    ],
+    "24": [
+     14301,
+     15731
+    ],
+    "25": [
+     15731,
+     17160
+    ],
+    "26": [
+     17160,
+     18590
+    ],
+    "27": [
+     18590,
+     20020
+    ],
+    "28": [
+     20020,
+     21450
+    ],
+    "29": [
+     21450,
+     22880
+    ],
+    "30": [
+     22880,
+     24310
+    ],
+    "31": [
+     24310,
+     25740
+    ],
+    "32": [
+     25740,
+     27170
+    ],
+    "33": [
+     27170,
+     28600
+    ],
+    "34": [
+     28600,
+     30030
+    ],
+    "35": [
+     30030,
+     31460
+    ],
+    "36": [
+     31460,
+     32890
+    ],
+    "37": [
+     32890,
+     34320
+    ],
+    "38": [
+     34320,
+     35739
+    ]
    }
   }
  ]

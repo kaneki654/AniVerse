@@ -41,7 +41,7 @@ if (audioParam === "tl") tlShows.add(String(animeId));
 if (audioParam === "sub") tlShows.delete(String(animeId));
 try { localStorage.setItem(TL_KEY, JSON.stringify([...tlShows].slice(-200))); } catch { /* private mode */ }
 const wantTagalog = audioParam === "tl" || (audioParam === null && tlShows.has(String(animeId)));
-let tagalog = null; // {channel, region, episodes: {episode: video id}} when this anime has one
+let tagalog = null; // {channel, region, episodes: {episode: video id}, clips?} when this anime has one
 const epHref = (n) => {
   const q = new URLSearchParams();
   if (partyCode) q.set("party", partyCode);
@@ -918,16 +918,23 @@ function playTagalog(t) {
   const mount = h("div");
   box.append(mount);
   renderActions();
+  // An episode cut from a season's marathon video plays just its part: [base, end].
+  const [base, end] = t.clips?.[ep] || [0, 0];
+  let done = false;
+  const ended = (yt) => {
+    if (done) return;
+    done = true;
+    save(yt, true);
+    if (aired && ep < aired && t.episodes[ep + 1]) { toast(`Next: EP ${ep + 1} in Tagalog`); setTimeout(() => { location.href = epHref(ep + 1); }, 4000); }
+  };
   const make = () => {
+    const playerVars = { autoplay: 1, rel: 0, playsinline: 1, start: base + start, origin: location.origin };
+    if (end) playerVars.end = end;
     const yt = new window.YT.Player(mount, {
       videoId: t.episodes[ep], width: "100%", height: "100%",
-      playerVars: { autoplay: 1, rel: 0, playsinline: 1, start, origin: location.origin },
+      playerVars,
       events: {
-        onStateChange: (e) => {
-          if (e.data !== 0) return;
-          save(yt, true);
-          if (aired && ep < aired && t.episodes[ep + 1]) { toast(`Next: EP ${ep + 1} in Tagalog`); setTimeout(() => { location.href = epHref(ep + 1); }, 4000); }
-        },
+        onStateChange: (e) => { if (e.data === 0) ended(yt); },
         onError: (e) => {
           box.append(h("div.tl-note", null, [100, 101, 150].includes(e.data)
             ? `This Tagalog dub can't play here: ${t.channel} licenses it for the Philippines only.`
@@ -935,13 +942,17 @@ function playTagalog(t) {
         },
       },
     });
-    setInterval(() => save(yt, false), 10000);
+    setInterval(() => {
+      if (end && yt.getCurrentTime?.() >= end) { yt.pauseVideo(); ended(yt); }
+      save(yt, false);
+    }, 10000);
   };
-  const save = (yt, ended) => {
-    const d = yt.getDuration?.() || 0;
+  const save = (yt, finished) => {
+    const d = end ? end - base : yt.getDuration?.() || 0;
     if (d <= 0) return;
+    const at = Math.min(Math.max(0, (yt.getCurrentTime?.() || 0) - base), d);
     history.save({ anime_id: animeId, episode: ep, title: info ? titleOf(info) : "", cover: info ? coverOf(info) : "",
-      position_ms: Math.round((ended ? d : yt.getCurrentTime()) * 1000), duration_ms: Math.round(d * 1000) });
+      position_ms: Math.round((finished ? d : at) * 1000), duration_ms: Math.round(d * 1000) });
   };
   if (window.YT?.Player) make();
   else {

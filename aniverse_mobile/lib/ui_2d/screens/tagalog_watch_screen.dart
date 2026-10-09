@@ -154,7 +154,10 @@ class _TagalogWatchScreenState extends State<TagalogWatchScreen> {
 
   void _openInYouTube() {
     final v = _video;
-    if (v != null) launchUrl(Uri.parse('https://www.youtube.com/watch?v=$v'), mode: LaunchMode.externalApplication);
+    // An episode cut from a season's marathon video starts at its own part.
+    final clip = (widget.dub['clips'] as Map?)?['${widget.epNum}'] as List?;
+    final at = clip != null && clip.isNotEmpty ? '&t=${(clip.first as num).toInt()}s' : '';
+    if (v != null) launchUrl(Uri.parse('https://www.youtube.com/watch?v=$v$at'), mode: LaunchMode.externalApplication);
   }
 
   @override
