@@ -313,8 +313,8 @@ class _DetailScreenState extends State<DetailScreen> {
                         Padding(
                           padding: const EdgeInsets.only(bottom: 14, left: 8),
                           child: PixelIconButton(
-                            sprite: _listView ? Sprites.grid : Sprites.flag,
-                            tooltip: _listView ? 'Show as a grid' : 'Show titles and downloads',
+                            sprite: _listView ? Sprites.grid : Sprites.list,
+                            tooltip: _listView ? 'Show as a grid' : 'Show as a list',
                             color: Px.ash,
                             framed: true,
                             onPressed: () {

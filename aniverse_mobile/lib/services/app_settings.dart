@@ -72,8 +72,11 @@ class AppSettings {
   /// The pixel-art logo intro as the app opens.
   static bool get intro => _b('av.intro', true);
 
-  /// The detail screen's episode view: grid | list.
-  static String get epView => _s('av.epView', 'grid');
+  /// The detail screen's episode view: list (titles, pictures, downloads) | grid.
+  static String get epView => _s('av.epView', 'list');
+
+  /// Genre results as posters (grid) or rows (list).
+  static String get browseView => _s('av.browseView', 'grid');
 
   // --- 1.11: player, downloads, alerts, accessibility ---------------------------------
 

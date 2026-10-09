@@ -252,52 +252,13 @@ class _SearchScreenState extends State<SearchScreen> {
           );
         }
         final anime = _results[i] as Map<String, dynamic>;
-        final titles = (anime['title'] ?? {}) as Map<String, dynamic>;
-        final title = (titles['english'] ?? titles['romaji'] ?? 'Unknown').toString();
-        final poster = (((anime['coverImage'] ?? {}) as Map<String, dynamic>)['large'] ?? '').toString();
-        final episodes = anime['episodes'];
-        final status = anime['status'];
-
-        return PressableScale(
+        return AnimeListRow(
+          anime: anime,
           onTap: () {
             // Opening a result means the search found what it was for.
             AppSettings.addRecentSearch(_controller.text);
             Navigator.push(context, FadeScaleRoute(page: DetailScreen(id: anime['id'].toString())));
           },
-          child: SizedBox(
-            height: 92,
-            child: PixelBox(
-              fill: Px.panel,
-              child: Row(
-                children: [
-                  SizedBox(width: 60, child: PixelCover(url: poster, decodeWidth: 48)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(title, maxLines: 2, overflow: TextOverflow.ellipsis,
-                            style: PxFont.text(15, height: 1.2)),
-                        const SizedBox(height: 6),
-                        Text(
-                          [
-                            if (episodes != null) '$episodes EPS',
-                            if (status != null) status.toString().replaceAll('_', ' '),
-                          ].join(' · '),
-                          style: PxFont.label(7, color: Px.ash),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: PixelSprite(Sprites.chevron, scale: 1.6, color: Px.ashDark),
-                  ),
-                ],
-              ),
-            ),
-          ),
         );
       },
     );

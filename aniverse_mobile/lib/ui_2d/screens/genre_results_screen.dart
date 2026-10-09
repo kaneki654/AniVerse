@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
+import '../../services/app_settings.dart';
+import '../pixel/pixel_widgets.dart';
+import '../pixel/sprites.dart';
 import '../widgets/aniverse_logo.dart';
 import '../theme_2d.dart';
 import '../widgets/aniverse_loader.dart';
@@ -27,6 +30,7 @@ class _GenreResultsScreenState extends State<GenreResultsScreen> {
   int _page = 1;
   bool _loading = false;
   bool _end = false;
+  bool _list = AppSettings.browseView == 'list';
 
   @override
   void initState() {
@@ -84,6 +88,18 @@ class _GenreResultsScreenState extends State<GenreResultsScreen> {
           widget.genre.toUpperCase(),
           style: TextStyle(fontFamily: 'PressStart2P', color: AniVerseTheme.red, fontSize: 12),
         ),
+        actions: [
+          // Posters or rows; remembered for every genre.
+          PixelIconButton(
+            sprite: _list ? Sprites.grid : Sprites.list,
+            tooltip: _list ? 'Show as a grid' : 'Show as a list',
+            onPressed: () {
+              setState(() => _list = !_list);
+              AppSettings.set('browseView', _list ? 'list' : 'grid');
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: _items.isEmpty && _loading
           ? const AniVerseLoadingScreen(label: 'LOADING')
@@ -91,39 +107,49 @@ class _GenreResultsScreenState extends State<GenreResultsScreen> {
               ? Center(
                   child: Text('NOTHING FOUND',
                       style: TextStyle(fontFamily: 'PressStart2P', color: AniVerseTheme.textFaint, fontSize: 10)))
-              : GridView.builder(
-                  controller: _scroll,
-                  padding: const EdgeInsets.all(12),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 0.58,
-                  ),
-                  // One extra cell carries the "loading more" spinner.
-                  itemCount: _items.length + (_loading ? 1 : 0),
-                  itemBuilder: (context, i) {
-                    if (i >= _items.length) {
-                      return const Center(
-                        child: SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: AniVerseLoader(size: 24),
-                        ),
-                      );
-                    }
-
-                    final anime = _items[i] as Map<String, dynamic>;
-                    return PosterCard(
-                      anime: anime,
-                      onTap: () => Navigator.push(
-                        context,
-                        FadeScaleRoute(page: DetailScreen(id: anime['id'].toString()),
-                        ),
+              : _list
+                  ? ListView.separated(
+                      controller: _scroll,
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                      itemCount: _items.length + (_loading ? 1 : 0),
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
+                      itemBuilder: (context, i) {
+                        if (i >= _items.length) {
+                          return const Center(child: AniVerseLoader(size: 24));
+                        }
+                        final anime = _items[i] as Map<String, dynamic>;
+                        return AnimeListRow(anime: anime, onTap: () => _open(anime));
+                      },
+                    )
+                  : GridView.builder(
+                      controller: _scroll,
+                      padding: const EdgeInsets.all(12),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 3,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 0.58,
                       ),
-                    );
-                  },
-                ),
+                      // One extra cell carries the "loading more" spinner.
+                      itemCount: _items.length + (_loading ? 1 : 0),
+                      itemBuilder: (context, i) {
+                        if (i >= _items.length) {
+                          return const Center(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: AniVerseLoader(size: 24),
+                            ),
+                          );
+                        }
+
+                        final anime = _items[i] as Map<String, dynamic>;
+                        return PosterCard(anime: anime, onTap: () => _open(anime));
+                      },
+                    ),
     );
   }
+
+  void _open(Map<String, dynamic> anime) =>
+      Navigator.push(context, FadeScaleRoute(page: DetailScreen(id: anime['id'].toString())));
 }
