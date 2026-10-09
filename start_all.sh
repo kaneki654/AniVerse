@@ -12,9 +12,12 @@
 set -u
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-# A named tunnel (scripts/setup_named_tunnel.sh) and any other local settings.
+# A named tunnel (scripts/setup_named_tunnel.sh), and local settings and keys
+# (.aniverse_env; see aniverse.env.example). Both are kept out of git.
 # shellcheck disable=SC1091
 [ -f "$ROOT/.aniverse_tunnel" ] && . "$ROOT/.aniverse_tunnel"
+# shellcheck disable=SC1091
+[ -f "$ROOT/.aniverse_env" ] && . "$ROOT/.aniverse_env"
 LOG_DIR="$ROOT/logs"
 mkdir -p "$LOG_DIR"
 
@@ -95,10 +98,12 @@ run_forever() {
 }
 
 TUNNEL_PID=""
+HOUSEKEEPING_PID=""
+SWEEP_PID=""
 cleanup() {
   echo
   say "Stopping AniVerse"
-  for pid in "${backend_PID:-}" "${frontend_PID:-}" "$TUNNEL_PID"; do
+  for pid in "${backend_PID:-}" "${frontend_PID:-}" "$TUNNEL_PID" "$HOUSEKEEPING_PID" "$SWEEP_PID"; do
     [ -n "$pid" ] || continue
     pkill -P "$pid" 2>/dev/null || true
     kill "$pid" 2>/dev/null || true
@@ -142,6 +147,31 @@ if ! curl -fsS http://localhost:8000/ >/dev/null 2>&1; then
   cleanup
 fi
 echo "  frontend ok"
+
+# --- housekeeping -------------------------------------------------------------
+# Database backups (backups/, 14 days), log rotation and pruning old APKs: now,
+# and once a day while it runs.
+(
+  while true; do
+    "$PY" "$ROOT/scripts/housekeeping.py" >> "$LOG_DIR/housekeeping.log" 2>&1
+    sleep 86400
+  done
+) &
+HOUSEKEEPING_PID=$!
+
+# --- stream sweep -------------------------------------------------------------
+# Once a day: does what is trending on AniList actually play? The totals and the
+# failures show on /status (data/sweep.json). Starts a while after launch, not
+# straight away, so a restart does not hammer the resolver.
+(
+  sleep 900
+  while true; do
+    "$PY" "$ROOT/scripts/sweep_playable.py" --trending 40 --jobs 3 \
+      --out "$LOG_DIR/sweep_results.json" --summary "$ROOT/data/sweep.json" >> "$LOG_DIR/sweep.log" 2>&1
+    sleep 86400
+  done
+) &
+SWEEP_PID=$!
 
 if [ "$WITH_TUNNEL" -eq 0 ]; then
   say "Running (no tunnel)"
@@ -249,29 +279,15 @@ if [ "$WITH_PUBLISH" -eq 1 ]; then
     echo "  (needs gh signed in), so phones find it on their own."
   fi
 fi
-if [ "$WITH_PUBLISH" -eq 1 ] && command -v vercel >/dev/null 2>&1; then
-  if "$PY" "$ROOT/aniverse_site/build_site.py" --host "$URL"; then
-    if command -v vercel >/dev/null 2>&1; then
-      if (cd "$ROOT/aniverse_site" && vercel deploy --prod --yes >/dev/null 2>&1); then
-        echo "  published to https://aniversesite.vercel.app"
-      else
-        echo "  vercel deploy failed — publish manually:"
-        echo "    cd aniverse_site && vercel deploy --prod"
-      fi
-    fi
-  else
-    echo "  build_site.py failed; the app was not told about this URL." >&2
-  fi
-fi
-
 say "AniVerse is running"
 echo "  Frontend : http://localhost:8000"
 echo "  Backend  : http://localhost:8001"
 echo "  Public   : $URL"
 echo "  Logs     : $LOG_DIR"
 echo
-echo "On the phone: the app finds this address by itself from build 8 onward."
-echo "On an older build, paste the Public URL under the gear icon."
+echo "On the phone: the app finds this address by itself when it is published"
+echo "(ANIVERSE_PUBLISH_GIT=1 in .aniverse_env). Otherwise paste the Public URL"
+echo "into Settings > Server address."
 echo
 echo "Press Ctrl+C to stop everything."
 wait

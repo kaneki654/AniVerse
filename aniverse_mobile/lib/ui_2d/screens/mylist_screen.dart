@@ -131,6 +131,25 @@ class _RowState extends State<_Row> {
                   FadeScaleRoute(backdrop: false, page: WatchScreen(animeId: e.animeId, epNum: next, title: e.title, cover: e.cover)),
                 ),
               ),
+            // This show's alerts on or off (the alert check skips muted shows).
+            ValueListenableBuilder<int>(
+              valueListenable: AppSettings.changes,
+              builder: (context, _, __) {
+                final on = AppSettings.alertsFor(e.animeId);
+                return PixelIconButton(
+                  sprite: Sprites.bell,
+                  tooltip: on ? 'Mute alerts for ${e.title}' : 'Alerts for ${e.title} are muted',
+                  color: on && AppSettings.alerts ? Px.gold : Px.ashDark,
+                  scale: 1.8,
+                  size: 40,
+                  onPressed: () {
+                    Sfx.play('select');
+                    AppSettings.setAlertsFor(e.animeId, !on);
+                    pixelToast(context, on ? 'No more alerts for ${e.title}.' : 'Alerts back on for ${e.title}.');
+                  },
+                );
+              },
+            ),
             PixelIconButton(
               sprite: Sprites.trash,
               tooltip: 'Remove ${e.title}',

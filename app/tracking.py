@@ -17,6 +17,9 @@ its ID to this server, since neither allows anonymous list updates:
 
 Progress only ever moves forward: rewatching episode 3 never pulls a list
 entry back from episode 12.
+
+The tokens are stored sealed (app/secretbox.py): a copy of the database alone
+cannot be used to act on anyone's AniList or MyAnimeList.
 """
 
 import os
@@ -31,6 +34,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 import anime_meta
+from app import secretbox
 from app.accounts import _db, _session_user
 
 router = APIRouter(prefix="/api/tracking")
@@ -117,7 +121,7 @@ async def anilist_connect(body: AniListToken, authorization: Optional[str] = Hea
             " VALUES (?, 'anilist', ?, ?, ?, ?) ON CONFLICT(user_id, service) DO UPDATE SET"
             " token = excluded.token, refresh = excluded.refresh, expires_at = excluded.expires_at,"
             " account_name = excluded.account_name",
-            (user["id"], token, str(viewer.get("id") or ""), int(time.time()) + 365 * 86400, viewer.get("name")))
+            (user["id"], secretbox.seal(token), str(viewer.get("id") or ""), int(time.time()) + 365 * 86400, viewer.get("name")))
     return {"connected": True, "account": viewer.get("name")}
 
 
@@ -220,18 +224,21 @@ def _store_mal(user_id: int, tokens: dict, name: Optional[str]) -> None:
             " VALUES (?, 'mal', ?, ?, ?, ?) ON CONFLICT(user_id, service) DO UPDATE SET"
             " token = excluded.token, refresh = excluded.refresh, expires_at = excluded.expires_at,"
             " account_name = COALESCE(excluded.account_name, tracking.account_name)",
-            (user_id, tokens["access_token"], tokens.get("refresh_token"),
+            (user_id, secretbox.seal(tokens["access_token"]), secretbox.seal(tokens.get("refresh_token")),
              int(time.time()) + int(tokens.get("expires_in") or 3600), name))
 
 
 async def _mal_progress(user_id: int, row, mal_id: int, episode: int, total: Optional[int]):
-    token = row["token"]
-    if (row["expires_at"] or 0) < time.time() + 60 and row["refresh"]:
-        fresh = await _mal_token({"grant_type": "refresh_token", "refresh_token": row["refresh"]})
+    token = secretbox.unseal(row["token"])
+    refresh = secretbox.unseal(row["refresh"])
+    if (row["expires_at"] or 0) < time.time() + 60 and refresh:
+        fresh = await _mal_token({"grant_type": "refresh_token", "refresh_token": refresh})
         if not fresh:
             return
         _store_mal(user_id, fresh, None)
         token = fresh["access_token"]
+    if not token:
+        return
     headers = {"Authorization": f"Bearer {token}"}
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.get(f"{MAL_API}/anime/{mal_id}", params={"fields": "my_list_status,num_episodes"}, headers=headers)
@@ -260,10 +267,31 @@ async def sync_progress(user_id: int, finished: dict[str, int]) -> None:
         try:
             media = await anime_meta.fetch_media(anime_id) or {}
             total = media.get("episodes")
-            if "anilist" in rows:
-                await _anilist_progress(rows["anilist"]["token"], rows["anilist"]["refresh"] or "",
+            anilist_token = secretbox.unseal(rows["anilist"]["token"]) if "anilist" in rows else None
+            if anilist_token:
+                await _anilist_progress(anilist_token, rows["anilist"]["refresh"] or "",
                                         int(anime_id), episode, total)
             if "mal" in rows and media.get("idMal"):
                 await _mal_progress(user_id, rows["mal"], int(media["idMal"]), episode, total)
         except (httpx.HTTPError, HTTPException, ValueError, KeyError) as e:
             print(f"Tracking update failed for user {user_id}, anime {anime_id}: {e}")
+
+
+def seal_stored_tokens() -> int:
+    """Seal any tokens stored before sealing existed. Returns how many."""
+    n = 0
+    with _db() as conn:
+        for row in conn.execute("SELECT user_id, service, token, refresh FROM tracking").fetchall():
+            token, refresh = row["token"], row["refresh"]
+            new_refresh = secretbox.seal(refresh) if row["service"] == "mal" else refresh  # AniList keeps its user id there
+            if secretbox.seal(token) != token or new_refresh != refresh:
+                conn.execute("UPDATE tracking SET token = ?, refresh = ? WHERE user_id = ? AND service = ?",
+                             (secretbox.seal(token), new_refresh, row["user_id"], row["service"]))
+                n += 1
+    return n
+
+
+try:
+    seal_stored_tokens()
+except Exception as e:  # never stop the server over this
+    print(f"Tracking: could not seal stored tokens: {e}")

@@ -79,8 +79,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
             actions: [
               if (AuthService.signedIn)
                 _syncing
-                    ? const Padding(
-                        padding: EdgeInsets.all(15),
+                    ? Padding(
+                        padding: const EdgeInsets.all(15),
                         child: PixelSpinner(color: Px.ash),
                       )
                     : PixelIconButton(
@@ -266,7 +266,7 @@ class _SyncNote extends StatelessWidget {
                     style: PxFont.text(14),
                   ),
                 ),
-                const PixelSprite(Sprites.chevron, scale: 1.6, color: Px.ashDark),
+                PixelSprite(Sprites.chevron, scale: 1.6, color: Px.ashDark),
               ],
             ),
           ),

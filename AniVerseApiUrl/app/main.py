@@ -12,6 +12,12 @@ from app.services.scheduler import start_scheduler
 async def lifespan(app: FastAPI):
     start_scheduler()
     yield
+    # Keep the status page's history across the restart.
+    from app.core import health
+    try:
+        health.save()
+    except OSError:
+        pass
 
 app = FastAPI(
     title="AniVerse API",

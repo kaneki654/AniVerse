@@ -94,3 +94,11 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Chromecast: the Cast framework, with the device picker (androidx.mediarouter).
+    implementation("com.google.android.gms:play-services-cast-framework:22.3.1")
+    // Its device picker dialogs, used directly (CastBridge.kt), so on the compile path too.
+    implementation("androidx.mediarouter:mediarouter:1.8.1")
+    implementation("androidx.appcompat:appcompat:1.7.1")
+}

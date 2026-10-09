@@ -2,18 +2,57 @@
 Recent provider and resolve outcomes, kept in memory for the status page.
 
 Each provider attempt is one event (ok / empty / error / timeout), and each
-episode lookup one resolve (playable or not). Nothing is persisted: this is
-"how is it doing lately", and a restart starting from a clean slate is fine.
+episode lookup one resolve (playable or not). The last day of both is saved to
+data/health.json every few minutes and on shutdown, and read back on start, so
+a restart does not wipe the status page.
 (resilience.py's ProviderHealthManager keeps only a running score and is not
 wired in anywhere; this keeps the history a status page needs.)
 """
 
+import json
+import os
 import time
 from collections import deque
+from pathlib import Path
 from typing import Any
 
 _attempts: deque = deque(maxlen=6000)   # (ts, provider, outcome, seconds, error)
 _resolves: deque = deque(maxlen=3000)   # (ts, ok, anilist_id, episode, category, error, seconds)
+
+
+STORE = Path(__file__).resolve().parents[2] / "data" / "health.json"
+
+
+def save(path: Path = STORE) -> None:
+    """Write the last day of events, atomically."""
+    cutoff = time.time() - 86400
+    # The scheduler runs this on a worker thread while requests keep appending:
+    # deque.copy() is one step, where iterating the live deque could raise
+    # "deque mutated during iteration".
+    attempts, resolves = _attempts.copy(), _resolves.copy()
+    body = {
+        "attempts": [list(a) for a in attempts if a[0] > cutoff],
+        "resolves": [list(r) for r in resolves if r[0] > cutoff],
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(body))
+    os.replace(tmp, path)
+
+
+def load(path: Path = STORE) -> None:
+    """Read back what save() wrote; anything unreadable is simply skipped."""
+    try:
+        body = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return
+    cutoff = time.time() - 86400
+    for a in body.get("attempts", []):
+        if isinstance(a, list) and len(a) == 5 and a[0] > cutoff:
+            _attempts.append(tuple(a))
+    for r in body.get("resolves", []):
+        if isinstance(r, list) and len(r) == 7 and r[0] > cutoff:
+            _resolves.append(tuple(r))
 
 
 def record_attempt(provider: str, outcome: str, seconds: float, error: str = "") -> None:
@@ -75,3 +114,6 @@ def summary() -> dict[str, Any]:
         "hours": hours,
         "recentFailures": failures,
     }
+
+
+load()

@@ -5,6 +5,7 @@ import 'services/api_service.dart';
 import 'services/app_settings.dart';
 import 'services/auth_service.dart';
 import 'services/download_service.dart';
+import 'services/error_reporter.dart';
 import 'services/history_service.dart';
 import 'services/native_bridge.dart';
 import 'services/watchlist_service.dart';
@@ -20,6 +21,8 @@ const bool kUse2DUi = true;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Crashes reach the server's /status page (POST /api/client-errors).
+  ErrorReporter.install();
   if (kUse2DUi) {
     // The 2D app's own state: settings (and with them the palette), history,
     // My List, saved episodes, and the line to the Android side -- all local.
@@ -28,6 +31,7 @@ void main() async {
     await WatchlistService.load();
     await DownloadService.load();
     NativeBridge.init();
+    await NativeBridge.detectTv();
     // The server address is checked while the logo intro plays: ruling out a
     // dead saved address can take seconds, and used to be a black screen.
     final ready = ApiService.load().then((_) => AuthService.load());
@@ -40,6 +44,12 @@ void main() async {
   // there on the first frame; the account check runs in the background.
   await HistoryService.load();
   await AuthService.load();
+  // Shared with the 2D UI: settings, My List, saved episodes, the Android side
+  // (lib/classic_plus has the classic screens for them).
+  await AppSettings.load();
+  await WatchlistService.load();
+  await DownloadService.load();
+  NativeBridge.init();
   runApp(const AniVerseApp());
 }
 

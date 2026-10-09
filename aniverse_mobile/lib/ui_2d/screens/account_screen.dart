@@ -1,6 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -204,7 +208,7 @@ class _TileState extends State<_Tile> {
                 ),
               ),
               if (!widget.danger)
-                const PixelSprite(Sprites.chevron, scale: 1.6, color: Px.ashDark),
+                PixelSprite(Sprites.chevron, scale: 1.6, color: Px.ashDark),
             ],
           ),
         ),
@@ -600,6 +604,17 @@ class ProgressCard extends StatelessWidget {
               const SizedBox(width: 8),
               stat('${s.hours.floor()}h', 'Watched'),
             ]),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: PixelButton(
+                label: 'Share card',
+                icon: Sprites.trophy,
+                kind: PixelButtonKind.dark,
+                fontSize: 7,
+                onPressed: () => showDialog(context: context, builder: (_) => const _ShareCardDialog()),
+              ),
+            ),
             const SizedBox(height: 18),
             SectionHeader(title: 'Achievements ${got.length}/${Achievements.badges.length}'),
             GridView.count(
@@ -633,6 +648,100 @@ class ProgressCard extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// The profile as a picture to share: name, level, rank, the numbers and the
+/// badges earned, in the palette's colours.
+class _ShareCardDialog extends StatefulWidget {
+  const _ShareCardDialog();
+
+  @override
+  State<_ShareCardDialog> createState() => _ShareCardDialogState();
+}
+
+class _ShareCardDialogState extends State<_ShareCardDialog> {
+  final _key = GlobalKey();
+  bool _busy = false;
+
+  Future<void> _share() async {
+    setState(() => _busy = true);
+    try {
+      final boundary = _key.currentContext!.findRenderObject() as RenderRepaintBoundary;
+      final image = await boundary.toImage(pixelRatio: 3);
+      final png = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (png == null) return;
+      // cache/share/ is what the app's FileProvider hands out (res/xml/share_paths.xml).
+      final dir = Directory('${(await getTemporaryDirectory()).path}/share');
+      await dir.create(recursive: true);
+      final file = File('${dir.path}/aniverse_card.png');
+      await file.writeAsBytes(png.buffer.asUint8List());
+      final lv = Achievements.level();
+      await NativeBridge.shareImage(file.path, 'Level ${lv.level} ${lv.rank} on AniVerse');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = Achievements.stats();
+    final lv = Achievements.level(s);
+    final got = Achievements.unlocked(s);
+    final name = AuthService.user.value?.displayName ?? 'Player';
+    Widget stat(String v, String label) => Column(children: [
+          Text(v, style: PxFont.label(12)),
+          const SizedBox(height: 4),
+          Text(label, style: PxFont.label(5, color: Px.ash)),
+        ]);
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      // No dialog frame: the card has its own, and the buttons sit outside it.
+      shape: const RoundedRectangleBorder(),
+      elevation: 0,
+      insetPadding: const EdgeInsets.all(20),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        RepaintBoundary(
+          key: _key,
+          child: PixelBox(
+            fill: Px.ink,
+            border: Color(Achievements.frameColor(lv.frame)),
+            borderWidth: 4,
+            rivets: true,
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text('ANIVERSE', style: PxFont.label(12, color: Px.blood).copyWith(shadows: PxFont.outline(1.2))),
+              const SizedBox(height: 14),
+              Text(name.toUpperCase(), maxLines: 1, overflow: TextOverflow.ellipsis, style: PxFont.label(10)),
+              const SizedBox(height: 6),
+              Text('LV ${lv.level} · ${lv.rank.toUpperCase()}', style: PxFont.label(8, color: Px.gold)),
+              const SizedBox(height: 10),
+              SizedBox(width: 220, child: PixelBar(fraction: lv.progress, height: 10)),
+              const SizedBox(height: 14),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+                stat('${s.finished}', 'EPISODES'),
+                stat('${s.anime}', 'ANIME'),
+                stat('${s.hours.floor()}H', 'WATCHED'),
+                stat('${s.streak}', 'STREAK'),
+              ]),
+              const SizedBox(height: 14),
+              Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
+                for (final b in Achievements.badges)
+                  if (got.contains(b.id)) PixelSprite(b.sprite, scale: 2.2, color: Px.gold),
+              ]),
+              const SizedBox(height: 8),
+              Text('${got.length}/${Achievements.badges.length} BADGES', style: PxFont.label(5, color: Px.ash)),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          PixelButton(label: 'Share', icon: Sprites.flag, busy: _busy, onPressed: _share),
+          const SizedBox(width: 10),
+          PixelButton(label: 'Close', kind: PixelButtonKind.dark, onPressed: () => Navigator.pop(context)),
+        ]),
+      ]),
     );
   }
 }

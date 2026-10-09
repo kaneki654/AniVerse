@@ -45,6 +45,9 @@ class PartyState {
 /// A watch party: the server's /ws/party/{code} room, shared with the website.
 /// Whoever plays, pauses, seeks or changes episode sends the new state; the
 /// others follow it. Times are worked out on the server's clock.
+/// The reactions a party can send (app/party.py checks the same set).
+const partyReactions = ['❤️', '😂', '😮', '😭', '🔥', '👏', '💀', '🎉'];
+
 class PartyConnection {
   final String code;
   final PartyState Function() getState;
@@ -56,6 +59,18 @@ class PartyConnection {
   final ValueNotifier<List<(String, String)>> chat = ValueNotifier(const []); // (name, text); name '' = system
   final ValueNotifier<String> status = ValueNotifier('Connecting…');
 
+  /// Who hosts the room, and whether they have locked playback to themselves.
+  final ValueNotifier<String> host = ValueNotifier('');
+  final ValueNotifier<bool> locked = ValueNotifier(false);
+
+  /// Reactions as they arrive, (emoji, from), for the player to float up.
+  final StreamController<(String, String)> reactions = StreamController.broadcast();
+
+  /// Told when this viewer tried to steer a room the host has locked.
+  void Function()? onLockedOut;
+
+  PartyState? _roomState;
+
   WebSocket? _ws;
   Timer? _ping;
   double _offset = 0;
@@ -64,6 +79,18 @@ class PartyConnection {
   String _me = 'Guest';
 
   PartyConnection({required this.code, required this.getState, required this.onState});
+
+  String get me => _me;
+  bool get isHost => host.value.isNotEmpty && host.value == _me;
+
+  /// False while the host has locked the controls and this viewer isn't the host.
+  bool get canControl => !locked.value || isHost;
+
+  void _roster(Map m) {
+    if (m['members'] is List) members.value = [for (final x in m['members'] as List) x.toString()];
+    if (m['host'] is String) host.value = m['host'] as String;
+    if (m['locked'] is bool) locked.value = m['locked'] as bool;
+  }
 
   static const _chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   static String newCode() {
@@ -122,6 +149,10 @@ class PartyConnection {
     }
   }
 
+  /// A message as if it came from the server, for tests.
+  @visibleForTesting
+  void handleMessage(String data) => _onMessage(data);
+
   void _onMessage(dynamic data) {
     Map m;
     try {
@@ -133,28 +164,41 @@ class PartyConnection {
     switch (m['type']) {
       case 'hello':
         _me = (m['you'] ?? _me).toString();
-        members.value = [for (final x in (m['members'] as List? ?? const [])) x.toString()];
-        _line('', 'You joined party $code as $_me.');
+        _roster(m);
+        _line('', 'You joined party $code as $_me.${isHost ? " You're the host." : ''}');
         if (m['state'] is Map) {
-          final s = PartyState.fromJson(m['state'] as Map);
+          final s = _roomState = PartyState.fromJson(m['state'] as Map);
           onState(s, _where(s));
         } else {
           send(); // first in: what you are watching is the party's episode
         }
       case 'members':
-        members.value = [for (final x in (m['members'] as List? ?? const [])) x.toString()];
+        final before = host.value;
+        _roster(m);
         if (m['joined'] != null) {
           _line('', '${m['joined']} joined.');
           // Bring the newcomer to the exact spot; a paused room's state is already exact.
           final s = getState();
-          if (s.playing) send(s);
+          if (s.playing && canControl) _send(s.toJson());
         }
         if (m['left'] != null) _line('', '${m['left']} left.');
+        if (host.value != before && host.value.isNotEmpty) {
+          _line('', isHost ? "You're the host now." : '${host.value} is the host now.');
+        }
       case 'state':
         if (m['state'] is Map) {
-          final s = PartyState.fromJson(m['state'] as Map);
+          final s = _roomState = PartyState.fromJson(m['state'] as Map);
+          if (m['denied'] == true) onLockedOut?.call();
           onState(s, _where(s));
         }
+      case 'lock':
+        locked.value = m['on'] == true;
+        _line('', locked.value
+            ? '${m['host']} locked the controls: only they can play, pause and seek.'
+            : '${m['host']} unlocked the controls.');
+      case 'react':
+        final e = (m['emoji'] ?? '').toString();
+        if (partyReactions.contains(e) && !reactions.isClosed) reactions.add((e, (m['name'] ?? '').toString()));
       case 'chat':
         _line((m['name'] ?? '').toString(), (m['text'] ?? '').toString());
     }
@@ -177,8 +221,28 @@ class PartyConnection {
     } catch (_) {}
   }
 
-  /// After anything the viewer did.
-  void send([PartyState? s]) => _send((s ?? getState()).toJson());
+  /// After anything the viewer did. Locked out, the player is put back where
+  /// the room is instead.
+  void send([PartyState? s]) {
+    if (!canControl) {
+      onLockedOut?.call();
+      final room = _roomState;
+      if (room != null) onState(room, _where(room));
+      return;
+    }
+    _send((s ?? getState()).toJson());
+  }
+
+  /// Host only: lock playback to the host, or open it up again.
+  void setLocked(bool on) {
+    if (isHost) _send({'type': 'lock', 'on': on});
+  }
+
+  void react(String emoji) {
+    if (!partyReactions.contains(emoji)) return;
+    _send({'type': 'react', 'emoji': emoji});
+    if (!reactions.isClosed) reactions.add((emoji, _me)); // the server sends it to everyone else
+  }
 
   void say(String text) {
     final t = text.trim();
@@ -195,6 +259,7 @@ class PartyConnection {
 
   void close() {
     _closed = true;
+    reactions.close();
     _ping?.cancel();
     _ws?.close();
     _ws = null;

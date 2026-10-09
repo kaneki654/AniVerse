@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../pixel/blood.dart';
 import '../pixel/fx.dart';
 import '../pixel/pixel.dart';
+import '../pixel/pixel_widgets.dart';
 import '../pixel/theme_fx.dart';
 
 /// The ANIVERSE wordmark as sprite text -- arcade face, hard black outline, the
@@ -32,29 +33,31 @@ class AniVerseLogo extends StatelessWidget {
       ),
     );
     // A light band sweeps across the letters every few seconds.
-    final shiny = FrameClock(
-      fps: 12,
-      frames: 84,
-      builder: (_, f) {
-        final g = glintAt(f, frames: 84, sweep: 20);
-        if (g < 0) return word;
-        return Stack(
-          children: [
-            word,
-            ShaderMask(
-              blendMode: BlendMode.srcIn,
-              shaderCallback: (r) => LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: const [Color(0x00FFFFFF), Color(0xD9FFECD2), Color(0xD9FFECD2), Color(0x00FFFFFF)],
-                stops: [g - 0.08, g - 0.08, g, g].map((v) => v.clamp(0.0, 1.0)).toList(),
-              ).createShader(r),
-              child: Text('ANIVERSE', style: PxFont.label(fontSize, color: Colors.white, height: 1.2)),
-            ),
-          ],
-        );
-      },
-    );
+    final shiny = fxLevel == FxLevel.off
+        ? word
+        : FrameClock(
+            fps: 12,
+            frames: 84,
+            builder: (_, f) {
+              final g = glintAt(f, frames: 84, sweep: 20);
+              if (g < 0) return word;
+              return Stack(
+                children: [
+                  word,
+                  ShaderMask(
+                    blendMode: BlendMode.srcIn,
+                    shaderCallback: (r) => LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: const [Color(0x00FFFFFF), Color(0xD9FFECD2), Color(0xD9FFECD2), Color(0x00FFFFFF)],
+                      stops: [g - 0.08, g - 0.08, g, g].map((v) => v.clamp(0.0, 1.0)).toList(),
+                    ).createShader(r),
+                    child: Text('ANIVERSE', style: PxFont.label(fontSize, color: Colors.white, height: 1.2)),
+                  ),
+                ],
+              );
+            },
+          );
     return Semantics(
       label: 'AniVerse',
       excludeSemantics: true,
@@ -133,8 +136,9 @@ class FadeScaleRoute<T> extends PageRouteBuilder<T> {
 class PressableScale extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
+  final FocusNode? focusNode;
 
-  const PressableScale({super.key, required this.child, required this.onTap});
+  const PressableScale({super.key, required this.child, required this.onTap, this.focusNode});
 
   @override
   State<PressableScale> createState() => _PressableScaleState();
@@ -144,15 +148,22 @@ class _PressableScaleState extends State<PressableScale> {
   bool _down = false;
 
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _down = true),
-      onTapUp: (_) => setState(() => _down = false),
-      onTapCancel: () => setState(() => _down = false),
-      onTap: widget.onTap,
-      child: Transform.translate(
-        offset: _down ? const Offset(2, 2) : Offset.zero,
-        child: widget.child,
+  Widget build(BuildContext context) =>
+      PixelFocus(onActivate: widget.onTap, focusNode: widget.focusNode, child: _faceBuild(context));
+
+  Widget _faceBuild(BuildContext context) {
+    return Semantics(
+      container: true, // its own node: a screen reader can focus and press it
+      button: true,
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _down = true),
+        onTapUp: (_) => setState(() => _down = false),
+        onTapCancel: () => setState(() => _down = false),
+        onTap: widget.onTap,
+        child: Transform.translate(
+          offset: _down ? const Offset(2, 2) : Offset.zero,
+          child: widget.child,
+        ),
       ),
     );
   }

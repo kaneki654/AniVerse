@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../pixel/pixel.dart';
+import '../pixel/theme_fx.dart';
 import '../pixel/pixel_widgets.dart';
 import '../pixel/sprites.dart';
 
@@ -212,12 +213,39 @@ class _OrbPainter extends CustomPainter {
       }
     }
 
-    // Bubbles rising through the blood, one cell at a time.
+    // Rising through the liquid: bubbles for Blood, bits of data for Neon
+    // cyber, petals for Sakura -- one cell at a time.
     for (final (bx, off) in const [(9, 0), (15, 5), (20, 11), (12, 17)]) {
       final depthSpan = (fill * 24).floor();
       if (depthSpan < 4) continue;
       final y = (innerBottom - 1 - ((frame + off) % depthSpan)).round();
-      if (y > surfaceAt(bx, -t, 1.3) + 1) pc.px(bx, y, Px.bloodLight);
+      if (y <= surfaceAt(bx, -t, 1.3) + 1) continue;
+      switch (fxStyle) {
+        case FxStyle.neon:
+          pc.px(bx, y, (frame + off).isEven ? Px.bloodLight : Px.gold);
+          pc.px(bx + 1, y, Px.bloodLight);
+        case FxStyle.sakura:
+          drawPetal(pc, bx, y, (frame ~/ 3 + off) & 3);
+        case FxStyle.samurai:
+          drawFlake(pc, bx, y, (frame ~/ 3 + off) & 3);
+        case FxStyle.gameboy:
+        case FxStyle.blood:
+          pc.px(bx, y, Px.bloodLight);
+      }
+    }
+    if (fxStyle == FxStyle.neon) {
+      // Scanlines across the liquid, and HUD brackets round the orb.
+      for (var y = 4; y < innerBottom; y += 3) {
+        pc.ghost(4, y, 22, 1, Px.black, 0.25);
+      }
+      for (final (bx, by, dx, dy) in const [(0, 0, 1, 1), (29, 0, -1, 1), (0, 29, 1, -1), (29, 29, -1, -1)]) {
+        pc.px(bx, by, Px.gold);
+        pc.px(bx + dx, by, Px.gold);
+        pc.px(bx, by + dy, Px.gold);
+      }
+    } else if (fxStyle == FxStyle.sakura) {
+      // A blossom resting on top of the orb.
+      pc.sprite(ThemeSprites.blossom, 12, -3);
     }
 
     // Glass glint, top left.

@@ -22,12 +22,20 @@ class PixelBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final still = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     return Stack(
       fit: StackFit.expand,
       children: [
         ColoredBox(color: Px.ink),
-        if (!still) const Positioned.fill(child: IgnorePointer(child: RepaintBoundary(child: EmberField()))),
+        // Follows Settings > Effects as it changes, without a rebuild of the app.
+        ValueListenableBuilder<FxLevel>(
+          valueListenable: fxLevelChanged,
+          builder: (context, level, _) {
+            final still = (MediaQuery.maybeDisableAnimationsOf(context) ?? false) || level == FxLevel.off;
+            return still
+                ? const SizedBox.shrink()
+                : const Positioned.fill(child: IgnorePointer(child: RepaintBoundary(child: EmberField())));
+          },
+        ),
         const Positioned.fill(
           child: IgnorePointer(child: RepaintBoundary(child: CustomPaint(painter: _ScanlinePainter()))),
         ),
@@ -45,11 +53,14 @@ class EmberField extends StatelessWidget {
     return FrameClock(
       fps: 12,
       frames: 7200,
-      // Embers for Blood, digital rain for Neon cyber, petals for Sakura.
+      // Embers for Blood, digital rain for Neon cyber, petals for Sakura,
+      // falling blocks for Game Boy, gold leaf for Gold samurai.
       builder: (_, f) => CustomPaint(
         painter: switch (fxStyle) {
           FxStyle.neon => DataRainPainter(f),
           FxStyle.sakura => PetalFieldPainter(f),
+          FxStyle.gameboy => GameBoyFieldPainter(f),
+          FxStyle.samurai => GoldLeafFieldPainter(f),
           FxStyle.blood => _EmberPainter(f),
         },
       ),
@@ -68,7 +79,7 @@ class _EmberPainter extends CustomPainter {
     final pc = PixelCanvas(canvas, _cell);
     final cols = (size.width / _cell).ceil();
     final rows = (size.height / _cell).ceil();
-    final n = (cols * rows * 0.0008).round().clamp(12, 48);
+    final n = ((cols * rows * 0.0008).round().clamp(12, 48) * fxDensity).round();
     for (var i = 0; i < n; i++) {
       final seed = i * 97 + 13;
       // Each ember's place is a function of the frame, so the painter needs no

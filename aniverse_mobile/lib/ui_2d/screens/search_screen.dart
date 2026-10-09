@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
+import '../../services/app_settings.dart';
 import '../widgets/pixel_extras.dart';
 import '../pixel/pixel.dart';
 import '../pixel/pixel_widgets.dart';
@@ -154,8 +155,8 @@ class _SearchScreenState extends State<SearchScreen> {
               hintText: 'Search anime...',
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              prefixIcon: const Padding(
-                padding: EdgeInsets.all(12),
+              prefixIcon: Padding(
+                padding: const EdgeInsets.all(12),
                 child: PixelSprite(Sprites.search, scale: 1.8, color: Px.ash),
               ),
               suffixIcon: _controller.text.isEmpty
@@ -176,7 +177,10 @@ class _SearchScreenState extends State<SearchScreen> {
               setState(() {}); // keep the clear button in sync
               _onChanged(v);
             },
-            onSubmitted: _run,
+            onSubmitted: (v) {
+              AppSettings.addRecentSearch(v);
+              _run(v);
+            },
           ),
         ),
       ),
@@ -199,7 +203,37 @@ class _SearchScreenState extends State<SearchScreen> {
     if (_loading) {
       return const AniVerseLoadingScreen(label: 'SEARCHING');
     }
-    if (!_searched) return _message(Sprites.search, 'TYPE OR PICK A FILTER');
+    if (!_searched) {
+      final recent = AppSettings.recentSearches;
+      if (recent.isEmpty) return _message(Sprites.search, 'TYPE OR PICK A FILTER');
+      // Searches that led somewhere before, one tap to run again.
+      return ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 24), children: [
+        Row(children: [
+          Expanded(child: Text('RECENT SEARCHES', style: PxFont.label(8, color: Px.ash))),
+          PixelButton(
+            label: 'Clear',
+            kind: PixelButtonKind.dark,
+            fontSize: 7,
+            onPressed: () async {
+              await AppSettings.clearRecentSearches();
+              if (mounted) setState(() {});
+            },
+          ),
+        ]),
+        const SizedBox(height: 12),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final q in recent)
+            ChoiceChipButton(
+              label: q,
+              onTap: () {
+                _controller.text = q;
+                _run(q);
+                setState(() {});
+              },
+            ),
+        ]),
+      ]);
+    }
     if (_results.isEmpty) return _message(Sprites.skull, 'NO RESULTS');
 
     return ListView.separated(
@@ -218,51 +252,13 @@ class _SearchScreenState extends State<SearchScreen> {
           );
         }
         final anime = _results[i] as Map<String, dynamic>;
-        final titles = (anime['title'] ?? {}) as Map<String, dynamic>;
-        final title = (titles['english'] ?? titles['romaji'] ?? 'Unknown').toString();
-        final poster = (((anime['coverImage'] ?? {}) as Map<String, dynamic>)['large'] ?? '').toString();
-        final episodes = anime['episodes'];
-        final status = anime['status'];
-
-        return PressableScale(
-          onTap: () => Navigator.push(
-            context,
-            FadeScaleRoute(page: DetailScreen(id: anime['id'].toString())),
-          ),
-          child: SizedBox(
-            height: 92,
-            child: PixelBox(
-              fill: Px.panel,
-              child: Row(
-                children: [
-                  SizedBox(width: 60, child: PixelCover(url: poster, decodeWidth: 48)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(title, maxLines: 2, overflow: TextOverflow.ellipsis,
-                            style: PxFont.text(15, height: 1.2)),
-                        const SizedBox(height: 6),
-                        Text(
-                          [
-                            if (episodes != null) '$episodes EPS',
-                            if (status != null) status.toString().replaceAll('_', ' '),
-                          ].join(' · '),
-                          style: PxFont.label(7, color: Px.ash),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.only(right: 12),
-                    child: PixelSprite(Sprites.chevron, scale: 1.6, color: Px.ashDark),
-                  ),
-                ],
-              ),
-            ),
-          ),
+        return AnimeListRow(
+          anime: anime,
+          onTap: () {
+            // Opening a result means the search found what it was for.
+            AppSettings.addRecentSearch(_controller.text);
+            Navigator.push(context, FadeScaleRoute(page: DetailScreen(id: anime['id'].toString())));
+          },
         );
       },
     );

@@ -7,11 +7,21 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <!-- Keeps the alert check scheduled across reboots. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- Downloads keep going with the app in the background (DownloadKeepAlive.kt),
+         and only on Wi-Fi when asked to. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+
+    <!-- Android TV: installable there (no touchscreen), with a remote to drive it. -->
+    <uses-feature android:name="android.software.leanback" android:required="false"/>
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
 
     <application
         android:label="AniVerse Pixel"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher_pixel"
+        android:banner="@drawable/tv_banner"
         android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
@@ -35,13 +45,33 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+                <!-- The Android TV home screen. -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
             </intent-filter>
         </activity>
+        <service
+            android:name=".DownloadKeepAlive"
+            android:foregroundServiceType="dataSync"
+            android:exported="false"/>
         <!-- The periodic new-episode check (AlertCheck.kt). -->
         <service
             android:name=".AlertJobService"
             android:permission="android.permission.BIND_JOB_SERVICE"
             android:exported="false"/>
+        <!-- Sharing the profile card image (res/xml/share_paths.xml). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/share_paths"/>
+        </provider>
+        <!-- Chromecast: which receiver app plays the episodes (CastBridge.kt). -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.example.aniverse_mobile.CastSetup"/>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

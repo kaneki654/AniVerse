@@ -1,13 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../services/app_settings.dart';
 import '../../services/native_bridge.dart';
 import '../pixel/blood.dart';
 import '../pixel/pixel.dart';
 import '../pixel/pixel_widgets.dart';
 import '../pixel/sprites.dart';
+import '../pixel/theme_fx.dart';
 
 /// Player controls for the 2D UI: a game HUD instead of gradient scrims --
 /// hard bars edged in blood, sprite buttons, a health-bar seek track with a
@@ -19,6 +22,9 @@ class AniVersePlayerControls extends StatefulWidget {
   final String title;
   final Map<String, dynamic>? intro;
   final Map<String, dynamic>? outro;
+
+  /// The "previously on" at the start, when AniSkip knows it.
+  final Map<String, dynamic>? recap;
   final VoidCallback? onNextEpisode;
   final String category;
   final VoidCallback? onToggleCategory;
@@ -51,6 +57,7 @@ class AniVersePlayerControls extends StatefulWidget {
     required this.title,
     this.intro,
     this.outro,
+    this.recap,
     this.onNextEpisode,
     this.category = 'sub',
     this.onToggleCategory,
@@ -72,6 +79,114 @@ class AniVersePlayerControls extends StatefulWidget {
 class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
   bool _visible = true;
   Timer? _hideTimer;
+
+  /// The player itself, for remotes and keyboards: it holds focus while no
+  /// HUD button does.
+  final FocusNode _focus = FocusNode(debugLabel: 'player');
+
+  /// Seconds a skip jumps (Settings).
+  int get _step => AppSettings.seekStep;
+
+  /// A short note in the middle of the picture: "+10", "BRIGHTNESS 60%".
+  final ValueNotifier<(String, double?)?> _hint = ValueNotifier(null);
+  Timer? _hintTimer;
+  void _showHint(String text, [double? level]) {
+    _hint.value = (text, level);
+    _hintTimer?.cancel();
+    _hintTimer = Timer(const Duration(milliseconds: 800), () => _hint.value = null);
+  }
+
+  // Double-tap the left or right of the picture to skip back or forward.
+  double _tapX = 0;
+  void _doubleTap() {
+    final w = context.size?.width ?? 1;
+    final back = _tapX < w / 2;
+    _seekBy(back ? -_step : _step);
+    _showHint(back ? '-$_step' : '+$_step');
+  }
+
+  // Full screen: swipe up or down on the left for brightness, on the right for volume.
+  bool? _dragBrightness;
+  double _dragLevel = 0.5;
+  Future<void> _dragStart(DragStartDetails d) async {
+    final w = context.size?.width ?? 1;
+    final brightness = d.localPosition.dx < w / 2;
+    _dragBrightness = brightness;
+    _dragLevel = brightness ? await NativeBridge.brightness() : await NativeBridge.volume();
+  }
+
+  void _dragUpdate(DragUpdateDetails d) {
+    final which = _dragBrightness;
+    if (which == null) return;
+    final h = context.size?.height ?? 1;
+    _dragLevel = (_dragLevel - d.delta.dy / (h * 0.8)).clamp(0.0, 1.0);
+    if (which) {
+      NativeBridge.setBrightness(_dragLevel);
+    } else {
+      NativeBridge.setVolume(_dragLevel);
+    }
+    _showHint(which ? 'BRIGHTNESS' : 'VOLUME', _dragLevel);
+  }
+
+  /// Remote and keyboard: Select plays and pauses, left and right seek, up
+  /// and down bring the HUD up and move round its buttons, media keys work.
+  KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    if (e is! KeyDownEvent && e is! KeyRepeatEvent) return KeyEventResult.ignored;
+    final k = e.logicalKey;
+    // Media keys, wherever focus is.
+    if (k == LogicalKeyboardKey.mediaPlayPause ||
+        k == LogicalKeyboardKey.mediaPlay ||
+        k == LogicalKeyboardKey.mediaPause) {
+      final wantsPlay = k == LogicalKeyboardKey.mediaPlay;
+      if (k == LogicalKeyboardKey.mediaPlayPause || wantsPlay != _c.value.isPlaying) _togglePlay();
+      _setVisible(true);
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.mediaFastForward || k == LogicalKeyboardKey.mediaRewind) {
+      _seekBy(k == LogicalKeyboardKey.mediaFastForward ? _step : -_step);
+      _setVisible(true);
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.mediaTrackNext && widget.onNextEpisode != null) {
+      widget.onNextEpisode!();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.contextMenu && widget.onOpenMenu != null) {
+      widget.onOpenMenu!();
+      return KeyEventResult.handled;
+    }
+    if (!_focus.hasPrimaryFocus) {
+      // A HUD button has focus: let it work; Escape comes back to the picture.
+      if (k == LogicalKeyboardKey.escape) {
+        _focus.requestFocus();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+    if (k == LogicalKeyboardKey.select ||
+        k == LogicalKeyboardKey.enter ||
+        k == LogicalKeyboardKey.space ||
+        k == LogicalKeyboardKey.gameButtonA ||
+        k == LogicalKeyboardKey.numpadEnter) {
+      _togglePlay();
+      _setVisible(true);
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.arrowLeft || k == LogicalKeyboardKey.arrowRight) {
+      _seekBy(k == LogicalKeyboardKey.arrowRight ? _step : -_step);
+      _setVisible(true);
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.arrowUp || k == LogicalKeyboardKey.arrowDown) {
+      if (!_visible) {
+        _setVisible(true);
+        _scheduleHide();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored; // into the HUD's buttons
+    }
+    return KeyEventResult.ignored;
+  }
 
   VideoPlayerController get _c => widget.controller;
 
@@ -97,6 +212,9 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
 
   @override
   void dispose() {
+    _hintTimer?.cancel();
+    _hint.dispose();
+    _focus.dispose();
     _hideTimer?.cancel();
     _c.removeListener(_onTick);
     super.dispose();
@@ -130,7 +248,9 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
   }
 
   void _togglePlay() {
-    setState(() => _c.value.isPlaying ? _c.pause() : _c.play());
+    // Not inside setState: play() and pause() return futures, which setState rejects.
+    _c.value.isPlaying ? _c.pause() : _c.play();
+    setState(() {});
     _scheduleHide();
     _acted();
   }
@@ -159,14 +279,13 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
     String label = '';
     // Until a second before the end: landing on the end itself after a skip
     // should not leave the button up.
-    if (widget.intro != null &&
-        pos >= (widget.intro!['start'] ?? 0) &&
-        pos < (widget.intro!['end'] ?? 0) - 1) {
+    if (widget.recap != null && pos >= (widget.recap!['start'] ?? 0) && pos < (widget.recap!['end'] ?? 0) - 1) {
+      active = widget.recap;
+      label = 'Skip recap';
+    } else if (widget.intro != null && pos >= (widget.intro!['start'] ?? 0) && pos < (widget.intro!['end'] ?? 0) - 1) {
       active = widget.intro;
       label = 'Skip intro';
-    } else if (widget.outro != null &&
-        pos >= (widget.outro!['start'] ?? 0) &&
-        pos < (widget.outro!['end'] ?? 0) - 1) {
+    } else if (widget.outro != null && pos >= (widget.outro!['start'] ?? 0) && pos < (widget.outro!['end'] ?? 0) - 1) {
       active = widget.outro;
       label = 'Skip outro';
     }
@@ -192,172 +311,199 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
     // full-size bars and buttons overlapped each other.
     final compact = !widget.isFullscreen;
 
-    return GestureDetector(
-      onTap: _toggleVisible,
-      behavior: HitTestBehavior.opaque,
-      child: Stack(
-        children: [
-          // While the HUD is hidden the skip button floats bottom-right, so an
-          // intro can still be skipped mid-watch.
-          if (skip != null && !_visible) Positioned(right: 16, bottom: 20, child: skip),
-
-          IgnorePointer(
-            ignoring: !_visible,
-            // Shown and hidden in one step, like a game HUD, not faded.
-            child: Visibility(
-              visible: _visible,
-              maintainState: true,
-              maintainAnimation: true,
-              maintainSize: true,
-              child: Stack(
-                children: [
-                  // Top bar.
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: hud,
-                        border: Border(bottom: BorderSide(color: Px.blood, width: 2)),
-                      ),
-                      padding: EdgeInsets.fromLTRB(4, compact ? 0 : 4, 10, compact ? 0 : 4),
-                      child: Row(
-                        children: [
-                          PixelIconButton(
-                            sprite: Sprites.back,
-                            tooltip: 'Back',
-                            scale: compact ? 1.8 : 2.2,
-                            onPressed: () => Navigator.of(context).maybePop(),
+    return Focus(
+      focusNode: _focus,
+      autofocus: true,
+      onKeyEvent: _onKey,
+      child: GestureDetector(
+        onTap: _toggleVisible,
+        onDoubleTapDown: (d) => _tapX = d.localPosition.dx,
+        onDoubleTap: _doubleTap,
+        onVerticalDragStart: widget.isFullscreen ? _dragStart : null,
+        onVerticalDragUpdate: widget.isFullscreen ? _dragUpdate : null,
+        onVerticalDragEnd: widget.isFullscreen ? (_) => _dragBrightness = null : null,
+        behavior: HitTestBehavior.opaque,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ValueListenableBuilder<(String, double?)?>(
+                  valueListenable: _hint,
+                  builder: (_, hint, __) => hint == null
+                      ? const SizedBox.shrink()
+                      : Center(
+                          child: PixelBox(
+                            fill: const Color(0xCC050305),
+                            padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                            child: Column(mainAxisSize: MainAxisSize.min, children: [
+                              Text(hint.$1, style: PxFont.label(10, color: Px.bone)),
+                              if (hint.$2 != null) ...[
+                                const SizedBox(height: 8),
+                                SizedBox(width: 120, child: PixelBar(fraction: hint.$2!, height: 8)),
+                              ],
+                            ]),
                           ),
-                          Expanded(
-                            child: Text(
-                              widget.title.toUpperCase(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: PxFont.label(8).copyWith(shadows: PxFont.outline(1)),
-                            ),
-                          ),
-                          if (widget.onOpenMenu != null) ...[
-                            PixelIconButton(
-                              sprite: Sprites.gear,
-                              tooltip: 'Quality, speed and more',
-                              scale: compact ? 1.6 : 2,
-                              size: compact ? 36 : 44,
-                              onPressed: () {
-                                widget.onOpenMenu!();
-                                _scheduleHide();
-                              },
-                            ),
-                            const SizedBox(width: 2),
-                          ],
-                          if (widget.captionsOn != null && widget.onToggleCaptions != null) ...[
-                            _CaptionsToggle(
-                              on: widget.captionsOn!,
-                              onTap: () {
-                                widget.onToggleCaptions!();
-                                _scheduleHide();
-                              },
-                            ),
-                            const SizedBox(width: 6),
-                          ],
-                          if (widget.onToggleCategory != null)
-                            _AudioToggle(
-                              category: widget.category,
-                              onTap: () {
-                                widget.onToggleCategory!();
-                                _scheduleHide();
-                              },
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  if (!widget.hideTransport)
-                    Center(
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _SkipTen(
-                              sprite: Sprites.rewind, size: compact ? 44 : 52, onTap: () => _seekBy(-10)),
-                          SizedBox(width: compact ? 18 : 22),
-                          _PlayButton(
-                              playing: value.isPlaying, size: compact ? 54 : 68, onTap: _togglePlay),
-                          SizedBox(width: compact ? 18 : 22),
-                          _SkipTen(
-                              sprite: Sprites.forward, size: compact ? 44 : 52, onTap: () => _seekBy(10)),
-                        ],
-                      ),
-                    ),
-
-                  // Bottom bar.
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: hud,
-                        border: Border(top: BorderSide(color: Px.blood, width: 2)),
-                      ),
-                      padding: EdgeInsets.fromLTRB(12, compact ? 0 : 6, 6, compact ? 0 : 6),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _SeekBar(
-                            height: compact ? 22 : 30,
-                            value: value,
-                            onSeek: (d) {
-                              _c.seekTo(d).then((_) => _acted());
-                              _scheduleHide();
-                            },
-                          ),
-                          Row(
-                            children: [
-                              Text(_fmt(value.position), style: PxFont.label(7, color: Px.bone)),
-                              Text(' / ${_fmt(value.duration)}', style: PxFont.label(7, color: Px.ash)),
-                              const Spacer(),
-                              if (widget.onNextEpisode != null)
-                                PixelIconButton(
-                                  sprite: Sprites.skipNext,
-                                  tooltip: 'Next episode',
-                                  scale: 1.8,
-                                  onPressed: widget.onNextEpisode,
-                                ),
-                              if (skip != null) ...[skip, const SizedBox(width: 6)],
-                              if (widget.onPip != null)
-                                PixelIconButton(
-                                  sprite: Sprites.pip,
-                                  tooltip: 'Picture in picture',
-                                  scale: compact ? 1.4 : 1.8,
-                                  size: compact ? 36 : 48,
-                                  onPressed: widget.onPip,
-                                ),
-                              if (widget.onToggleFullscreen != null)
-                                PixelIconButton(
-                                  sprite: widget.isFullscreen
-                                      ? Sprites.fullscreenExit
-                                      : Sprites.fullscreen,
-                                  tooltip: widget.isFullscreen ? 'Exit fullscreen' : 'Fullscreen',
-                                  scale: compact ? 1.6 : 2,
-                                  size: compact ? 36 : 48,
-                                  onPressed: () {
-                                    widget.onToggleFullscreen!();
-                                    _scheduleHide();
-                                  },
-                                ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+                        ),
+                ),
               ),
             ),
-          ),
-        ],
+            // While the HUD is hidden the skip button floats bottom-right, so an
+            // intro can still be skipped mid-watch.
+            if (skip != null && !_visible) Positioned(right: 16, bottom: 20, child: skip),
+
+            IgnorePointer(
+              ignoring: !_visible,
+              // Shown and hidden in one step, like a game HUD, not faded.
+              child: Visibility(
+                visible: _visible,
+                maintainState: true,
+                maintainAnimation: true,
+                maintainSize: true,
+                child: Stack(
+                  children: [
+                    // Top bar.
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: hud,
+                          border: Border(bottom: BorderSide(color: Px.blood, width: 2)),
+                        ),
+                        padding: EdgeInsets.fromLTRB(4, compact ? 0 : 4, 10, compact ? 0 : 4),
+                        child: Row(
+                          children: [
+                            PixelIconButton(
+                              sprite: Sprites.back,
+                              tooltip: 'Back',
+                              scale: compact ? 1.8 : 2.2,
+                              onPressed: () => Navigator.of(context).maybePop(),
+                            ),
+                            Expanded(
+                              child: Text(
+                                widget.title.toUpperCase(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: PxFont.label(8).copyWith(shadows: PxFont.outline(1)),
+                              ),
+                            ),
+                            if (widget.onOpenMenu != null) ...[
+                              PixelIconButton(
+                                sprite: Sprites.gear,
+                                tooltip: 'Quality, speed and more',
+                                scale: compact ? 1.6 : 2,
+                                size: compact ? 36 : 44,
+                                onPressed: () {
+                                  widget.onOpenMenu!();
+                                  _scheduleHide();
+                                },
+                              ),
+                              const SizedBox(width: 2),
+                            ],
+                            if (widget.captionsOn != null && widget.onToggleCaptions != null) ...[
+                              _CaptionsToggle(
+                                on: widget.captionsOn!,
+                                onTap: () {
+                                  widget.onToggleCaptions!();
+                                  _scheduleHide();
+                                },
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+                            if (widget.onToggleCategory != null)
+                              _AudioToggle(
+                                category: widget.category,
+                                onTap: () {
+                                  widget.onToggleCategory!();
+                                  _scheduleHide();
+                                },
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    if (!widget.hideTransport)
+                      Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _SkipTen(sprite: Sprites.rewind, seconds: _step, size: compact ? 44 : 52, onTap: () => _seekBy(-_step)),
+                            SizedBox(width: compact ? 18 : 22),
+                            _PlayButton(playing: value.isPlaying, size: compact ? 54 : 68, onTap: _togglePlay),
+                            SizedBox(width: compact ? 18 : 22),
+                            _SkipTen(sprite: Sprites.forward, seconds: _step, size: compact ? 44 : 52, onTap: () => _seekBy(_step)),
+                          ],
+                        ),
+                      ),
+
+                    // Bottom bar.
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: hud,
+                          border: Border(top: BorderSide(color: Px.blood, width: 2)),
+                        ),
+                        padding: EdgeInsets.fromLTRB(12, compact ? 0 : 6, 6, compact ? 0 : 6),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _SeekBar(
+                              height: compact ? 22 : 30,
+                              value: value,
+                              onSeek: (d) {
+                                _c.seekTo(d).then((_) => _acted());
+                                _scheduleHide();
+                              },
+                            ),
+                            Row(
+                              children: [
+                                Text(_fmt(value.position), style: PxFont.label(7, color: Px.bone)),
+                                Text(' / ${_fmt(value.duration)}', style: PxFont.label(7, color: Px.ash)),
+                                const Spacer(),
+                                if (widget.onNextEpisode != null)
+                                  PixelIconButton(
+                                    sprite: Sprites.skipNext,
+                                    tooltip: 'Next episode',
+                                    scale: 1.8,
+                                    onPressed: widget.onNextEpisode,
+                                  ),
+                                if (skip != null) ...[skip, const SizedBox(width: 6)],
+                                if (widget.onPip != null)
+                                  PixelIconButton(
+                                    sprite: Sprites.pip,
+                                    tooltip: 'Picture in picture',
+                                    scale: compact ? 1.4 : 1.8,
+                                    size: compact ? 36 : 48,
+                                    onPressed: widget.onPip,
+                                  ),
+                                if (widget.onToggleFullscreen != null)
+                                  PixelIconButton(
+                                    sprite: widget.isFullscreen ? Sprites.fullscreenExit : Sprites.fullscreen,
+                                    tooltip: widget.isFullscreen ? 'Exit fullscreen' : 'Fullscreen',
+                                    scale: compact ? 1.6 : 2,
+                                    size: compact ? 36 : 48,
+                                    onPressed: () {
+                                      widget.onToggleFullscreen!();
+                                      _scheduleHide();
+                                    },
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -377,10 +523,14 @@ class _PlayButtonState extends State<_PlayButton> {
   bool _down = false;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PixelFocus(onActivate: widget.onTap, child: _faceBuild(context));
+
+  Widget _faceBuild(BuildContext context) {
     return Semantics(
+      container: true, // its own node: a screen reader can focus and press it
       button: true,
       label: widget.playing ? 'Pause' : 'Play',
+      onTap: widget.onTap,
       excludeSemantics: true,
       child: GestureDetector(
         onTapDown: (_) => setState(() => _down = true),
@@ -416,14 +566,19 @@ class _PlayButtonState extends State<_PlayButton> {
 class _SkipTen extends StatelessWidget {
   final Sprite sprite;
   final double size;
+  final int seconds;
   final VoidCallback onTap;
-  const _SkipTen({required this.sprite, required this.onTap, this.size = 52});
+  const _SkipTen({required this.sprite, required this.onTap, this.seconds = 10, this.size = 52});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PixelFocus(onActivate: onTap, child: _faceBuild(context));
+
+  Widget _faceBuild(BuildContext context) {
     return Semantics(
+      container: true, // its own node: a screen reader can focus and press it
       button: true,
-      label: sprite == Sprites.rewind ? 'Back 10 seconds' : 'Forward 10 seconds',
+      label: sprite == Sprites.rewind ? 'Back $seconds seconds' : 'Forward $seconds seconds',
+      onTap: onTap,
       excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,
@@ -439,7 +594,7 @@ class _SkipTen extends StatelessWidget {
               children: [
                 PixelSprite(sprite, scale: 2, color: Px.bone),
                 const SizedBox(height: 3),
-                Text('10', style: PxFont.label(7, color: Px.bone, height: 1)),
+                Text('$seconds', style: PxFont.label(7, color: Px.bone, height: 1)),
               ],
             ),
           ),
@@ -457,10 +612,14 @@ class _CaptionsToggle extends StatelessWidget {
   const _CaptionsToggle({required this.on, required this.onTap});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PixelFocus(onActivate: onTap, child: _faceBuild(context));
+
+  Widget _faceBuild(BuildContext context) {
     return Semantics(
+      container: true, // its own node: a screen reader can focus and press it
       button: true,
       label: 'Subtitles ${on ? 'on' : 'off'}. Tap to turn ${on ? 'off' : 'on'}',
+      onTap: onTap,
       excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,
@@ -484,10 +643,14 @@ class _AudioToggle extends StatelessWidget {
   const _AudioToggle({required this.category, required this.onTap});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PixelFocus(onActivate: onTap, child: _faceBuild(context));
+
+  Widget _faceBuild(BuildContext context) {
     return Semantics(
+      container: true, // its own node: a screen reader can focus and press it
       button: true,
-      label: 'Audio: ${category == 'sub' ? 'subtitles' : 'dub'}. Tap to switch',
+      label: 'Audio: ${category == 'sub' ? 'subtitles' : category == 'tl' ? 'Tagalog dub' : 'dub'}. Tap to switch',
+      onTap: onTap,
       excludeSemantics: true,
       child: GestureDetector(
         onTap: onTap,
@@ -501,7 +664,7 @@ class _AudioToggle extends StatelessWidget {
             children: [
               const PixelSprite(Sprites.swap, scale: 1.3),
               const SizedBox(width: 6),
-              Text(category == 'sub' ? 'SUB' : 'DUB', style: PxFont.label(8, height: 1.2)),
+              Text(category == 'sub' ? 'SUB' : category == 'tl' ? 'TAG' : 'DUB', style: PxFont.label(8, height: 1.2)),
             ],
           ),
         ),
@@ -544,8 +707,7 @@ class _SeekBarState extends State<_SeekBar> {
   void _seekTo(double f, double width) {
     final frac = (f / width).clamp(0.0, 1.0);
     setState(() => _drag = frac);
-    widget.onSeek(Duration(
-        milliseconds: (widget.value.duration.inMilliseconds * frac).round()));
+    widget.onSeek(Duration(milliseconds: (widget.value.duration.inMilliseconds * frac).round()));
   }
 
   @override
@@ -601,12 +763,11 @@ class _SeekPainter extends CustomPainter {
     pc.rect(1, mid - 1, p, 3, Px.blood);
     pc.rect(1, mid - 1, p, 1, Px.bloodLight);
     // Handle: the blood drop sprite, centred on the playhead.
-    const drop = Sprites.bloodDrop;
+    final drop = ThemeSprites.mark(Sprites.bloodDrop);
     final hx = (1 + p - drop.w ~/ 2).clamp(0, cols - drop.w);
     pc.sprite(drop, hx, mid - drop.h ~/ 2 - 1);
   }
 
   @override
-  bool shouldRepaint(covariant _SeekPainter o) =>
-      o.played != played || o.buffered != buffered;
+  bool shouldRepaint(covariant _SeekPainter o) => o.played != played || o.buffered != buffered;
 }

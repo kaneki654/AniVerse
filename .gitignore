@@ -20,3 +20,8 @@ data/
 
 # Named Cloudflare tunnel settings written by scripts/setup_named_tunnel.sh.
 .aniverse_tunnel
+
+# Local settings and keys sourced by start_all.sh (see aniverse.env.example).
+.aniverse_env
+# Database backups made by scripts/housekeeping.py.
+backups/

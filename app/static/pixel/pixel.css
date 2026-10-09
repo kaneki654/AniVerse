@@ -808,6 +808,20 @@ body.shake main { animation: shake 0.18s steps(3); }
   --gold: #ffd36b; --gold-dark: #a8801f;
   --blood-rgb: 255 95 162; --glow-rgb: 255 179 209;
 }
+/* The handheld's four greens, darkest to lightest, plus a lime for accents. */
+:root[data-theme="gameboy"] {
+  --ink: #0b1d0b; --panel: #0f380f; --panel-high: #1a4a1a;
+  --blood: #8bac0f; --blood-dark: #306230; --blood-deep: #173d17; --blood-light: #9bbc0f;
+  --gold: #c8e05a; --gold-dark: #5a7a1a;
+  --blood-rgb: 139 172 15; --glow-rgb: 155 188 15;
+}
+/* Lacquer black and gold leaf, vermilion for the accents. */
+:root[data-theme="samurai"] {
+  --ink: #0b0907; --panel: #17120c; --panel-high: #261d12;
+  --blood: #d4a537; --blood-dark: #7a5a1c; --blood-deep: #2e220c; --blood-light: #ffe08a;
+  --gold: #e8543a; --gold-dark: #8a2a18;
+  --blood-rgb: 212 165 55; --glow-rgb: 255 224 138;
+}
 
 /* --- phone tab bar ------------------------------------------------------------------ */
 .bottom-nav { display: none; }
@@ -917,6 +931,8 @@ body.shake main { animation: shake 0.18s steps(3); }
 .stat { padding: 10px 12px; }
 .stat b { display: block; font: 14px/1.4 var(--display); color: var(--bone); }
 .stat small { font: 7px/1.6 var(--display); color: var(--ash); text-transform: uppercase; }
+.stat.warn { border-color: var(--blood-light); }
+.stat.warn b, .stat.warn small { color: var(--blood-light); }
 
 /* --- settings ----------------------------------------------------------------------------- */
 .setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; }
@@ -963,6 +979,14 @@ body.shake main { animation: shake 0.18s steps(3); }
 .party-chat .sys { color: var(--ash-dark); }
 .party-send { display: flex; gap: 8px; width: 100%; }
 .party-send .px-input { padding-left: 12px; min-height: 38px; }
+.party-reacts { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+.react-btn { font-size: 20px; line-height: 1; padding: 6px 8px; background: var(--panel); border: 2px solid var(--black); cursor: pointer; }
+.react-btn:hover, .react-btn:focus-visible { border-color: var(--gold); }
+.party-react { position: absolute; bottom: 14%; z-index: 6; font-size: 34px; pointer-events: none;
+  animation: party-react-up 2.5s steps(20) forwards; }
+@keyframes party-react-up { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: 1; }
+  100% { transform: translateY(-220px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .party-react { animation-duration: 1.2s; } }
 
 /* --- the boss fight: the failure screen you can play --------------------------------------- */
 .boss { display: flex; flex-direction: column; align-items: center; gap: 10px; }
@@ -975,3 +999,17 @@ body.shake main { animation: shake 0.18s steps(3); }
 .level-card .who b { font: 12px/1.5 var(--display); text-transform: uppercase; text-shadow: var(--outline); overflow-wrap: anywhere; }
 .google-signin { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 16px; }
 .google-signin .or { margin: 0; font: 7px/1 var(--display); text-transform: uppercase; }
+
+/* --- Settings > Effects: Off keeps the page still (Lite is handled in px.js) --- */
+html[data-fx="off"] .px-btn::after, html[data-fx="off"] .big-play::after, html[data-fx="off"] .logo .word::after,
+html[data-fx="off"] .poster:hover .frame::after { animation: none !important; }
+html[data-fx="off"] canvas.embers-bg, html[data-fx="off"] canvas.drips { display: none; }
+
+/* Recent searches */
+.recent-searches { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+.recent-searches .chip { padding: 6px 10px; font: 14px/1.3 var(--body); color: var(--bone); background: var(--panel); cursor: pointer; }
+.recent-searches .chip:hover, .recent-searches .chip:focus-visible { border-color: var(--gold); }
+
+/* High contrast (Settings): brighter secondary text on any palette */
+html[data-contrast="on"] { --ash: #e2dcd2; --ash-dark: #b4aca2; }
+

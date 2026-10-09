@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/api_service.dart';
+import '../../services/native_bridge.dart';
+import '../../services/history_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/update_service.dart';
 import '../pixel/pixel.dart';
@@ -197,8 +199,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
+                const _BecauseYouWatched(),
                 const SizedBox(height: 24),
                 _buildSection('Trending Now', homeData!['trending']),
+                const _TagalogRow(),
                 const SizedBox(height: 24),
                 _buildSection('Popular', homeData!['popular']),
                 const SizedBox(height: 24),
@@ -210,29 +214,170 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSection(String title, List<dynamic>? animes) {
     if (animes == null || animes.isEmpty) return const SizedBox();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SectionHeader(title: title),
-        SizedBox(
-          height: 210,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: animes.length,
-            itemBuilder: (context, index) {
-              return PosterCard(
-                anime: animes[index] as Map<String, dynamic>,
-                width: 130,
-                onTap: () => Navigator.push(
-                  context,
-                  FadeScaleRoute(page: DetailScreen(id: animes[index]['id'].toString()),
+    return PosterRow(title: title, animes: animes);
+  }
+}
+
+
+/// A titled row of posters. On a TV the posters are bigger, and coming back
+/// to the row with the remote lands on the poster last left, not whichever
+/// sits nearest the focus coming in.
+class PosterRow extends StatefulWidget {
+  final String title;
+  final List<dynamic> animes;
+  const PosterRow({super.key, required this.title, required this.animes});
+
+  @override
+  State<PosterRow> createState() => _PosterRowState();
+}
+
+class _PosterRowState extends State<PosterRow> {
+  final _nodes = <int, FocusNode>{};
+  int? _last;
+
+  FocusNode _node(int i) => _nodes.putIfAbsent(i, () {
+        final n = FocusNode(debugLabel: '${widget.title} $i');
+        n.addListener(() {
+          if (n.hasFocus) _last = i;
+        });
+        return n;
+      });
+
+  @override
+  void dispose() {
+    for (final n in _nodes.values) {
+      n.dispose();
+    }
+    super.dispose();
+  }
+
+  /// The poster focus was on when it last left this row.
+  int? _remembered;
+
+  /// Focus came into the row from outside: go to where it was last time.
+  void _cameBack() {
+    final want = _remembered;
+    final target = want == null ? null : _nodes[want];
+    final landed = _nodes.entries.where((e) => e.value.hasPrimaryFocus).map((e) => e.key).firstOrNull;
+    if (target == null || landed == null || landed == want) return;
+    target.requestFocus();
+    final ctx = target.context;
+    if (ctx != null) Scrollable.ensureVisible(ctx, alignment: 0.5, duration: const Duration(milliseconds: 150));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tv = NativeBridge.isTv;
+    final width = tv ? 180.0 : 130.0;
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onFocusChange: (has) {
+        if (has) {
+          _cameBack();
+        } else {
+          _remembered = _last;
+        }
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SectionHeader(title: widget.title),
+          SizedBox(
+            height: tv ? 290 : 210,
+            // Not built lazily: a row is at most a couple of dozen posters, and
+            // the remembered one must exist to take focus.
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (var i = 0; i < widget.animes.length; i++)
+                  PosterCard(
+                    anime: widget.animes[i] as Map<String, dynamic>,
+                    width: width,
+                    focusNode: _node(i),
+                    onTap: () => Navigator.push(
+                      context,
+                      FadeScaleRoute(page: DetailScreen(id: widget.animes[i]['id'].toString())),
+                    ),
                   ),
-                ),
-              );
-            },
+              ],
+            ),
           ),
-        ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Because you watched …": AniList's recommendations for the two shows
+/// watched most recently, leaving out ones already in the history.
+class _BecauseYouWatched extends StatefulWidget {
+  const _BecauseYouWatched();
+
+  @override
+  State<_BecauseYouWatched> createState() => _BecauseYouWatchedState();
+}
+
+class _BecauseYouWatchedState extends State<_BecauseYouWatched> {
+  final _rows = <(String, List<dynamic>)>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final recent = HistoryService.latestPerAnime();
+    final seen = {for (final e in recent) e.animeId};
+    for (final e in recent.take(2)) {
+      final x = await ApiService.extra(e.animeId);
+      final recs = [
+        for (final r in (x['recommendations'] as List? ?? const []))
+          if (r is Map && r['id'] != null && !seen.contains(r['id'].toString())) r,
+      ];
+      if (!mounted) return;
+      if (recs.length >= 3) setState(() => _rows.add((e.title.isEmpty ? 'a show' : e.title, recs)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [
+      for (final (title, recs) in _rows) ...[
+        const SizedBox(height: 24),
+        PosterRow(title: 'Because you watched $title', animes: recs),
       ],
+    ]);
+  }
+}
+
+
+/// Tagalog-dubbed anime (app/tagalog.py on the web server).
+class _TagalogRow extends StatefulWidget {
+  const _TagalogRow();
+
+  @override
+  State<_TagalogRow> createState() => _TagalogRowState();
+}
+
+class _TagalogRowState extends State<_TagalogRow> {
+  List<Map<String, dynamic>> _shows = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    ApiService.tagalogShows().then((s) {
+      if (mounted) setState(() => _shows = s);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_shows.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: PosterRow(title: 'Tagalog Dub', animes: _shows),
     );
   }
 }

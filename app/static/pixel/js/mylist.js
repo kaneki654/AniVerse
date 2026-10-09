@@ -4,6 +4,7 @@ import { h, sprite, pixelCover, clear } from "./px.js";
 import { api, airedEpisodes, history } from "./api.js";
 import { watchlist } from "./watchlist.js";
 import { settings } from "./settings.js";
+import { push } from "./push.js";
 import { initShell, emptyState } from "./ui.js";
 
 initShell();
@@ -14,13 +15,14 @@ function renderAlertsRow() {
   const on = settings.get().alerts && "Notification" in window && Notification.permission === "granted";
   clear(alertsRow).append(
     h("div", null, h("b", null, "New-episode alerts"),
-      h("span", null, "Get a notification when a show on your list airs a new episode, while AniVerse is open.")),
+      h("span", null, "Get a notification when a show on your list airs a new episode, even with AniVerse closed.")),
     h("button.px-switch", {
       type: "button", role: "switch", "aria-checked": String(on), "aria-label": "New-episode alerts",
       onclick: async () => {
-        if (on) { settings.set({ alerts: false }); return renderAlertsRow(); }
+        if (on) { settings.set({ alerts: false }); await push.disable(); return renderAlertsRow(); }
         const perm = "Notification" in window ? await Notification.requestPermission() : "denied";
         settings.set({ alerts: perm === "granted" });
+        if (perm === "granted") push.enable();
         renderAlertsRow();
       },
     }));

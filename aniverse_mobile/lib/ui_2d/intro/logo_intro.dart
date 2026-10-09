@@ -11,8 +11,10 @@ import '../pixel/theme_fx.dart';
 import 'logo_sprite.dart';
 
 part 'intro_blood.dart';
+part 'intro_gameboy.dart';
 part 'intro_neon.dart';
 part 'intro_sakura.dart';
+part 'intro_samurai.dart';
 
 /// The intro that plays as the app opens: the AniVerse emblem, as pixel art,
 /// brought into the world in the style of the palette picked in Settings.
@@ -25,6 +27,11 @@ part 'intro_sakura.dart';
 ///  - Sakura (intro_sakura.dart): one petal falls, the emblem blooms out
 ///    from where it lands, a gust of petals, letters fade in with sparkles,
 ///    a petal storm sweeps it away.
+///  - Game Boy (intro_gameboy.dart): the emblem scrolls down the LCD and
+///    stops with a ding, ANIVERSE types in, blocks fall, the screen fades
+///    through its greens and redraws onto the app.
+///  - Gold samurai (intro_samurai.dart): a vermilion ensō brushed round, the
+///    emblem gilded into it, a gong, gold leaf, a sword cut to open.
 ///
 /// Everything is drawn one art cell at a time and moves in whole frames at
 /// 24 fps, never interpolated, so it reads as sprite animation. Tap to skip.
@@ -60,6 +67,8 @@ abstract class _Scene {
 _Scene _sceneFor(FxStyle style) => switch (style) {
       FxStyle.neon => _NeonScene(),
       FxStyle.sakura => _SakuraScene(),
+      FxStyle.gameboy => _GameBoyScene(),
+      FxStyle.samurai => _SamuraiScene(),
       FxStyle.blood => _BloodScene(),
     };
 
