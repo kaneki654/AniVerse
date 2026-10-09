@@ -649,7 +649,7 @@ class _AudioToggle extends StatelessWidget {
     return Semantics(
       container: true, // its own node: a screen reader can focus and press it
       button: true,
-      label: 'Audio: ${category == 'sub' ? 'subtitles' : 'dub'}. Tap to switch',
+      label: 'Audio: ${category == 'sub' ? 'subtitles' : category == 'tl' ? 'Tagalog dub' : 'dub'}. Tap to switch',
       onTap: onTap,
       excludeSemantics: true,
       child: GestureDetector(
@@ -664,7 +664,7 @@ class _AudioToggle extends StatelessWidget {
             children: [
               const PixelSprite(Sprites.swap, scale: 1.3),
               const SizedBox(width: 6),
-              Text(category == 'sub' ? 'SUB' : 'DUB', style: PxFont.label(8, height: 1.2)),
+              Text(category == 'sub' ? 'SUB' : category == 'tl' ? 'TAG' : 'DUB', style: PxFont.label(8, height: 1.2)),
             ],
           ),
         ),

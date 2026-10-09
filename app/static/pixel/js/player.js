@@ -303,10 +303,11 @@ export function createPlayer(host, handlers) {
     video,
     setTitle: (t) => { titleEl.textContent = t; },
     setCategory(cat, canSwitch) {
-      audioBtn.querySelector("span").textContent = cat.toUpperCase();
+      const name = cat === "tl" ? "TAGALOG" : cat.toUpperCase();
+      audioBtn.querySelector("span").textContent = name;
       audioBtn.disabled = !canSwitch;
       audioBtn.classList.toggle("off", !canSwitch);
-      audioBtn.title = canSwitch ? `Audio: ${cat.toUpperCase()}. Switch to ${cat === "sub" ? "DUB" : "SUB"}` : "No dub for this episode";
+      audioBtn.title = canSwitch ? `Audio: ${name}. Switch to ${cat === "sub" ? "DUB" : "SUB"}` : "No dub for this episode";
     },
     setCaptions(available, on) {
       ccBtn.hidden = !available;

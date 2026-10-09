@@ -25,7 +25,6 @@ import '../widgets/aniverse_logo.dart';
 import '../widgets/buffer_overlay.dart';
 import '../widgets/pixel_extras.dart';
 import '../widgets/player_controls.dart';
-import 'tagalog_watch_screen.dart';
 
 class WatchScreen extends StatefulWidget {
   final String animeId;
@@ -279,20 +278,12 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     _speed.start();
     _watchdog = Timer.periodic(const Duration(seconds: 1), (_) => _checkHealth());
     _historyTimer = Timer.periodic(const Duration(seconds: 10), (_) => _saveProgress());
-    // Watching this show in Tagalog: straight to the Tagalog player when this
-    // episode is dubbed, without starting a stream here first.
-    if (AppSettings.tagalogFor(widget.animeId)) {
+    // Watching this show in Tagalog: this episode too, when it is dubbed.
+    if (AppSettings.tagalogFor(widget.animeId) && widget.category == 'sub' && widget.partyCode == null) {
       ApiService.tagalog(widget.animeId).then((t) {
         if (!mounted) return;
-        if (t != null && (t['episodes'] as Map?)?.containsKey('${widget.epNum}') == true && _party == null) {
-          Navigator.of(context).pushReplacement(FadeScaleRoute(
-            backdrop: false,
-            page: TagalogWatchScreen(
-                animeId: widget.animeId, epNum: widget.epNum, dub: t, title: widget.title, cover: widget.cover),
-          ));
-        } else {
-          _resolve();
-        }
+        if ((t?['episodes'] as Map?)?.containsKey('${widget.epNum}') == true) setState(() => category = 'tl');
+        _resolve();
       });
     } else {
       _resolve();
@@ -660,6 +651,8 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     }
     // Only the server knows recaps, and only from episode 2 on.
     if (_intro != null && _outro != null && widget.epNum <= 1) return;
+    // The Tagalog dubs are TV recordings of their own length: no intro times fit them.
+    if (category == 'tl') return;
     final gen = _generation;
     Future<void> ask() async {
       final d = c.value.duration;
@@ -1108,7 +1101,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     final choice = await pickOption<String>(context, 'Player', [
       if (vs.length > 1) ('quality', 'Quality · $_qualityLabel${AppSettings.dataSaver ? ' (data saver)' : ''}'),
       ('speed', 'Speed · ${speed == 1 ? 'normal' : '${speed}x'}'),
-      if (_tagalogHere && _party == null) ('tagalog', 'Tagalog dub (official, on YouTube)'),
+      if (_tagalogHere && _party == null) ('tagalog', category == 'tl' ? 'Audio · Tagalog (back to sub/dub)' : 'Audio · Tagalog dub'),
       ('sleep', 'Sleep timer · $_sleepLabel'),
       if (_aired > widget.epNum)
         ('autonext', 'Auto-play next · ${AppSettings.autoNextFor(widget.animeId) ? 'on' : 'off'} (this show)'),
@@ -1160,12 +1153,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
           }
         }
       case 'tagalog':
-        _saveProgress();
-        Navigator.of(context).pushReplacement(FadeScaleRoute(
-          backdrop: false,
-          page: TagalogWatchScreen(
-              animeId: widget.animeId, epNum: widget.epNum, dub: _tagalog!, title: widget.title, cover: widget.cover),
-        ));
+        _toggleCategory(to: category == 'tl' ? 'sub' : 'tl');
       case 'sleep':
         final pick = await pickOption<int>(context, 'Sleep timer', const [
           (0, 'Off'), (15, '15 minutes'), (30, '30 minutes'), (45, '45 minutes'), (60, '1 hour'), (-1, 'End of this episode'),
@@ -1277,7 +1265,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     c?.pause();
     NativeBridge.castLoad(url,
         title: widget.title ?? 'AniVerse',
-        subtitle: 'Episode ${widget.epNum}${category == 'dub' ? ' (dub)' : ''}',
+        subtitle: 'Episode ${widget.epNum}${category == 'dub' ? ' (dub)' : category == 'tl' ? ' (Tagalog)' : ''}',
         position: (c?.value.position ?? _lastGoodPosition).inMilliseconds,
         subtitles: _captionsOn ? _trackUrl : null,
         hls: src?['isM3U8'] == true || url.contains('m3u8')).then((ok) {
@@ -1490,7 +1478,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     }
     if (s.category != category && (s.category == 'sub' || _hasDub != false)) {
       _pendingParty = (s, t, DateTime.now());
-      _toggleCategory(fromParty: true);
+      _toggleCategory(fromParty: true, to: s.category);
       return;
     }
     final c = _controller;
@@ -1556,12 +1544,15 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     NativeBridge.keepScreenOn(playing);
   }
 
-  /// Reload the current episode on the other audio track.
-  void _toggleCategory({bool fromParty = false}) {
+  /// Reload the current episode on the other audio track ([to]: a given one --
+  /// 'tl' is the Tagalog dub, which this show then keeps until it is switched off).
+  void _toggleCategory({bool fromParty = false, String? to}) {
     final at = _controller?.value.position ?? _lastGoodPosition;
+    final next = to ?? (category == 'sub' ? 'dub' : 'sub');
+    if (next == 'tl' || category == 'tl') AppSettings.setTagalogFor(widget.animeId, next == 'tl');
     if (!fromParty && _party != null) {
       _party!.send(PartyState(
-          anime: widget.animeId, ep: widget.epNum, category: category == 'sub' ? 'dub' : 'sub',
+          anime: widget.animeId, ep: widget.epNum, category: next,
           playing: true, t: at.inMilliseconds / 1000));
     }
     _saveProgress();
@@ -1572,7 +1563,7 @@ class _WatchScreenState extends State<WatchScreen> with WidgetsBindingObserver {
     _stale?.dispose();
     _stale = null;
     setState(() {
-      category = category == 'sub' ? 'dub' : 'sub';
+      category = next;
       _controller = null;
       _hasCaptions = false;
       _captionsChoice = null;

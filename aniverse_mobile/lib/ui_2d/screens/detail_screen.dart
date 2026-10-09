@@ -16,7 +16,6 @@ import '../widgets/aniverse_logo.dart';
 import '../widgets/continue_watching.dart';
 import '../widgets/pixel_extras.dart';
 import '../widgets/poster_card.dart';
-import 'tagalog_watch_screen.dart';
 import 'watch_screen.dart';
 
 class DetailScreen extends StatefulWidget {
@@ -37,7 +36,7 @@ class _DetailScreenState extends State<DetailScreen> {
   Map<int, Map<String, dynamic>> _epInfo = const {};
   bool _listView = AppSettings.epView == 'list';
 
-  /// The official Tagalog dub, when this anime has one (app/tagalog.py).
+  /// The Tagalog dub, when this anime has one (app/tagalog.py).
   Map<String, dynamic>? _tagalog;
 
   /// Collapsed height of the header, measured from the top of the screen.
@@ -105,8 +104,9 @@ class _DetailScreenState extends State<DetailScreen> {
     pixelToast(context, '$n episode${n == 1 ? '' : 's'} queued. ${AppSettings.wifiOnly ? 'They download on Wi-Fi. ' : ''}They will be under Saved.');
   }
 
-  /// Watch the official Tagalog dub: from the episode last watched if it is
-  /// dubbed, else the first dubbed one.
+  /// Watch the Tagalog dub: from the episode last watched if it is dubbed,
+  /// else the first dubbed one. The show then opens in Tagalog until the
+  /// player is switched back to sub or dub.
   Widget _tagalogButton() {
     final dub = _tagalog!;
     final eps = (dub['episodes'] as Map).keys.map((k) => int.parse('$k')).toList()..sort();
@@ -118,13 +118,16 @@ class _DetailScreenState extends State<DetailScreen> {
         label: 'Tagalog dub · ${eps.length} EP${eps.length == 1 ? '' : 'S'}',
         icon: Sprites.play,
         fontSize: 8,
-        onPressed: () => Navigator.push(
-          context,
-          FadeScaleRoute(
-            backdrop: false,
-            page: TagalogWatchScreen(animeId: widget.id, epNum: start, dub: dub, title: _title, cover: _cover),
-          ),
-        ),
+        onPressed: () {
+          AppSettings.setTagalogFor(widget.id, true);
+          Navigator.push(
+            context,
+            FadeScaleRoute(
+              backdrop: false,
+              page: WatchScreen(animeId: widget.id, epNum: start, category: 'tl', title: _title, cover: _cover),
+            ),
+          );
+        },
       ),
     );
   }

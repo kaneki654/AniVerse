@@ -23,16 +23,13 @@ from app import accounts, proxy_hosts
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     # New-episode alerts for the website, sent while it is closed (app/webpush.py).
-    from app import ops as server_ops, tagalog as tagalog_dubs, webpush as push
+    from app import ops as server_ops, webpush as push
     checker = asyncio.create_task(push.checker_loop())
     # Free disk space, logged while it runs low (app/ops.py).
     disk_watch = asyncio.create_task(server_ops.watch_disk())
-    # New weekly Tagalog-dub episodes, from the licensees' RSS feeds (app/tagalog.py).
-    tagalog_watch = asyncio.create_task(tagalog_dubs.refresh_loop())
     yield
     checker.cancel()
     disk_watch.cancel()
-    tagalog_watch.cancel()
 
 
 app = FastAPI(lifespan=_lifespan)
@@ -760,6 +757,8 @@ async def get_source(request: Request, episode_id: str, server: str = "Auto", ca
                      fresh: bool = False):
     try:
         anilist_id, ep_num = episode_id.split("/")
+        if category == "tl":  # the Tagalog dub, from the Filipino anime sites (app/tagalog.py)
+            return await tagalog.source_answer(int(anilist_id), int(ep_num))
         async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as check_client, \
                 httpx.AsyncClient() as client:
             data = await _fetch_resolve(client, anilist_id, ep_num, category, fresh)

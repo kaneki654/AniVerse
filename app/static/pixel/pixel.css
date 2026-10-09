@@ -1013,6 +1013,3 @@ html[data-fx="off"] canvas.embers-bg, html[data-fx="off"] canvas.drips { display
 /* High contrast (Settings): brighter secondary text on any palette */
 html[data-contrast="on"] { --ash: #e2dcd2; --ash-dark: #b4aca2; }
 
-/* The Tagalog dub: YouTube's player in the player's place */
-#tl-player iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
-#tl-player .tl-note { position: absolute; inset: auto 0 0 0; padding: 10px 14px; background: rgba(5, 3, 5, 0.85); color: var(--bone); font-size: 14px; }

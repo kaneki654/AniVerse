@@ -355,12 +355,12 @@ class ApiService {
     }
   }
 
-  // --- official Tagalog dubs (app/tagalog.py on the web server) --------------------------
+  // --- Tagalog dubs (app/tagalog.py on the web server) -----------------------------------
 
   static List<Map<String, dynamic>>? _tagalogShows;
   static final Map<String, Map<String, dynamic>?> _tagalogFor = {};
 
-  /// Anime with an official Tagalog dub, as poster data (cached for the run).
+  /// Anime with a Tagalog dub, as poster data (cached for the run).
   static Future<List<Map<String, dynamic>>> tagalogShows() async {
     final cached = _tagalogShows;
     if (cached != null) return cached;
@@ -373,7 +373,8 @@ class ApiService {
     }
   }
 
-  /// {channel, region, episodes: {"1": youtube id}} for one anime, or null.
+  /// {sites, episodes: {"1": sites}} for one anime, or null. Playing one is
+  /// getSources(..., 'tl').
   static Future<Map<String, dynamic>?> tagalog(String id) async {
     if (_tagalogFor.containsKey(id)) return _tagalogFor[id];
     try {

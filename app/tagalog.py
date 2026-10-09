@@ -1,51 +1,51 @@
 """
-Tagalog dubs: the official ones, from the Philippine licensees' YouTube
-channels (Muse Philippines, Ani-One Philippines).
+Tagalog dubs, from the Filipino anime sites that have them, played in
+AniVerse's own player like the sub and dub streams.
 
-They are free and legal to watch there, and may be embedded -- in the
-Philippines only, which is where they are licensed. AniVerse plays them in
-YouTube's own embedded player, so the views and the ads stay with the channel;
-nothing is downloaded or proxied.
-
-- app/tagalog_dubs.json is the catalogue, built by scripts/find_tagalog_dubs.py:
-  per show, the channel's episode videos and which AniList entry covers which
-  of the channel's episode numbers (the channels number straight through the
-  seasons; AniList splits them).
-- Some dubs are only up as one long "full marathon" video a season. Those
-  episodes are clips of it -- "clips": {episode: [start, end]} in seconds,
-  from the video's own chapters -- and play just that part.
-- New weekly episodes of those shows are picked up from the channels' official
-  RSS feeds every few hours (data/tagalog_new.json), each checked to be free to
-  watch -- not an early "members only" upload.
+- app/tagalog_sites.json, built by scripts/find_tagalog_sites.py: per AniList
+  id, which episodes each site has -- Senpai Tambayan's are plain .mp4 links
+  (archive.org, file.garden), Anime Revival's are episode pages.
+- /api/source?category=tl (app/main.py) answers with source_answer(): the
+  episode's streams, best first. An Anime Revival episode page holds a plain
+  .mp4 (played directly) or a Blogger video, whose token is turned into Google
+  video links when the episode is played. Those links only work from the
+  address that asked for them, so they go through /proxy/stream.
+- /api/tagalog lists the shows (the Home row, the show page's button).
+- /tagalog/{id}/{episode}: a bare player page for the 1.12 app, which showed
+  the Tagalog dub in a web view.
 """
 
-import asyncio
-import html
 import json
 import re
 import threading
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 
-from app import accounts
+from app import proxy_hosts
 
-CATALOGUE = Path(__file__).resolve().parent / "tagalog_dubs.json"
-REFRESH_EVERY = 6 * 3600
-UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)", "Accept-Language": "en"}
+CATALOGUE = Path(__file__).resolve().parent / "tagalog_sites.json"
+# The same browser as app.main.USER_AGENT, which /proxy/stream fetches with:
+# Google's video links only open for the browser that asked for them.
+UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"}
+REVIVAL = "https://animerevival.xyz/episodes/"
+BLOGGER_RPC = ("https://www.blogger.com/_/BloggerVideoPlayerUi/data/batchexecute"
+               "?rpcids=WcwnYd&source-path=%2Fvideo.g&hl=en&rt=c")
+# Blogger's formats, best first; 13 is a tiny 3GP, kept only when there is nothing else.
+ITAGS = {37: "1080p", 22: "720p", 18: "360p", 13: "144p"}
+LINK_TTL = 3600  # Google's links last about six hours; ask again well before
 
 router = APIRouter()
 
 _lock = threading.Lock()
 _catalogue: dict[str, Any] | None = None
-
-
-def _new_path() -> Path:
-    return accounts.DATA_DIR / "tagalog_new.json"
+_links: dict[str, tuple[float, list[dict]]] = {}
 
 
 def _load() -> dict[str, Any]:
@@ -57,99 +57,173 @@ def _load() -> dict[str, Any]:
             except (OSError, ValueError):
                 pass
         if not isinstance(_catalogue, dict):
-            _catalogue = {"shows": [], "channels": {}, "region": ["PH"]}
+            _catalogue = {"sites": {}, "anime": {}}
         return _catalogue
 
 
-def _found_since() -> dict[str, dict[str, str]]:
-    try:
-        data = json.loads(_new_path().read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except (OSError, ValueError):
-        return {}
-
-
-def _episodes(show: dict[str, Any]) -> dict[str, str]:
-    """The channel's episode number -> video, catalogue plus what RSS added."""
-    return {**show.get("episodes", {}), **_found_since().get(show["key"], {})}
-
-
 def reset() -> None:
-    """For tests: read the catalogue again."""
+    """For tests: read the catalogue again, forget the resolved links."""
     global _catalogue
     with _lock:
         _catalogue = None
+    _links.clear()
 
 
 def for_anime(anilist_id: int) -> dict[str, Any] | None:
-    """{title, channel, channelUrl, region, episodes: {anilist episode: video id}}, or None.
-    A show cut from marathon videos also has clips: {anilist episode: [start, end]}."""
+    """{anilist, title, sites: [names], episodes: {episode: "senpai+revival"}}, or None."""
     cat = _load()
-    for show in cat.get("shows", []):
-        for season in show.get("seasons", []):
-            if season.get("anilist") != anilist_id:
-                continue
-            channel_eps = _episodes(show)
-            first, last = int(season["first"]), int(season["last"])
-            episodes = {str(n - first + 1): channel_eps[str(n)] for n in range(first, last + 1) if str(n) in channel_eps}
-            if not episodes:
-                return None
-            ch = cat.get("channels", {}).get(show["channel"], {})
-            found = {
-                "anilist": anilist_id,
-                "title": show.get("title", ""),
-                "channel": ch.get("name", ""),
-                "channelUrl": f"https://www.youtube.com/channel/{ch['id']}" if ch.get("id") else "",
-                "region": cat.get("region", ["PH"]),
-                "episodes": episodes,
-            }
-            clips = show.get("clips", {})
-            if clips:
-                found["clips"] = {str(n - first + 1): clips[str(n)] for n in range(first, last + 1) if str(n) in clips}
-            return found
-    return None
+    entry = cat.get("anime", {}).get(str(anilist_id))
+    if not entry or not entry.get("episodes"):
+        return None
+    names = cat.get("sites", {})
+    keys = sorted({k for refs in entry["episodes"].values() for k in refs})
+    sites = [names.get(k, {}).get("name", k) for k in keys]
+    return {
+        "anilist": anilist_id,
+        "title": entry.get("title", ""),
+        "sites": sites,
+        "channel": " / ".join(sites),  # what the 1.12 app shows as the source
+        "episodes": {ep: "+".join(refs) for ep, refs in entry["episodes"].items()},
+    }
 
 
 def anime_ids() -> list[int]:
-    return [s["anilist"] for show in _load().get("shows", []) for s in show.get("seasons", [])
-            if for_anime(s["anilist"])]
+    return [int(i) for i, a in _load().get("anime", {}).items() if a.get("episodes")]
 
 
-# --- poster data for the "Tagalog dub" row --------------------------------------------------
+# --- playing an episode ---------------------------------------------------------------------------
+
+def page_videos(page: str) -> tuple[list[str], list[str]]:
+    """What an Anime Revival episode page plays: (plain .mp4 links, Blogger
+    video tokens). Its other hosts -- Abyss, whose links are encrypted, and
+    dead Drive / Dailymotion / ok.ru embeds -- give nothing; the catalogue
+    leaves out shows that use them (scripts/find_tagalog_sites.py)."""
+    # A plain .mp4 in a video.js player or straight in the player's frame.
+    mp4s = re.findall(r'<(?:source|iframe)[^>]+src="(https://[^"]+\.mp4)"', page)
+    tokens = re.findall(r"blogger\.com/video\.g\?token=([A-Za-z0-9_-]+)", page)
+    return list(dict.fromkeys(mp4s)), list(dict.fromkeys(tokens))
+
+
+async def _revival_links(client: httpx.AsyncClient, slug: str) -> list[dict]:
+    """An Anime Revival episode -> its videos, best first: {url, quality, direct}."""
+    hit = _links.get(slug)
+    if hit and time.time() - hit[0] < LINK_TTL:
+        return hit[1]
+    page = (await client.get(f"{REVIVAL}{quote(slug)}/", headers=UA)).text
+    mp4_links, tokens = page_videos(page)
+    mp4s = [{"url": u, "quality": "SD", "direct": True} for u in mp4_links]
+    found: list[dict] = []
+    for token in tokens:
+        req = json.dumps([[["WcwnYd", json.dumps([token, "", 0]), None, "generic"]]])
+        r = await client.post(BLOGGER_RPC, data={"f.req": req}, headers=UA)
+        for line in r.text.splitlines():
+            if not line.startswith("[["):
+                continue
+            try:
+                reply = json.loads(line)[0]
+                if reply[:2] != ["wrb.fr", "WcwnYd"]:
+                    continue
+                streams = json.loads(reply[2])[2] or []
+            except (ValueError, IndexError, TypeError):
+                continue
+            for item in streams:
+                try:
+                    url, itag = item[0], int(item[1][0])
+                except (IndexError, TypeError, ValueError):
+                    continue
+                if itag in ITAGS and url.startswith("https://"):
+                    found.append({"url": url, "itag": itag})
+    found.sort(key=lambda s: list(ITAGS).index(s["itag"]))
+    if any(s["itag"] != 13 for s in found):
+        found = [s for s in found if s["itag"] != 13]
+    links = mp4s + [{"url": s["url"], "quality": ITAGS[s["itag"]], "direct": False} for s in found]
+    if links:
+        _links[slug] = (time.time(), links)
+    return links
+
+
+def _new_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(timeout=20, follow_redirects=True)
+
+
+async def sources(anilist_id: int, episode: int, client: httpx.AsyncClient | None = None) -> list[dict]:
+    """The episode's Tagalog streams, best first: {url, quality, server, direct}."""
+    refs = (_load().get("anime", {}).get(str(anilist_id)) or {}).get("episodes", {}).get(str(episode), {})
+    names = _load().get("sites", {})
+    out: list[dict] = []
+    if refs.get("senpai"):
+        out.append({"url": refs["senpai"], "quality": "480p", "direct": True,
+                    "server": names.get("senpai", {}).get("name", "senpai")})
+    if refs.get("revival"):
+        own = client is None
+        client = client or _new_client()
+        try:
+            for link in await _revival_links(client, refs["revival"]):
+                out.append({**link, "server": names.get("revival", {}).get("name", "revival")})
+        except httpx.HTTPError as e:
+            print(f"Tagalog: Anime Revival {refs['revival']}: {type(e).__name__}", flush=True)
+        finally:
+            if own:
+                await client.aclose()
+    return out
+
+
+def _playable(stream: dict) -> str:
+    if stream["direct"]:
+        return stream["url"]
+    proxy_hosts.allow(stream["url"])
+    return f"/proxy/stream?url={quote(stream['url'], safe='')}&referer={quote('https://www.blogger.com/', safe='')}"
+
+
+async def source_answer(anilist_id: int, episode: int) -> dict:
+    """/api/source's answer for category=tl."""
+    streams = await sources(anilist_id, episode)
+    found = [{"url": _playable(s), "isM3U8": False, "quality": s["quality"], "serverName": s["server"],
+              "subtitles": [], "intro": None, "outro": None} for s in streams]
+    return {"data": {
+        "sources": found, "subtitles": [], "headers": {}, "hasDub": None, "intro": None, "outro": None,
+        "error": None if found else "No Tagalog dub of this episode could be reached right now.",
+    }}
+
+
+# --- the "Tagalog dub" row and the show page's button ---------------------------------------------
 
 _media_cache: tuple[float, list] = (0.0, [])
-_MEDIA_QUERY = """query ($ids: [Int]) { Page(perPage: 50) { media(id_in: $ids, type: ANIME) {
-  id title { english romaji } coverImage { large } averageScore episodes status format seasonYear } } }"""
+_MEDIA_QUERY = """query ($ids: [Int], $page: Int) { Page(page: $page, perPage: 50) { media(id_in: $ids, type: ANIME) {
+  id title { english romaji } coverImage { large } averageScore popularity episodes status format seasonYear } } }"""
 
 
 async def _media(ids: list[int]) -> list[dict]:
     global _media_cache
     if time.time() - _media_cache[0] < 12 * 3600 and _media_cache[1]:
         return _media_cache[1]
+    media: list[dict] = []
     try:
         async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.post("https://graphql.anilist.co", json={"query": _MEDIA_QUERY, "variables": {"ids": ids}})
-            media = r.json()["data"]["Page"]["media"] if r.status_code == 200 else []
+            for page in range(1, (len(ids) + 49) // 50 + 1):
+                r = await client.post("https://graphql.anilist.co", json={
+                    "query": _MEDIA_QUERY, "variables": {"ids": ids, "page": page}})
+                if r.status_code != 200:
+                    break
+                media += r.json()["data"]["Page"]["media"]
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
-        media = []
+        pass
     if media:
-        order = {i: n for n, i in enumerate(ids)}
-        media.sort(key=lambda m: order.get(m["id"], 999))
+        media.sort(key=lambda m: -(m.get("popularity") or 0))
         _media_cache = (time.time(), media)
     return media
 
 
 @router.get("/api/tagalog")
 async def tagalog_list():
-    """Every anime with an official Tagalog dub here, as poster cards, and how
-    many of its episodes are dubbed."""
+    """Every anime with a Tagalog dub here, most popular first, as poster
+    cards, and how many of its episodes are dubbed."""
     ids = anime_ids()
     media = await _media(ids)
     counts = {i: len((for_anime(i) or {}).get("episodes", {})) for i in ids}
     known = {m["id"] for m in media}
     return {
-        "region": _load().get("region", ["PH"]),
-        "media": [{**m, "tagalogEpisodes": counts.get(m["id"], 0)} for m in media]
+        "media": [{**m, "tagalogEpisodes": counts[m["id"]]} for m in media if m["id"] in counts]
                  + [{"id": i, "tagalogEpisodes": counts[i]} for i in ids if i not in known],
     }
 
@@ -162,145 +236,48 @@ def tagalog_for(anilist_id: int):
     return found
 
 
-# --- the player page (the app shows it in a web view) -------------------------------------------
+# --- the 1.12 app's player page ---------------------------------------------------------------------
 
 _PAGE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="referrer" content="strict-origin-when-cross-origin">
 <title>__TITLE__</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #000; color: #f2e8d5; font: 14px/1.4 sans-serif; overflow: hidden; }
-  #player { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; }
-  #note { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; padding: 24px; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  video { position: fixed; inset: 0; width: 100%; height: 100%; background: #000; }
 </style></head>
 <body>
-<div id="player"></div>
-<div id="note"></div>
+<video id="v" controls autoplay playsinline></video>
 <script>
-  // Tells the app (a JavaScriptChannel named "AniVerse") or a parent page
-  // where playback is, so watch history keeps working.
+  // Tells the app (a JavaScriptChannel named "AniVerse") where playback is,
+  // so watch history keeps working.
   function tell(m) {
-    var s = JSON.stringify(m);
-    try { if (window.AniVerse) window.AniVerse.postMessage(s); } catch (e) {}
+    try { if (window.AniVerse) window.AniVerse.postMessage(JSON.stringify(m)); } catch (e) {}
     try { if (window.parent !== window) window.parent.postMessage(m, "*"); } catch (e) {}
   }
-  // base/end: where this episode is in a marathon video (0/0: the whole video).
-  var player, start = __START__, base = __BASE__, end = __END__, done = false;
-  function ended() { if (!done) { done = true; tell({ type: "ended" }); } }
-  function onYouTubeIframeAPIReady() {
-    var vars = { autoplay: 1, playsinline: 1, rel: 0, start: base + start, origin: location.origin };
-    if (end) vars.end = end;
-    player = new YT.Player("player", {
-      videoId: "__VIDEO__",
-      playerVars: vars,
-      events: {
-        onReady: function () { player.playVideo(); tell({ type: "ready" }); },
-        onStateChange: function (e) { if (e.data === 0) ended(); },
-        onError: function (e) {
-          var note = document.getElementById("note");
-          note.style.display = "flex";
-          note.textContent = (e.data === 101 || e.data === 150 || e.data === 100)
-            ? "This Tagalog dub can't play here. The channel licenses it for the Philippines only."
-            : "YouTube couldn't play this video (error " + e.data + ").";
-          tell({ type: "error", code: e.data });
-        },
-      },
-    });
+  var urls = __URLS__, start = __START__, at = 0, v = document.getElementById("v");
+  function next() {  // the next stream, when one will not play
+    if (at >= urls.length) { tell({ type: "error", code: 0 }); return; }
+    v.src = urls[at++];
   }
+  v.addEventListener("error", next);
+  v.addEventListener("loadedmetadata", function () { if (start) { v.currentTime = start; start = 0; } });
+  v.addEventListener("ended", function () { tell({ type: "ended" }); });
   setInterval(function () {
-    if (!player || !player.getCurrentTime) return;
-    var now = player.getCurrentTime();
-    if (end && now >= end) { player.pauseVideo(); ended(); }
-    tell({ type: "progress", t: Math.max(0, Math.min(now, end || now) - base),
-           d: end ? end - base : player.getDuration(), playing: player.getPlayerState() === 1 });
+    if (v.duration > 0) tell({ type: "progress", t: v.currentTime, d: v.duration, playing: !v.paused });
   }, 5000);
+  next();
 </script>
-<script src="https://www.youtube.com/iframe_api"></script>
 </body></html>"""
 
 
-def _clip(found: dict[str, Any] | None, episode: int) -> tuple[int, int]:
-    """(start, end) of the episode in its marathon video; (0, 0) for a video of its own."""
-    clip = (found or {}).get("clips", {}).get(str(episode))
-    try:
-        start, end = int(clip[0]), int(clip[1])  # type: ignore[index]
-    except (TypeError, ValueError, IndexError):
-        return 0, 0
-    return (start, end) if 0 <= start < end else (0, 0)
-
-
 @router.get("/tagalog/{anilist_id}/{episode}", response_class=HTMLResponse)
-def tagalog_page(anilist_id: int, episode: int, start: int = 0):
-    found = for_anime(anilist_id)
-    video = (found or {}).get("episodes", {}).get(str(episode))
-    if not video or not re.fullmatch(r"[A-Za-z0-9_-]{6,20}", video):
+async def tagalog_page(anilist_id: int, episode: int, start: int = 0):
+    streams = await sources(anilist_id, episode)
+    if not streams:
         raise HTTPException(status_code=404, detail="No Tagalog dub for this episode")
-    title = html.escape(f"{(found or {}).get('title', '')} · EP {episode} · Tagalog")
-    base, end = _clip(found, episode)
-    page = (_PAGE.replace("__TITLE__", title).replace("__VIDEO__", video)
-            .replace("__START__", str(max(0, min(start, 6 * 3600))))
-            .replace("__BASE__", str(base)).replace("__END__", str(end)))
+    title = f"{(for_anime(anilist_id) or {}).get('title', '')} · EP {episode} · Tagalog"
+    urls = json.dumps([_playable(s) for s in streams]).replace("</", "<\\/")
+    page = (_PAGE.replace("__TITLE__", title.replace("&", "&amp;").replace("<", "&lt;"))
+            .replace("__URLS__", urls).replace("__START__", str(max(0, min(start, 6 * 3600)))))
     return HTMLResponse(page, headers={"Cache-Control": "no-store"})
-
-
-# --- new weekly episodes, from the channels' official RSS ------------------------------------------
-
-def _watchable(page: str) -> bool:
-    m = re.search(r'"playabilityStatus":\{"status":"([A-Z_]+)"', page)
-    return bool(m) and m.group(1) == "OK"
-
-
-async def refresh_once(client: httpx.AsyncClient) -> int:
-    """Adds episodes the channels have uploaded since the catalogue was built."""
-    cat = _load()
-    added = 0
-    found = _found_since()
-    for key, channel in cat.get("channels", {}).items():
-        try:
-            r = await client.get(f"https://www.youtube.com/feeds/videos.xml?channel_id={channel['id']}")
-        except httpx.HTTPError:
-            continue
-        if r.status_code != 200:
-            continue
-        ids = re.findall(r"<yt:videoId>([^<]+)</yt:videoId>", r.text)
-        titles = [html.unescape(t) for t in re.findall(r"<title>([^<]+)</title>", r.text)[1:]]
-        for video, title in zip(ids, titles):
-            for show in cat.get("shows", []):
-                # Marathon-cut shows have no per-episode uploads to look for.
-                if show.get("channel") != key or not show.get("pattern"):
-                    continue
-                m = re.search(show["pattern"], title, re.I)
-                if not m:
-                    continue
-                ep = m.group(1) if m.groups() else "1"
-                ep = str(int(ep))
-                if ep in _episodes(show) or ep in found.get(show["key"], {}):
-                    continue
-                try:  # not an early members-only upload
-                    page = await client.get(f"https://www.youtube.com/watch?v={video}", headers=UA)
-                except httpx.HTTPError:
-                    continue
-                if _watchable(page.text):
-                    found.setdefault(show["key"], {})[ep] = video
-                    added += 1
-    if added:
-        path = _new_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(found, indent=1), encoding="utf-8")
-        tmp.replace(path)
-    return added
-
-
-async def refresh_loop():
-    await asyncio.sleep(90)
-    while True:
-        try:
-            async with httpx.AsyncClient(timeout=30, headers=UA, follow_redirects=True) as client:
-                n = await refresh_once(client)
-            if n:
-                print(f"Tagalog dubs: {n} new episode(s) from the channels' feeds", flush=True)
-        except Exception as e:  # noqa: BLE001 - a background check must never stop the server
-            print(f"Tagalog dub refresh failed: {e}", flush=True)
-        await asyncio.sleep(REFRESH_EVERY)

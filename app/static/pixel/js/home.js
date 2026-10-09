@@ -12,7 +12,7 @@ const SECTIONS = [["Trending Now", "trending"], ["Popular", "popular"], ["Latest
 // History is local, so it shows while the server answers.
 root.append(continueWatching());
 
-/** Official Tagalog dubs (Muse PH and Ani-One PH on YouTube), after Trending. */
+/** Tagalog-dubbed anime (app/tagalog.py), after Trending. */
 function tagalogShelf() {
   api.tagalogAll().then(({ media }) => {
     const shows = (media || []).filter((m) => m.title);

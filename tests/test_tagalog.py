@@ -1,8 +1,8 @@
 """
-Official Tagalog dubs (app/tagalog.py): AniList seasons map onto the channels'
-straight-through episode numbers, the player page embeds the right video, the
-catalogue is sound, and new weekly episodes come in from the RSS feeds --
-except members-only ones.
+Tagalog dubs (app/tagalog.py): the catalogue answers per AniList id, an Anime
+Revival episode becomes Google video links (best first, the tiny 3GP dropped),
+/api/source?category=tl hands them out through the proxy while the .mp4 links
+play directly, the 1.12 app's page plays them, and the real catalogue is sound.
 """
 
 import asyncio
@@ -16,21 +16,39 @@ from unittest.mock import patch
 import httpx
 from fastapi.testclient import TestClient
 
-from app import accounts, tagalog
+from app import accounts, proxy_hosts, tagalog
 from app.main import app
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+MP4 = "https://archive.org/download/mha-tagalog/MHA%20S1%20Ep01.mp4"
 
 FAKE = {
-    "region": ["PH"],
-    "channels": {"muse_ph": {"name": "Muse Philippines", "id": "UCmuse"}},
-    "shows": [{
-        "key": "dandadan", "title": "DAN DA DAN", "channel": "muse_ph",
-        "pattern": r"^DAN DA DAN\s*-\s*Episode\s*(\d+)\s*\[Tagalog\s+Dub\]",
-        "seasons": [{"anilist": 171018, "first": 1, "last": 12}, {"anilist": 185660, "first": 13, "last": 24}],
-        "episodes": {"1": "vidEp00001", "12": "vidEp00012", "13": "vidEp00013", "14": "vidEp00014"},
-    }],
+    "sites": {"senpai": {"name": "Senpai Tambayan", "url": "https://www.senpaitambayan.online/"},
+              "revival": {"name": "Anime Revival", "url": "https://animerevival.xyz/"}},
+    "anime": {"21459": {"title": "My Hero Academia", "episodes": {
+        "1": {"senpai": MP4, "revival": "my-hero-academia-1x1"},
+        "2": {"revival": "my-hero-academia-1x2"},
+        "3": {"revival": "my-hero-academia-1x3"},
+    }}},
 }
+EPISODE_PAGE = '<iframe class="metaframe" src="https://www.blogger.com/video.g?token=AD6v5dx-Tok_en1"></iframe>'
+RPC = (")]}'\n\n312\n" + json.dumps([["wrb.fr", "WcwnYd", json.dumps([1, None, [
+    ["https://rr1---sn-x.googlevideo.com/videoplayback?itag=13&id=a", [13]],
+    ["https://rr1---sn-x.googlevideo.com/videoplayback?itag=18&id=a", [18]],
+]]), None, None, None, "generic"]]) + "\n25\n[[\"e\",4,null,null,350]]\n")
+
+
+def blogger(request: httpx.Request) -> httpx.Response:
+    if request.url.host == "animerevival.xyz":
+        if request.url.path.endswith("-1x2/"):  # some episodes are a plain .mp4, in a video.js player
+            return httpx.Response(200, text='<video><source src="https://archive.org/download/mha/Ep2.mp4" type="video/mp4"></video>')
+        if request.url.path.endswith("-1x3/"):  # or straight in the player's frame
+            return httpx.Response(200, text='<iframe class="metaframe" src="https://animerevival.xyz/files/mha/Ep%2003.mp4"></iframe>')
+        return httpx.Response(200, text=EPISODE_PAGE)
+    if "batchexecute" in request.url.path:
+        assert "AD6v5dx-Tok_en1" in request.content.decode()
+        return httpx.Response(200, text=RPC)
+    return httpx.Response(404)
 
 
 class _WithFake(unittest.TestCase):
@@ -38,123 +56,92 @@ class _WithFake(unittest.TestCase):
         storage = tempfile.TemporaryDirectory()
         self.addCleanup(storage.cleanup)
         self.dir = pathlib.Path(storage.name)
-        cat = self.dir / "tagalog_dubs.json"
+        cat = self.dir / "tagalog_sites.json"
         cat.write_text(json.dumps(FAKE))
-        for target, name, value in [(tagalog, "CATALOGUE", cat), (accounts, "DATA_DIR", self.dir)]:
+        for target, name, value in [(tagalog, "CATALOGUE", cat), (accounts, "DATA_DIR", self.dir),
+                                    (accounts, "DB_PATH", self.dir / "accounts.db")]:
             p = patch.object(target, name, value)
             p.start()
             self.addCleanup(p.stop)
         tagalog.reset()
         self.addCleanup(tagalog.reset)
+        proxy_hosts.forget_all()
+        self.addCleanup(proxy_hosts.forget_all)
 
 
-class MappingTest(_WithFake):
-    def test_seasons_map_onto_the_channels_numbering(self):
-        s1 = tagalog.for_anime(171018)
-        s2 = tagalog.for_anime(185660)
-        assert s1 is not None and s2 is not None
-        self.assertEqual(s1["episodes"], {"1": "vidEp00001", "12": "vidEp00012"})
-        # Season 2's first episode is the channel's 13th.
-        self.assertEqual(s2["episodes"], {"1": "vidEp00013", "2": "vidEp00014"})
-        self.assertEqual(s2["channel"], "Muse Philippines")
+class CatalogueAnswersTest(_WithFake):
+    def test_for_anime(self):
+        found = tagalog.for_anime(21459)
+        assert found is not None
+        self.assertEqual(found["episodes"], {"1": "senpai+revival", "2": "revival", "3": "revival"})
+        self.assertEqual(found["sites"], ["Anime Revival", "Senpai Tambayan"])
         self.assertIsNone(tagalog.for_anime(1))
-
-    def test_routes(self):
         client = TestClient(app)
-        self.assertEqual(client.get("/api/tagalog/185660").json()["episodes"]["1"], "vidEp00013")
+        self.assertEqual(client.get("/api/tagalog/21459").json()["title"], "My Hero Academia")
         self.assertEqual(client.get("/api/tagalog/1").status_code, 404)
-        page = client.get("/tagalog/185660/2?start=90")
-        self.assertEqual(page.status_code, 200)
-        self.assertIn('videoId: "vidEp00014"', page.text)
-        self.assertIn("start = 90", page.text)
-        self.assertEqual(client.get("/tagalog/185660/9").status_code, 404)  # not dubbed (yet)
 
 
-class MarathonTest(_WithFake):
-    """A season only up as one marathon video: each episode is a clip of it."""
+class SourcesTest(_WithFake):
+    def run_sources(self, ep):
+        async def go():
+            async with httpx.AsyncClient(transport=httpx.MockTransport(blogger)) as client:
+                return await tagalog.sources(21459, ep, client)
+        return asyncio.run(go())
 
-    def setUp(self):
-        super().setUp()
-        cat = json.loads(json.dumps(FAKE))
-        cat["shows"].append({
-            "key": "mha", "title": "My Hero Academia", "channel": "muse_ph",
-            "seasons": [{"anilist": 21459, "first": 1, "last": 2}, {"anilist": 21856, "first": 3, "last": 4}],
-            "episodes": {"1": "marathonS1A", "2": "marathonS1A", "3": "marathonS2B", "4": "marathonS2B"},
-            "clips": {"1": [0, 1470], "2": [1470, 2940], "3": [0, 1430], "4": [1430, 2860]},
-        })
-        (self.dir / "tagalog_dubs.json").write_text(json.dumps(cat))
-        tagalog.reset()
+    def test_direct_mp4_first_then_blogger_without_the_3gp(self):
+        streams = self.run_sources(1)
+        self.assertEqual([(s["server"], s["quality"], s["direct"]) for s in streams],
+                         [("Senpai Tambayan", "480p", True), ("Anime Revival", "360p", False)])
+        self.assertIn("itag=18", streams[1]["url"])
+        self.assertEqual([(s["url"], s["direct"]) for s in self.run_sources(2)],
+                         [("https://archive.org/download/mha/Ep2.mp4", True)])
+        self.assertEqual([s["url"] for s in self.run_sources(3)], ["https://animerevival.xyz/files/mha/Ep%2003.mp4"])
+        self.assertEqual(self.run_sources(9), [])
 
-    def test_clips_follow_the_season_mapping(self):
-        s2 = tagalog.for_anime(21856)
-        assert s2 is not None
-        self.assertEqual(s2["episodes"], {"1": "marathonS2B", "2": "marathonS2B"})
-        self.assertEqual(s2["clips"], {"1": [0, 1430], "2": [1430, 2860]})
-        self.assertNotIn("clips", tagalog.for_anime(171018) or {})
+    def test_api_source_hands_out_the_blogger_link_through_the_proxy(self):
+        mock = lambda: httpx.AsyncClient(transport=httpx.MockTransport(blogger))  # noqa: E731
+        with patch.object(tagalog, "_new_client", mock):
+            client = TestClient(app)
+            data = client.get("/api/source", params={"episode_id": "21459/1", "category": "tl"}).json()["data"]
+            page = client.get("/tagalog/21459/1?start=95").text
+        urls = [s["url"] for s in data["sources"]]
+        self.assertEqual(urls[0], MP4)  # played directly
+        self.assertTrue(urls[1].startswith("/proxy/stream?url=https%3A%2F%2Frr1---sn-x.googlevideo.com"))
+        self.assertTrue(proxy_hosts.allowed("https://rr1---sn-x.googlevideo.com/videoplayback?itag=18"))
+        self.assertIsNone(data["error"])
+        self.assertIn(json.dumps(MP4), page)
+        self.assertIn("start = 95", page)
+        self.assertNotIn("youtube", page.lower())
 
-    def test_the_page_plays_only_the_episode(self):
-        page = TestClient(app).get("/tagalog/21856/2?start=60").text
-        self.assertIn('videoId: "marathonS2B"', page)
-        self.assertIn("start = 60, base = 1430, end = 2860", page)
-        plain = TestClient(app).get("/tagalog/171018/1").text
-        self.assertIn("base = 0, end = 0", plain)
+    def test_links_are_asked_for_with_the_proxys_browser(self):
+        from app import main
+        self.assertEqual(tagalog.UA["User-Agent"], main.USER_AGENT)
 
-
-class RefreshTest(_WithFake):
-    def feed(self, entries):
-        items = "".join(f"<entry><yt:videoId>{v}</yt:videoId><title>{t}</title></entry>" for v, t in entries)
-        return f"<feed><title>Muse Philippines</title>{items}</feed>"
-
-    def test_new_episodes_come_in_but_members_only_ones_do_not(self):
-        feed = self.feed([
-            ("vidEp00015", "DAN DA DAN - Episode 15 [Tagalog Dub]｜Muse PH"),
-            ("vidEp00016", "DAN DA DAN - Episode 16 [Tagalog Dub]｜Muse PH"),  # members first
-            ("vidOther01", "Something else entirely"),
-            ("vidEp00013", "DAN DA DAN - Episode 13 [Tagalog Dub]｜Muse PH"),  # already known
-        ])
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            if "feeds/videos.xml" in str(request.url):
-                return httpx.Response(200, text=feed)
-            vid = request.url.params.get("v")
-            status = "UNPLAYABLE" if vid == "vidEp00016" else "OK"
-            return httpx.Response(200, text=f'..."playabilityStatus":{{"status":"{status}"}}...')
-
-        async def run():
-            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-                return await tagalog.refresh_once(client)
-
-        self.assertEqual(asyncio.run(run()), 1)
-        s2 = tagalog.for_anime(185660)
-        assert s2 is not None
-        self.assertEqual(s2["episodes"].get("3"), "vidEp00015")
-        self.assertNotIn("4", s2["episodes"])
-        # Saved, so a restart keeps it.
-        self.assertEqual(json.loads((self.dir / "tagalog_new.json").read_text()), {"dandadan": {"15": "vidEp00015"}})
+    def test_an_episode_nobody_has(self):
+        data = TestClient(app).get("/api/source", params={"episode_id": "21459/40", "category": "tl"}).json()["data"]
+        self.assertEqual(data["sources"], [])
+        self.assertTrue(data["error"])
+        self.assertEqual(TestClient(app).get("/tagalog/21459/40").status_code, 404)
 
 
 class CatalogueTest(unittest.TestCase):
-    """The real catalogue, as scripts/find_tagalog_dubs.py wrote it."""
+    """The real catalogue, as scripts/find_tagalog_sites.py wrote it."""
 
     def test_every_entry_is_sound(self):
-        cat = json.loads((ROOT / "app" / "tagalog_dubs.json").read_text(encoding="utf-8"))
-        self.assertEqual(cat["region"], ["PH"])
-        seen_anilist = set()
-        for show in cat["shows"]:
-            self.assertIn(show["channel"], cat["channels"])
-            if "pattern" in show:
-                re.compile(show["pattern"])
-            for ep, (start, end) in show.get("clips", {}).items():
-                self.assertIn(ep, show["episodes"])
-                self.assertLess(start, end)
-            for season in show["seasons"]:
-                self.assertNotIn(season["anilist"], seen_anilist)
-                seen_anilist.add(season["anilist"])
-                self.assertLessEqual(season["first"], season["last"])
-            for ep, vid in show["episodes"].items():
-                self.assertTrue(ep.isdigit())
-                self.assertRegex(vid, r"^[A-Za-z0-9_-]{11}$")
-        self.assertGreaterEqual(len(seen_anilist), 10)
+        cat = json.loads((ROOT / "app" / "tagalog_sites.json").read_text(encoding="utf-8"))
+        self.assertEqual(set(cat["sites"]), {"senpai", "revival"})
+        for anilist_id, entry in cat["anime"].items():
+            self.assertTrue(anilist_id.isdigit())
+            self.assertTrue(entry["title"])
+            for ep, refs in entry["episodes"].items():
+                self.assertTrue(ep.isdigit() and int(ep) > 0, (anilist_id, ep))
+                if "senpai" in refs:
+                    self.assertRegex(refs["senpai"], r"(?i)^https://\S+\.mp4$")
+                if "revival" in refs:
+                    self.assertRegex(refs["revival"], r"^[a-z0-9%-]+-\d+x\d+$")
+        self.assertGreaterEqual(len(cat["anime"]), 50)
+        self.assertGreaterEqual(sum(len(a["episodes"]) for a in cat["anime"].values()), 2000)
+        self.assertFalse(re.search("youtube", json.dumps(cat), re.I))
 
 
 if __name__ == "__main__":

@@ -31,9 +31,9 @@ let cues = [], currentTrack = null;
 const partyParam = new URLSearchParams(location.search).get("party");
 let partyCode = validCode(partyParam) ? partyParam.toUpperCase() : null;
 let party = null;
-// ?audio=tl: the official Tagalog dub, in the licensee's YouTube player (below).
-// Picking it is remembered per show, so Continue Watching reopens in Tagalog;
-// ?audio=sub (the SUB / DUB button) forgets it.
+// ?audio=tl: the Tagalog dub (category "tl", from the Filipino anime sites --
+// app/tagalog.py). Picking it is remembered per show, so Continue Watching
+// reopens in Tagalog; ?audio=sub (the SUB / DUB button) forgets it.
 const TL_KEY = "av.tagalogShows";
 const tlShows = (() => { try { return new Set(JSON.parse(localStorage.getItem(TL_KEY) || "[]")); } catch { return new Set(); } })();
 const audioParam = new URLSearchParams(location.search).get("audio");
@@ -41,7 +41,7 @@ if (audioParam === "tl") tlShows.add(String(animeId));
 if (audioParam === "sub") tlShows.delete(String(animeId));
 try { localStorage.setItem(TL_KEY, JSON.stringify([...tlShows].slice(-200))); } catch { /* private mode */ }
 const wantTagalog = audioParam === "tl" || (audioParam === null && tlShows.has(String(animeId)));
-let tagalog = null; // {channel, region, episodes: {episode: video id}, clips?} when this anime has one
+let tagalog = null; // {sites, episodes: {episode: sites}} when this anime has a Tagalog dub
 const epHref = (n) => {
   const q = new URLSearchParams();
   if (partyCode) q.set("party", partyCode);
@@ -111,7 +111,7 @@ function castHere(device) {
   castLoad({
     url: abs(src.url),
     title: info ? titleOf(info) : "AniVerse",
-    subtitle: `Episode ${ep}${category === "dub" ? " (dub)" : ""}`,
+    subtitle: `Episode ${ep}${category === "dub" ? " (dub)" : category === "tl" ? " (Tagalog)" : ""}`,
     position: video.currentTime || 0,
     subtitles: captionsOn() && currentTrack ? abs(currentTrack.url) : null,
     hls: src.isM3U8 === true || /m3u8/.test(src.url),
@@ -162,7 +162,7 @@ function explain(data) {
   if (category === "dub" && hasDub === false) return "This episode has no English dub yet.";
   const err = data.error || "";
   if (!err || err.includes("sources available")) {
-    return `No working ${category.toUpperCase()} stream was found for this episode right now. Streams come and go, so trying again in a minute often works.`;
+    return `No working ${category === "tl" ? "Tagalog" : category.toUpperCase()} stream was found for this episode right now. Streams come and go, so trying again in a minute often works.`;
   }
   return err;
 }
@@ -482,6 +482,8 @@ function loadSkipTimes(src) {
   player.setMarkers(skipMarks.intro, skipMarks.outro);
   // Recaps only come from the server (AniSkip), and only from episode 2 on.
   if (skipMarks.intro && skipMarks.outro && ep <= 1) return;
+  // The Tagalog dubs are TV recordings of their own length: no intro times fit them.
+  if (category === "tl") return;
   const ask = async (attempt) => {
     if (g !== gen) return;
     const d = video.duration;
@@ -819,7 +821,7 @@ function renderActions() {
     actionsEl.append(wantTagalog
       ? h("a.px-btn.dark.px-box.bevel.small", { href: `/watch/${animeId}/${ep}?audio=sub` }, "SUB / DUB")
       : h("a.px-btn.px-box.bevel.small", { href: `/watch/${animeId}/${ep}?audio=tl`,
-          title: `Official Tagalog dub from ${tagalog.channel} on YouTube (Philippines only)` }, "Tagalog dub"));
+          title: `Tagalog dub, from ${tagalog.sites.join(" and ")}` }, "Tagalog dub"));
   }
   if (ep > 1) actionsEl.append(h("a.px-btn.dark.px-box.bevel.small", { href: epHref(ep - 1) }, h("span", { style: { transform: "scaleX(-1)", display: "grid" } }, sprite("skipNext", 1.4)), `EP ${ep - 1}`));
   if (aired && ep < aired) actionsEl.append(h("a.px-btn.px-box.bevel.small", { href: epHref(ep + 1) }, `EP ${ep + 1}`, sprite("skipNext", 1.4)));
@@ -848,9 +850,8 @@ function renderActions() {
   }
   actionsEl.append(h("a.px-btn.dark.px-box.bevel.small", { href: backHref }, "Details"));
   const src = sources[sourceIndex];
-  metaEl.textContent = phase === "tagalog"
-    ? `EP ${ep} · TAGALOG DUB · ${tagalog.channel} on YouTube`
-    : [`EP ${ep}`, category.toUpperCase(), src && phase === "playing" ? `Server: ${src.serverName || "Auto"}` : null].filter(Boolean).join(" · ");
+  metaEl.textContent = [`EP ${ep}`, category === "tl" ? "TAGALOG DUB" : category.toUpperCase(),
+    src && phase === "playing" ? `Server: ${src.serverName || "Auto"}` : null].filter(Boolean).join(" · ");
 }
 
 function renderEpisodes() {
@@ -898,65 +899,5 @@ player.setTitle(`Episode ${ep}`);
 renderActions();
 if (partyCode) joinParty();
 const tagalogReady = api.tagalog(animeId).then((t) => { tagalog = t; renderActions(); return t; });
-if (wantTagalog && !partyCode) tagalogReady.then((t) => (t?.episodes[ep] ? playTagalog(t) : resolve()));
+if (wantTagalog && !partyCode) tagalogReady.then((t) => { if (t?.episodes[ep]) category = "tl"; resolve(); });
 else resolve();
-
-// --- the Tagalog dub: YouTube's own embedded player -----------------------------------------
-// Licensed for the Philippines and free on the channel, so it plays in YouTube's
-// player (views and ads stay with the channel). Watch history still works: the
-// IFrame API says where playback is.
-function playTagalog(t) {
-  phase = "tagalog";
-  ++gen;
-  teardown();
-  const host = document.getElementById("player");
-  host.hidden = true;
-  const box = h("div.player.px-box#tl-player");
-  host.after(box);
-  const saved = history.progressFor(animeId, ep);
-  const start = saved && !history.finished(saved) && saved.position_ms > 10000 ? Math.floor(saved.position_ms / 1000) : 0;
-  const mount = h("div");
-  box.append(mount);
-  renderActions();
-  // An episode cut from a season's marathon video plays just its part: [base, end].
-  const [base, end] = t.clips?.[ep] || [0, 0];
-  let done = false;
-  const ended = (yt) => {
-    if (done) return;
-    done = true;
-    save(yt, true);
-    if (aired && ep < aired && t.episodes[ep + 1]) { toast(`Next: EP ${ep + 1} in Tagalog`); setTimeout(() => { location.href = epHref(ep + 1); }, 4000); }
-  };
-  const make = () => {
-    const playerVars = { autoplay: 1, rel: 0, playsinline: 1, start: base + start, origin: location.origin };
-    if (end) playerVars.end = end;
-    const yt = new window.YT.Player(mount, {
-      videoId: t.episodes[ep], width: "100%", height: "100%",
-      playerVars,
-      events: {
-        onStateChange: (e) => { if (e.data === 0) ended(yt); },
-        onError: (e) => {
-          box.append(h("div.tl-note", null, [100, 101, 150].includes(e.data)
-            ? `This Tagalog dub can't play here: ${t.channel} licenses it for the Philippines only.`
-            : `YouTube couldn't play this video (error ${e.data}).`));
-        },
-      },
-    });
-    setInterval(() => {
-      if (end && yt.getCurrentTime?.() >= end) { yt.pauseVideo(); ended(yt); }
-      save(yt, false);
-    }, 10000);
-  };
-  const save = (yt, finished) => {
-    const d = end ? end - base : yt.getDuration?.() || 0;
-    if (d <= 0) return;
-    const at = Math.min(Math.max(0, (yt.getCurrentTime?.() || 0) - base), d);
-    history.save({ anime_id: animeId, episode: ep, title: info ? titleOf(info) : "", cover: info ? coverOf(info) : "",
-      position_ms: Math.round((finished ? d : at) * 1000), duration_ms: Math.round(d * 1000) });
-  };
-  if (window.YT?.Player) make();
-  else {
-    window.onYouTubeIframeAPIReady = make;
-    document.head.append(h("script", { src: "https://www.youtube.com/iframe_api" }));
-  }
-}

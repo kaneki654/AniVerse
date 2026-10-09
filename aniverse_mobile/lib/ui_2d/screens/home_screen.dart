@@ -353,7 +353,7 @@ class _BecauseYouWatchedState extends State<_BecauseYouWatched> {
 }
 
 
-/// Official Tagalog dubs (Muse Philippines and Ani-One Philippines on YouTube).
+/// Tagalog-dubbed anime (app/tagalog.py on the web server).
 class _TagalogRow extends StatefulWidget {
   const _TagalogRow();
 
