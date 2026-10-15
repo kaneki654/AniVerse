@@ -8,8 +8,8 @@ those endpoints, so the app is unaffected by which web UI is on.
 main.py installs this ahead of the classic page routes when ANIVERSE_WEB_UI is
 "pixel" (the default), so the same URLs serve the new pages; the classic
 templates and routes stay as they were and come back with
-ANIVERSE_WEB_UI=classic. The manga section is not part of this UI: its URLs
-redirect home.
+ANIVERSE_WEB_UI=classic. The manga section was removed from both UIs; old
+/manga links redirect home.
 """
 
 from pathlib import Path
@@ -145,7 +145,7 @@ async def service_worker():
                         headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
 
 
-# Pages the pixel UI does not have. The manga section is gone, and the old A-Z
+# Pages that no longer exist. The manga section was removed, and the old A-Z
 # list was a thin view of the old hianime API; search with filters covers it.
 @router.get("/manga")
 @router.get("/manga/{rest:path}")

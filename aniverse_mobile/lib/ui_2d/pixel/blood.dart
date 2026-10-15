@@ -29,6 +29,7 @@ Color _bloodAt(int age) => age < 3
 /// position. Buttons fire it where they were hit.
 class BloodSplat {
   static void show(BuildContext context, Offset globalPosition) {
+    if (fxLevel == FxLevel.off) return;
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
     late final OverlayEntry entry;
@@ -108,9 +109,19 @@ class _SplatPainter extends CustomPainter {
     final pc = PixelCanvas(canvas, cell, glow: true);
     final c = (size.width / cell / 2).floor();
 
-    // The other themes hit differently: sparks for Neon cyber, petals for Sakura.
+    // The other themes hit differently: sparks, petals, a pixel pop, gold leaf.
     if (fxStyle != FxStyle.blood) {
-      fxStyle == FxStyle.neon ? paintSparkBurst(pc, c, c, frame, seed) : paintPetalBurst(pc, c, frame, seed);
+      switch (fxStyle) {
+        case FxStyle.neon:
+          paintSparkBurst(pc, c, c, frame, seed);
+        case FxStyle.sakura:
+          paintPetalBurst(pc, c, frame, seed);
+        case FxStyle.gameboy:
+          paintPixelPop(pc, c, c, frame, seed);
+        case FxStyle.samurai:
+        case FxStyle.blood:
+          paintGoldBurst(pc, c, c, frame, seed);
+      }
       pc.commit(strength: frame < 6 ? 1.2 : 0.8);
       return;
     }
@@ -174,6 +185,7 @@ class BloodDrips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (fxLevel == FxLevel.off) return SizedBox(width: width, height: height);
     return IgnorePointer(
       child: SizedBox(
         width: width,
@@ -204,10 +216,16 @@ class _DripsPainter extends CustomPainter {
     final cols = (size.width / cell).floor();
     final rows = (size.height / cell).floor();
 
-    if (fxStyle != FxStyle.blood) {
-      fxStyle == FxStyle.neon
-          ? paintDataDrips(pc, frame, count, seed, cols, rows)
-          : paintPetalDrips(pc, frame, count, seed, cols, rows);
+    // Gold samurai's drips are these, in molten gold; the others have their own.
+    if (fxStyle == FxStyle.neon || fxStyle == FxStyle.sakura || fxStyle == FxStyle.gameboy) {
+      switch (fxStyle) {
+        case FxStyle.neon:
+          paintDataDrips(pc, frame, count, seed, cols, rows);
+        case FxStyle.gameboy:
+          paintBlockDrips(pc, frame, count, seed, cols, rows);
+        default:
+          paintPetalDrips(pc, frame, count, seed, cols, rows);
+      }
       pc.commit();
       return;
     }
@@ -279,7 +297,16 @@ class KatanaLoader extends StatelessWidget {
           SizedBox(
             width: size,
             height: size * 0.72,
-            child: CustomPaint(painter: _KatanaPainter(f)),
+            // Each palette loads its own way; Blood's is the katana.
+            child: CustomPaint(
+              painter: switch (fxStyle) {
+                FxStyle.neon => NeonLoaderPainter(f),
+                FxStyle.sakura => SakuraLoaderPainter(f),
+                FxStyle.gameboy => GameBoyLoaderPainter(f),
+                // A samurai's katana, in gold.
+                FxStyle.samurai || FxStyle.blood => _KatanaPainter(f),
+              },
+            ),
           ),
           if (label != null) ...[
             const SizedBox(height: 14),

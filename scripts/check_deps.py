@@ -17,6 +17,7 @@ REQUIRED = [
     ("uvicorn", "uvicorn"),
     ("httpx", "httpx"),
     ("jinja2", "jinja2"),
+    ("cryptography", "cryptography"),
     ("Crypto", "pycryptodome"),
     ("numpy", "numpy"),
     ("rapidfuzz", "rapidfuzz"),

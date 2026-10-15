@@ -3,12 +3,16 @@
 // episode sends the new state; the others follow it. Times are worked out
 // against the server's clock, never the devices', so a slow phone clock does
 // not put anyone out of step. The same rooms serve the app.
+//
+// The first one in is the host and can lock the room so only they steer
+// playback; anyone can send a reaction, which floats up over every player.
 import { h, sprite, toast } from "./px.js";
 import { auth } from "./api.js";
 import { sfx } from "./sfx.js";
 
 const NAME = "av.party.name";
 const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O or 1/I to misread
+export const REACTIONS = ["❤️", "😂", "😮", "😭", "🔥", "👏", "💀", "🎉"]; // the server's set (app/party.py)
 
 export const newPartyCode = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => CODE_CHARS[b % CODE_CHARS.length]).join("");
 export const validCode = (c) => /^[A-Z0-9]{4,8}$/.test(String(c || "").toUpperCase());
@@ -24,15 +28,16 @@ function myName() {
 }
 
 /**
- * Joins room `code` and draws the party bar after `mount`.
+ * Joins room `code` and draws the party bar after `mount`; reactions float up over `stage`.
  *   getState() -> {anime, ep, category, playing, t}   what this viewer is doing
  *   applyState(state, t)                               follow someone else; t is where playback should be now
  * Returns {send(), sendEpisode(ep), leave()}; send() after anything the viewer did.
  */
-export function startParty({ code, mount, getState, applyState }) {
+export function startParty({ code, mount, stage = null, getState, applyState }) {
   code = code.toUpperCase();
   let ws = null, offset = 0, closed = false, retry = 0, pingTimer = 0, me = myName();
-  let members = [];
+  let members = [], host = "", locked = false, roomState = null, toldLocked = 0;
+  const canControl = () => !locked || host === me;
 
   // --- the bar ----------------------------------------------------------------------
   const status = h("span.muted", null, "Connecting…");
@@ -40,6 +45,15 @@ export function startParty({ code, mount, getState, applyState }) {
   const log = h("div.party-chat", { "aria-live": "polite" });
   const input = h("input.px-input", { type: "text", maxlength: "200", placeholder: "Say something", "aria-label": "Party chat message" });
   const invite = `${location.origin}${location.pathname}?party=${code}`;
+  const lockBtn = h("button.px-btn.dark.px-box.bevel.small", {
+    type: "button", hidden: true,
+    onclick: () => { if (ws?.readyState === 1) ws.send(JSON.stringify({ type: "lock", on: !locked })); },
+  }, "Lock controls");
+  const reactions = h("div.party-reacts", { role: "group", "aria-label": "Send a reaction" },
+    REACTIONS.map((e) => h("button.react-btn", {
+      type: "button", "aria-label": `React ${e}`,
+      onclick: () => { if (ws?.readyState === 1) { ws.send(JSON.stringify({ type: "react", emoji: e })); float(e, me); } },
+    }, e)));
   const bar = h("section.party-bar.px-box", { "aria-label": "Watch party" },
     sprite("party", 2),
     h("span.code", { title: "Party code" }, code),
@@ -52,7 +66,9 @@ export function startParty({ code, mount, getState, applyState }) {
         catch { prompt("Copy this invite link:", invite); }
       },
     }, "Copy invite"),
+    lockBtn,
     h("button.px-btn.dark.px-box.bevel.small", { type: "button", onclick: () => leave(true) }, "Leave"),
+    reactions,
     log,
     h("form.party-send", {
       onsubmit: (e) => {
@@ -72,8 +88,30 @@ export function startParty({ code, mount, getState, applyState }) {
   };
   const sys = (text) => line(h("span.sys", null, text));
   const drawMembers = () => {
-    who.textContent = members.length ? `${members.length} watching: ${members.join(", ")}` : "";
+    who.textContent = members.length
+      ? `${members.length} watching: ${members.map((m) => (m === host ? `${m} (host)` : m)).join(", ")}${locked ? " · host controls" : ""}`
+      : "";
+    lockBtn.hidden = host !== me || members.length < 2;
+    lockBtn.textContent = locked ? "Unlock controls" : "Lock controls";
   };
+  const roster = (m) => {
+    members = m.members || [];
+    if (typeof m.host === "string") host = m.host;
+    if (typeof m.locked === "boolean") locked = m.locked;
+    drawMembers();
+  };
+  const toldOnce = () => {
+    if (performance.now() - toldLocked < 5000) return;
+    toldLocked = performance.now();
+    toast(`${host || "The host"} is controlling playback.`);
+  };
+  /** A reaction floating up over the player. */
+  function float(emoji, from) {
+    if (!stage || document.documentElement.dataset.fx === "off") return;
+    const el = h("span.party-react", { style: { left: `${10 + Math.random() * 75}%` }, title: from }, emoji);
+    stage.append(el);
+    setTimeout(() => el.remove(), 2600);
+  }
 
   // --- the connection ---------------------------------------------------------------------
   const serverNow = () => Date.now() / 1000 + offset;
@@ -95,25 +133,35 @@ export function startParty({ code, mount, getState, applyState }) {
       if (typeof m.now === "number") offset = m.now - Date.now() / 1000;
       if (m.type === "hello") {
         me = m.you || me;
-        members = m.members || [];
-        drawMembers();
-        sys(`You joined party ${code} as ${me}.`);
+        roster(m);
+        sys(`You joined party ${code} as ${me}.${host === me ? " You're the host." : ""}`);
+        roomState = m.state || null;
         if (m.state) applyState(m.state, where(m.state));
         else send(); // first in: what you are watching is the party's episode
       } else if (m.type === "members") {
-        members = m.members || [];
-        drawMembers();
+        const before = host;
+        roster(m);
         if (m.joined) {
           sys(`${m.joined} joined.`);
           sfx("select");
           // Bring the newcomer to the exact spot; a paused room's saved state is already exact.
           const s = getState();
-          if (s && s.playing) send(s);
+          if (s && s.playing && canControl()) send(s, true);
         }
         if (m.left) sys(`${m.left} left.`);
+        if (host !== before && host) sys(host === me ? "You're the host now." : `${host} is the host now.`);
       } else if (m.type === "state" && m.state) {
+        roomState = m.state;
+        if (m.denied) toldOnce();
         applyState(m.state, where(m.state));
+      } else if (m.type === "lock") {
+        locked = !!m.on;
+        drawMembers();
+        sys(locked ? `${m.host} locked the controls: only they can play, pause and seek.` : `${m.host} unlocked the controls.`);
+      } else if (m.type === "react" && REACTIONS.includes(m.emoji)) {
+        float(m.emoji, m.name);
       } else if (m.type === "chat") {
+        if (!m.name) { sys(m.text); return; } // from the server, e.g. "slow down"
         line(h("b", null, `${m.name}: `), m.text);
         if (m.name !== me) sfx("click");
       }
@@ -128,8 +176,16 @@ export function startParty({ code, mount, getState, applyState }) {
     };
   }
 
-  function send(state = getState()) {
+  /** auto: sent on the viewer's behalf (a newcomer joined), not something they did. */
+  function send(state = getState(), auto = false) {
     if (!state || !ws || ws.readyState !== 1) return;
+    if (!canControl()) {
+      if (auto) return;
+      // Locked out: put this player back where the room is, rather than fight it.
+      toldOnce();
+      if (roomState) applyState(roomState, where(roomState));
+      return;
+    }
     ws.send(JSON.stringify({ type: "state", ...state }));
   }
 
@@ -155,6 +211,9 @@ export function startParty({ code, mount, getState, applyState }) {
       leave(false); // anything sent before close() still goes out first
     },
     leave,
+    /** False while the host has locked the controls and this viewer isn't the host. */
+    canControl,
+    toldLocked: toldOnce,
     get code() { return code; },
   };
 }

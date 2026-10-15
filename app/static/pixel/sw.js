@@ -2,7 +2,7 @@
 // look (fonts, styles, scripts, sprites) and an offline page on the device.
 // Streams, the API and watch-party sockets always go to the network.
 
-const SHELL = "av-shell-v1";
+const SHELL = "av-shell-v2";
 const OFFLINE = "/offline";
 
 self.addEventListener("install", (event) => {
@@ -51,4 +51,31 @@ self.addEventListener("fetch", (event) => {
     }
     return res;
   }).catch(async () => (await caches.match(req)) || (req.mode === "navigate" ? caches.match(OFFLINE) : Response.error())));
+});
+
+// --- new-episode alerts pushed by the server (app/webpush.py, js/push.js) -------------
+self.addEventListener("push", (event) => {
+  let m = {};
+  try { m = event.data ? event.data.json() : {}; } catch { m = { body: event.data ? event.data.text() : "" }; }
+  event.waitUntil(self.registration.showNotification(m.title || "AniVerse", {
+    body: m.body || "A show on your list has a new episode.",
+    icon: "/static/pixel/img/icon-192.png",
+    badge: "/static/pixel/img/icon-192.png",
+    tag: m.tag || "aniverse",
+    data: { url: m.url || "/mylist" },
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = new URL(event.notification.data?.url || "/mylist", self.location.origin).href;
+  event.waitUntil((async () => {
+    const tabs = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const open = tabs.find((t) => t.url.startsWith(self.location.origin));
+    if (open) {
+      await open.focus();
+      return open.navigate(url);
+    }
+    return self.clients.openWindow(url);
+  })());
 });

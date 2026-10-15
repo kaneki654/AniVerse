@@ -14,8 +14,29 @@ const ago = (t, now) => {
   return s < 90 ? "just now" : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
 };
 
+/** This server: disk space, how much of what is trending plays, and error reports from clients. */
+function serverSection(o, now) {
+  if (!o) return null;
+  const dk = o.disk, sw = o.sweep, ce = o.clientErrors;
+  return h("section.section", null, sectionHead("This server"),
+    h("div.stat-row", null,
+      h(`div.stat.px-box${dk.low ? ".warn" : ""}`, null, h("b", null, `${dk.freeGb} GB`),
+        h("small", null, dk.low ? `Disk nearly full (${dk.freePercent}% free)` : `Disk free (${dk.freePercent}%)`)),
+      h("div.stat.px-box", null, h("b", null, sw && sw.total ? `${sw.ok}/${sw.total}` : "--"),
+        h("small", null, sw && sw.at ? `Trending anime playable · ${ago(sw.at, now)}` : "Trending sweep: not run yet")),
+      h("div.stat.px-box", null, h("b", null, String(ce.last24h)), h("small", null, "Error reports (24h)"))),
+    ...[
+      sw && sw.failing.length ? h("div.list", null, sw.failing.map((f) => h("a.list-item.px-box", { href: `/watch/${f.id}/${f.ep}` },
+        h("div.body", null, h("span.name", null, `${f.title} · EP ${f.ep}`), h("span.sub", null, f.error || "no stream found"))))) : null,
+      ce.latest.length ? h("div.list", null, ce.latest.map((e) => h("div.list-item.px-box", null,
+        h("div.body", null, h("span.name", null, `${e.source} ${e.version} · ${e.kind}${e.where ? ` · ${e.where}` : ""}`),
+          h("span.sub", null, `${ago(e.at, now)} · ${e.message}`))))) : null,
+    ].filter(Boolean));
+}
+
 async function render() {
   let d;
+  const ops = api.ops();
   try { d = await api.status(); } catch {
     clear(root).append(emptyState("Can't reach the server", "The status comes from the AniVerse server, which didn't answer."));
     return;
@@ -23,8 +44,10 @@ async function render() {
   const cov = d.coverage;
   const rate = cov.total ? Math.round((100 * cov.playable) / cov.total) : null;
   const top = Math.max(1, ...d.hours.map((x) => x.total));
+  const server = serverSection(await ops, d.now);
   // DOM append() prints null as "null": optional parts are filtered out.
   clear(root).append(...[
+    server,
     h("div.stat-row", null,
       h("div.stat.px-box", null, h("b", null, rate === null ? "--" : `${rate}%`), h("small", null, "Episodes playable (24h)")),
       h("div.stat.px-box", null, h("b", null, String(cov.total)), h("small", null, "Episode lookups")),

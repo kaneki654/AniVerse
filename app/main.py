@@ -4,6 +4,7 @@ import re
 from urllib.parse import urljoin, quote, unquote, urlparse, parse_qs
 from datetime import date as dt
 import asyncio
+from contextlib import asynccontextmanager
 from typing import Any
 
 # Add libs to path
@@ -17,15 +18,71 @@ from pydantic import BaseModel
 import httpx
 
 import anime_meta
-from app import accounts
+from app import accounts, proxy_hosts
 
-app = FastAPI()
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # New-episode alerts for the website, sent while it is closed (app/webpush.py).
+    from app import ops as server_ops, webpush as push
+    checker = asyncio.create_task(push.checker_loop())
+    # Free disk space, logged while it runs low (app/ops.py).
+    disk_watch = asyncio.create_task(server_ops.watch_disk())
+    yield
+    checker.cancel()
+    disk_watch.cancel()
+
+
+app = FastAPI(lifespan=_lifespan)
+
+
+class _ProxyCors:
+    """Lets a Chromecast play through /proxy/*: the receiver fetches the
+    playlist, segments and subtitles itself, from its own origin, so the
+    responses must be readable cross-origin. Nothing there uses cookies or
+    credentials, so "*" gives away nothing. Plain ASGI rather than
+    @app.middleware, which would buffer every video segment through a queue."""
+
+    _HEADERS = [
+        (b"access-control-allow-origin", b"*"),
+        (b"access-control-allow-methods", b"GET, HEAD, OPTIONS"),
+        (b"access-control-allow-headers", b"Range, Content-Type"),
+        (b"access-control-expose-headers", b"Content-Length, Content-Range, Accept-Ranges"),
+    ]
+
+    def __init__(self, inner):
+        self.inner = inner
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not scope["path"].startswith("/proxy/"):
+            return await self.inner(scope, receive, send)
+        if scope["method"] == "OPTIONS":
+            await send({"type": "http.response.start", "status": 204, "headers": self._HEADERS})
+            await send({"type": "http.response.body", "body": b""})
+            return
+
+        async def with_cors(message):
+            if message["type"] == "http.response.start":
+                message = {**message, "headers": [*message.get("headers", []), *self._HEADERS]}
+            await send(message)
+
+        await self.inner(scope, receive, with_cors)
+
+
+app.add_middleware(_ProxyCors)
 # Sign-in and per-account watch history for the mobile app.
 app.include_router(accounts.router)
 # AniList/MyAnimeList list tracking, and watch parties.
-from app import party, tracking  # noqa: E402
+from app import ops, party, reports, tagalog, tracking, webpush  # noqa: E402
 app.include_router(tracking.router)
 app.include_router(party.router)
+app.include_router(webpush.router)
+# Disk space, the daily stream sweep and error reports from clients, for /status;
+# a save that fails because the disk is full answers 507 with a readable message.
+app.include_router(ops.router)
+ops.install(app)
+# Official Tagalog dubs (the licensees' YouTube channels), and their player page.
+app.include_router(tagalog.router)
+
 
 # The website's look. "pixel" (the default) is the 2D pixel-art UI that matches
 # the AniVerse Pixel app; "classic" is the original site, kept as it was. It is
@@ -42,8 +99,6 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 API_BASE = "https://aniverseaniwatch.onrender.com/"
-MANGA_API_BASE = "https://consumet-swart-nine.vercel.app/manga/mangadex"
-MANGA_PROXY = "https://consumet-swart-nine.vercel.app/manga/mangadex/proxy?url="
 DEFAULT_REFERER = "https://hianime.to/"
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
@@ -53,21 +108,6 @@ def get_proxy_headers(referer: str | None = None):
         "Referer": referer if referer else DEFAULT_REFERER,
         "Origin": referer if referer else DEFAULT_REFERER
     }
-
-def fix_cover(url: str):
-    import sys
-    if not url:
-        return url
-    
-    # Only fix the domain
-    fixed_url = url.replace("https://mangadex.org/covers", "https://uploads.mangadex.org/covers")
-    
-    # Add logging as requested
-    print(f"fix_cover INPUT: {url} | OUTPUT: {fixed_url}")
-    sys.stdout.flush()
-    
-    # Return direct URL without prepending MANGA_PROXY and without quote()
-    return fixed_url
 
 # --- ANIME ROUTES ---
 
@@ -504,9 +544,29 @@ def _read_published_release():
         return None
 
 
+def _published_split(release: dict, abi: str | None):
+    """The per-CPU build of the published release for `abi`, if there is a sound one."""
+    entry = ((release.get("abis") or {}).get(abi) if abi else None)
+    if not isinstance(entry, dict):
+        return None
+    try:
+        filename = entry["file"]
+        if not isinstance(filename, str) or pathlib.Path(filename).name != filename:
+            return None
+        apk = (_RELEASES_DIR / filename).resolve()
+        if (apk.parent != _RELEASES_DIR.resolve() or apk.suffix != ".apk" or not apk.is_file()
+                or type(entry["size"]) is not int or apk.stat().st_size != entry["size"]
+                or not re.fullmatch(r"[0-9a-f]{64}", entry["sha256"])):
+            return None
+        return entry, apk
+    except (OSError, KeyError, TypeError):
+        return None
+
+
 @app.get("/app/version.json")
-async def app_version(response: Response):
-    """What the installed app compares itself against."""
+async def app_version(response: Response, abi: str | None = None):
+    """What the installed app compares itself against. An app that says which
+    CPU it runs on (1.11 on) is pointed at the smaller build for it."""
     response.headers.update(_UPDATE_HEADERS)
     published = _read_published_release()
     result = {
@@ -520,17 +580,24 @@ async def app_version(response: Response):
         release, _ = published
         result.update({key: release[key] for key in ("versionName", "versionCode", "size", "sha256")})
         result["available"] = True
+        split = _published_split(release, abi)
+        if split:
+            entry, _ = split
+            result.update(url=f"/app/aniverse.apk?abi={quote(abi or '', safe='')}", size=entry["size"], sha256=entry["sha256"])
     return result
 
 
 @app.get("/app/aniverse.apk")
-async def app_apk():
+async def app_apk(abi: str | None = None):
     from fastapi.responses import FileResponse
     published = _read_published_release()
     if not published:
         return Response(content='{"detail":"no published APK available"}', status_code=404,
                         media_type="application/json", headers=_UPDATE_HEADERS)
-    _, apk = published
+    release, apk = published
+    split = _published_split(release, abi)
+    if split:
+        apk = split[1]
     return FileResponse(
         apk,
         media_type="application/vnd.android.package-archive",
@@ -597,6 +664,7 @@ def _source_subtitles(stream: dict, referer: str) -> list:
         if not url:
             continue
         ref = t.get("referer") or referer
+        proxy_hosts.allow(url)
         tracks.append({
             "url": f"/proxy/subtitle?url={quote(url, safe='')}&referer={quote(ref, safe='')}",
             "label": t.get("label") or t.get("lang") or "English",
@@ -656,10 +724,6 @@ async def _drop_dead_streams(client: httpx.AsyncClient, data: dict) -> list:
 # that episode for a few hours, which is long enough for providers to fix it
 # or for the cache to move on, and short enough that a mistaken report heals.
 
-REPORT_TTL = 6 * 3600
-_reports: dict = {}  # (anime, episode, category) -> {upstream url: expires}
-
-
 class StreamReport(BaseModel):
     episode_id: str
     category: str = "sub"
@@ -667,14 +731,10 @@ class StreamReport(BaseModel):
     reason: str = ""
 
 
-def _reported(anilist_id: str, ep: str, category: str) -> set:
-    now = time.time()
-    entry = _reports.get((anilist_id, str(ep), category)) or {}
-    return {u for u, until in entry.items() if until > now}
-
-
 @app.post("/api/report")
-async def report_stream(body: StreamReport):
+async def report_stream(body: StreamReport, request: Request):
+    """A viewer says this stream plays wrong. See app/reports.py for who it is
+    hidden from, and for how long."""
     try:
         anilist_id, ep = body.episode_id.split("/")
     except ValueError:
@@ -683,22 +743,22 @@ async def report_stream(body: StreamReport):
     upstream = (parse_qs(urlparse(body.url).query).get("url") or [body.url])[0]
     if not upstream.startswith(("http://", "https://")):
         return Response(status_code=400)
-    key = (anilist_id, ep, body.category if body.category in ("sub", "dub") else "sub")
-    entry = _reports.setdefault(key, {})
-    entry[upstream] = time.time() + REPORT_TTL
-    print(f"Report: {body.episode_id} ({key[2]}) {body.reason[:80]!r}: {upstream[:120]}")
-    if len(_reports) > 5000:  # keep it bounded: drop expired ones
-        now = time.time()
-        for k in [k for k, v in _reports.items() if all(t < now for t in v.values())]:
-            _reports.pop(k, None)
+    category = body.category if body.category in ("sub", "dub") else "sub"
+    try:
+        reports.record(anilist_id, ep, category, upstream, accounts._client_ip(request), body.reason)
+    except reports.RateLimited:
+        return Response(status_code=429)
+    print(f"Report: {body.episode_id} ({category}) {body.reason[:80]!r}: {upstream[:120]}")
     return {"ok": True}
 
 
 @app.get("/api/source")
-async def get_source(episode_id: str, server: str = "Auto", category: str = "sub",
+async def get_source(request: Request, episode_id: str, server: str = "Auto", category: str = "sub",
                      fresh: bool = False):
     try:
         anilist_id, ep_num = episode_id.split("/")
+        if category == "tl":  # the Tagalog dub, from the Filipino anime sites (app/tagalog.py)
+            return await tagalog.source_answer(int(anilist_id), int(ep_num))
         async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as check_client, \
                 httpx.AsyncClient() as client:
             data = await _fetch_resolve(client, anilist_id, ep_num, category, fresh)
@@ -718,7 +778,7 @@ async def get_source(episode_id: str, server: str = "Auto", category: str = "sub
 
             # Streams viewers reported as broken (wrong episode, frozen, no
             # sound) stay out for a while; if that leaves nothing, look again.
-            bad = _reported(anilist_id, ep_num, category)
+            bad = reports.hidden(anilist_id, ep_num, category, accounts._client_ip(request))
             if bad and data.get("streams"):
                 kept = [st for st in data["streams"] if st["url"] not in bad]
                 if not kept:
@@ -738,9 +798,11 @@ async def get_source(episode_id: str, server: str = "Auto", category: str = "sub
                 if "premilkyway.com" in abs_url:
                     proxy_url = abs_url
                 elif "m3u8" in abs_url:
+                    proxy_hosts.allow(abs_url)
                     proxy_url = f"/proxy/m3u8?url={quote(abs_url, safe='')}&referer={quote(referer, safe='')}"
                 else:
                     # It's an mp4 like Doodstream, proxy it using our stream endpoint!
+                    proxy_hosts.allow(abs_url)
                     proxy_url = f"/proxy/stream?url={quote(abs_url, safe='')}&referer={quote(referer, safe='')}"
 
                 sources.append({
@@ -809,230 +871,10 @@ async def genre(request: Request, name: str, page: int = 1):
 
 
 
-# --- MANGA ROUTES ---
-
-@app.get("/manga", response_class=HTMLResponse)
-async def manga_home(request: Request):
-    popular_data = []
-    latest_data = []
-    recent_data = []
-    
-    async with httpx.AsyncClient() as client:
-        try:
-            # Featured / Popular
-            pop_resp = await client.get(f"{MANGA_API_BASE}/popular")
-            if pop_resp.status_code == 200:
-                popular_data = pop_resp.json().get('results', [])
-                for item in popular_data:
-                    if "image" in item:
-                        item["image"] = fix_cover(item["image"])
-
-            # Latest Updates
-            latest_resp = await client.get(f"{MANGA_API_BASE}/latest")
-            if latest_resp.status_code == 200:
-                latest_data = latest_resp.json().get('results', [])
-                for item in latest_data:
-                    if "image" in item:
-                        item["image"] = fix_cover(item["image"])
-                
-            # Recent Additions
-            recent_resp = await client.get(f"{MANGA_API_BASE}/recent")
-            if recent_resp.status_code == 200:
-                recent_data = recent_resp.json().get('results', [])
-                for item in recent_data:
-                    if "image" in item:
-                        item["image"] = fix_cover(item["image"])
-
-        except Exception as e:
-            print(f"Manga Home Error: {e}")
-
-    return templates.TemplateResponse(
-        request=request,
-        name="manga_home.html",
-        context={
-            "popular": popular_data,
-            "latest": latest_data,
-            "recent": recent_data,
-            "proxy_base": MANGA_PROXY
-        }
-    )
-
-@app.get("/manga/search/suggestion")
-async def manga_search_suggestion(q: str):
-    async with httpx.AsyncClient() as client:
-        try:
-            url = f"{MANGA_API_BASE}/{q}"
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                # We can just return the raw results from Consumet
-                data = resp.json()
-                results = data.get('results', [])
-                for item in results:
-                    if "image" in item:
-                        item["image"] = fix_cover(item["image"])
-                return data
-        except:
-            return {"results": []}
-    return {"results": []}
-
-@app.get("/manga/proxy")
-async def basic_manga_proxy(url: str):
-    from fastapi.responses import RedirectResponse
-    # Since proxy is broken, just redirect to the fixed URL
-    fixed_url = url.replace("https://mangadex.org", "https://uploads.mangadex.org")
-    return RedirectResponse(fixed_url)
-
-@app.get("/manga/search", response_class=HTMLResponse)
-async def manga_search(request: Request, q: str = "", page: int = 1):
-    results = []
-    async with httpx.AsyncClient() as client:
-        try:
-            url = f"{MANGA_API_BASE}/{q}?page={page}"
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                results = resp.json().get('results', [])
-                for item in results:
-                    if "image" in item:
-                        item["image"] = fix_cover(item["image"])
-        except Exception as e:
-            print(f"Manga Search Error: {e}")
-
-    return templates.TemplateResponse(
-        request=request,
-        name="manga_search.html",
-        context={
-            "results": results,
-            "query": q,
-            "page": page,
-            "proxy_base": MANGA_PROXY
-        }
-    )
-
-@app.get("/manga/{manga_id}", response_class=HTMLResponse)
-async def manga_detail(request: Request, manga_id: str):
-    manga_info = {}
-    async with httpx.AsyncClient() as client:
-        try:
-            url = f"{MANGA_API_BASE}/info/{manga_id.strip('/')}"
-            print(f"CALLING: {url}")
-            import sys; sys.stdout.flush()
-            resp = await client.get(url, timeout=30)
-            print(f"STATUS: {resp.status_code}")
-            print(f"BODY: {resp.text[:200]}")
-            sys.stdout.flush()
-            if resp.status_code == 200:
-                print(f"Detail API Keys: {list(resp.json().keys())}")
-                sys.stdout.flush()
-                manga_info = resp.json()
-                if not manga_info.get("title"):
-                    alt_titles = manga_info.get("altTitles", [])
-                    fallback = "Unknown Title"
-                    for alt in alt_titles:
-                        if isinstance(alt, dict):
-                            if "en" in alt:
-                                fallback = alt["en"]
-                                break
-                            elif alt:
-                                fallback = list(alt.values())[0]
-                    manga_info["title"] = fallback
-
-                if "image" in manga_info:
-                    manga_info["image"] = fix_cover(manga_info["image"])
-                
-                # Sanitize description
-                desc = manga_info.get("description")
-                if isinstance(desc, dict):
-                    manga_info["description"] = desc.get("en", list(desc.values())[0] if desc else "No description available.")
-                
-                # Ensure fields exist for template
-                manga_info["authors"] = manga_info.get("authors") or []
-                manga_info["genres"] = (manga_info.get("genres") or []) + (manga_info.get("themes") or [])
-                manga_info["rating"] = manga_info.get("rating") or "N/A"
-        except Exception as e:
-            print(f"Manga Detail ERROR: {str(e)}")
-            import sys; sys.stdout.flush()
-
-    return templates.TemplateResponse(
-        request=request,
-        name="manga_detail.html",
-        context={
-            "manga": manga_info,
-            "chapters": manga_info.get('chapters', []),
-            "has_english": len(manga_info.get('chapters', [])) > 0,
-            "proxy_base": MANGA_PROXY,
-            "error": not bool(manga_info.get('title'))
-        }
-    )
-
-@app.get("/manga/read/{manga_id}/{chapter_id}", response_class=HTMLResponse)
-async def manga_read(request: Request, manga_id: str, chapter_id: str):
-    pages = []
-    manga_info = {}
-    current_chapter = None
-    next_chapter = None
-    prev_chapter = None
-    
-    async with httpx.AsyncClient() as client:
-        try:
-            # Get pages
-            read_resp = await client.get(f"{MANGA_API_BASE}/read/{chapter_id.strip('/')}", timeout=30)
-            if read_resp.status_code == 200:
-                pages = read_resp.json()
-                for page in pages:
-                    if page.get("img"):
-                        page["img"] = f"https://consumet-swart-nine.vercel.app/manga/mangadex/proxy?url={quote(page['img'], safe='')}"
-                
-            # Get info for navigation
-            info_resp = await client.get(f"{MANGA_API_BASE}/info/{manga_id}", timeout=30)
-            if info_resp.status_code == 200:
-                manga_info = info_resp.json()
-                
-                if not manga_info.get("title"):
-                    alt_titles = manga_info.get("altTitles", [])
-                    fallback = "Unknown Title"
-                    for alt in alt_titles:
-                        if isinstance(alt, dict):
-                            if "en" in alt:
-                                fallback = alt["en"]
-                                break
-                            elif alt:
-                                fallback = list(alt.values())[0]
-                    manga_info["title"] = fallback
-                    
-                chapters = manga_info.get('chapters', [])
-                print(f"Read Info API Status: {info_resp.status_code}, Chapters found: {len(chapters)}")
-                
-                # Consumet returns chapters usually in descending order
-                for i, ch in enumerate(chapters):
-                    if ch.get('id') == chapter_id:
-                        current_chapter = ch
-                        if i > 0:
-                            next_chapter = chapters[i-1].get('id')  # Newer chapter is before it in desc order
-                        if i < len(chapters) - 1:
-                            prev_chapter = chapters[i+1].get('id')  # Older chapter is after it
-                        break
-
-        except Exception as e:
-            print(f"Manga Read Error: {e}")
-
-    return templates.TemplateResponse(
-        request=request,
-        name="manga_read.html",
-        context={
-            "manga_id": manga_id,
-            "chapter_id": chapter_id,
-            "pages": pages,
-            "manga_info": manga_info,
-            "chapter_info": current_chapter or {},
-            "next_chapter": next_chapter,
-            "prev_chapter": prev_chapter,
-            "proxy_base": MANGA_PROXY
-        }
-    )
-
-
 @app.api_route("/proxy/stream", methods=["GET", "HEAD"])
 async def proxy_stream(request: Request, url: str, referer: str | None = None):
+    if not proxy_hosts.allowed(url):
+        return Response(status_code=403, content="Not a stream this server handed out")
     headers = {"User-Agent": USER_AGENT}
     if referer:
         headers["Referer"] = referer
@@ -1079,6 +921,8 @@ async def proxy_stream(request: Request, url: str, referer: str | None = None):
 
 @app.get("/proxy/m3u8")
 async def proxy_m3u8(url: str, referer: str | None = None):
+    if not proxy_hosts.allowed(url):
+        return Response(status_code=403, content="Not a stream this server handed out")
     headers = {"User-Agent": USER_AGENT}
     if referer:
         headers["Referer"] = referer
@@ -1110,6 +954,7 @@ async def proxy_m3u8(url: str, referer: str | None = None):
                         def replace_uri(match):
                             uri = match.group(1)
                             abs_uri = urljoin(url, uri)
+                            proxy_hosts.allow(abs_uri)
                             if abs_uri.split('?')[0].endswith('.m3u8'):
                                 proxy_uri = f"/proxy/m3u8?url={quote(abs_uri, safe='')}&referer={quote(referer or '', safe='')}"
                             else:
@@ -1119,6 +964,7 @@ async def proxy_m3u8(url: str, referer: str | None = None):
                     rewritten_lines.append(line)
                 else:
                     abs_url = urljoin(url, line)
+                    proxy_hosts.allow(abs_url)
                     if abs_url.split('?')[0].endswith('.m3u8'):
                         proxy_url = f"/proxy/m3u8?url={quote(abs_url, safe='')}&referer={quote(referer or '', safe='')}"
                     else:
@@ -1133,6 +979,8 @@ async def proxy_m3u8(url: str, referer: str | None = None):
 
 @app.get("/proxy/ts")
 async def proxy_ts(url: str, referer: str | None = None):
+    if not proxy_hosts.allowed(url):
+        return Response(status_code=403, content="Not a stream this server handed out")
     headers = {"User-Agent": USER_AGENT}
     if referer:
         headers["Referer"] = referer
@@ -1151,6 +999,8 @@ async def proxy_ts(url: str, referer: str | None = None):
 
 @app.get("/proxy/subtitle")
 async def proxy_subtitle(url: str, referer: str | None = None):
+    if not proxy_hosts.allowed(url):
+        return Response(status_code=403, content="Not a stream this server handed out")
     headers = {"User-Agent": USER_AGENT}
     if referer:
         headers["Referer"] = referer
