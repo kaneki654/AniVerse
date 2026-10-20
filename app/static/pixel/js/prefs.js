@@ -39,9 +39,23 @@ function choice(key, label, text, options, parse = (v) => v) {
   return h("div.setting.px-box", null, h("div", null, h("b", null, label), h("span", null, text)), sel);
 }
 
+/** Manga or pixel: the server sends the pages in the look this cookie names. */
+function lookSetting() {
+  const sel = h("select.px-select", {
+    "aria-label": "Look",
+    onchange: () => {
+      document.cookie = `av_look=${sel.value}; path=/; max-age=31536000; samesite=lax`;
+      location.reload();
+    },
+  }, h("option", { value: "pixel", selected: true }, "Pixel art"), h("option", { value: "manga" }, "Manga"));
+  return h("div.setting.px-box", null,
+    h("div", null, h("b", null, "Look"), h("span", null, "Pixel art: this look, with its palettes. Manga: ink, paper and panels.")), sel);
+}
+
 function render() {
   const s = settings.get();
   clear(root).append(
+    h("section.setting-group", null, lookSetting()),
     h("section.setting-group", null,
       h("div.setting.px-box", null,
         h("div", null, h("b", null, "Palette"), h("span", null, "The colour of blood, glows and effects. Everything stays pixel art.")),

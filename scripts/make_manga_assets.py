@@ -39,12 +39,12 @@ KANJI = "読込中次回完終了新着話漫画開始音撃熱血一時停止�
 
 def _layers() -> None:
     img = Image.open(ICON).convert("RGBA")
-    box = img.getchannel("A").point(lambda a: 255 if a > 40 else 0).getbbox()
+    box = img.getchannel("A").point([0] * 41 + [255] * 215).getbbox()  # alpha above 40
     img = img.crop(box)
     side = int(max(img.size) * 1.12)  # room for the outline and halo
     square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
     square.paste(img, ((side - img.width) // 2, (side - img.height) // 2))
-    img = square.resize((SIZE, SIZE), Image.LANCZOS)
+    img = square.resize((SIZE, SIZE), Image.Resampling.LANCZOS)
 
     a = np.asarray(img).astype(np.float32) / 255
     mask = a[..., 3] > 0.5

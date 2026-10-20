@@ -1,9 +1,11 @@
-"""The website's pixel-art UI, matching the AniVerse Pixel app.
+"""The website's two looks, matching the app's: manga (the default) and pixel art.
 
-Pages are thin shells: each renders a template from templates/pixel and loads
-one script from static/pixel/js, which fetches the same JSON endpoints the app
-uses (/api/anime/*, /api/source, /api/auth, /api/history). Nothing here changes
-those endpoints, so the app is unaffected by which web UI is on.
+Pages are thin shells: each renders a template from templates/manga (or
+templates/pixel) and loads one script from static/manga/js (static/pixel/js),
+which fetches the same JSON endpoints the app uses (/api/anime/*, /api/source,
+/api/auth, /api/history). Nothing here changes those endpoints, so the app is
+unaffected by which web UI is on. A visitor picks the look in Settings; it is
+kept in the av_look cookie, so the server sends the right pages.
 
 main.py installs this ahead of the classic page routes when ANIVERSE_WEB_UI is
 "pixel" (the default), so the same URLs serve the new pages; the classic
@@ -20,6 +22,7 @@ from fastapi.templating import Jinja2Templates
 
 _HERE = Path(__file__).resolve().parent
 _STATIC = _HERE / "static" / "pixel"
+LOOKS = ("manga", "pixel")
 
 templates = Jinja2Templates(directory=str(_HERE / "templates"))
 # Pages, not API: kept out of the OpenAPI schema, where they would also clash
@@ -27,23 +30,31 @@ templates = Jinja2Templates(directory=str(_HERE / "templates"))
 router = APIRouter(include_in_schema=False)
 
 
-def _asset_version() -> str:
-    """Changes whenever a pixel asset does, to bust browser caches."""
-    newest = max((p.stat().st_mtime for p in _STATIC.rglob("*") if p.is_file()), default=0)
+def _asset_version(look: str) -> str:
+    """Changes whenever one of the look's assets does, to bust browser caches."""
+    folder = _HERE / "static" / look
+    newest = max((p.stat().st_mtime for p in folder.rglob("*") if p.is_file()), default=0)
     return str(int(newest))
 
 
-_VERSION = _asset_version()
+_VERSIONS = {look: _asset_version(look) for look in LOOKS}
+
+
+def look_of(request: Request) -> str:
+    """The visitor's look: pixel if they chose it in Settings, else manga."""
+    return "pixel" if request.cookies.get("av_look") == "pixel" else "manga"
 
 
 def _page(request: Request, name: str, nav: str, title: str, heading: str | None = None,
           **context) -> HTMLResponse:
     """A page: its own template, or with `heading` the shared one, which is just
     that heading and an empty root its script fills in."""
+    look = look_of(request)
     return templates.TemplateResponse(
         request=request,
-        name="pixel/simple.html" if heading else f"pixel/{name}.html",
-        context={"page": name, "nav": nav, "title": title, "heading": heading, "v": _VERSION, **context},
+        name=f"{look}/simple.html" if heading else f"{look}/{name}.html",
+        context={"page": name, "nav": nav, "title": title, "heading": heading, "v": _VERSIONS[look], "look": look,
+                 **context},
     )
 
 
@@ -119,18 +130,20 @@ async def offline(request: Request):
 # every page.
 
 @router.get("/manifest.webmanifest")
-async def manifest():
-    icon = "/static/pixel/img"
+async def manifest(request: Request):
+    pixel = look_of(request) == "pixel"
+    icon = "/static/pixel/img" if pixel else "/static/manga/img"
     return JSONResponse({
-        "name": "AniVerse Pixel",
+        "name": "AniVerse Pixel" if pixel else "AniVerse",
         "short_name": "AniVerse",
-        "description": "Watch anime, subbed and dubbed, in pixel art.",
+        "description": "Watch anime, subbed and dubbed, in pixel art." if pixel
+        else "Watch anime, subbed, dubbed and in Tagalog, on paper and in ink.",
         "start_url": "/?source=pwa",
         "scope": "/",
         "display": "standalone",
         "orientation": "any",
-        "background_color": "#0d0709",
-        "theme_color": "#050305",
+        "background_color": "#0d0709" if pixel else "#f5f1e8",
+        "theme_color": "#050305" if pixel else "#f5f1e8",
         "icons": [
             {"src": f"{icon}/icon-192.png", "sizes": "192x192", "type": "image/png"},
             {"src": f"{icon}/icon-512.png", "sizes": "512x512", "type": "image/png"},
@@ -170,6 +183,6 @@ def install(app: FastAPI) -> None:
         # pairing a new page with an old cached module.
         response = await call_next(request)
         path = request.url.path
-        if path.startswith("/static/pixel/") and path.endswith((".js", ".css")):
+        if path.startswith(("/static/pixel/", "/static/manga/")) and path.endswith((".js", ".css")):
             response.headers["Cache-Control"] = "no-cache"
         return response
