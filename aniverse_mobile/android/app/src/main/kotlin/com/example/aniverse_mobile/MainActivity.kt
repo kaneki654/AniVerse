@@ -353,6 +353,14 @@ class MainActivity : FlutterActivity() {
                     "slash" to R.raw.sfx_slash, "start" to R.raw.sfx_start, "skip" to R.raw.sfx_skip,
                     "error" to R.raw.sfx_error, "achieve" to R.raw.sfx_achieve, "hit" to R.raw.sfx_hit,
                     "boss" to R.raw.sfx_boss,
+                    // The manga UI's set: paper, ink and impacts (scripts/make_manga_sfx.py).
+                    "manga_click" to R.raw.manga_click, "manga_select" to R.raw.manga_select,
+                    "manga_splat" to R.raw.manga_splat, "manga_slash" to R.raw.manga_slash,
+                    "manga_start" to R.raw.manga_start, "manga_skip" to R.raw.manga_skip,
+                    "manga_error" to R.raw.manga_error, "manga_achieve" to R.raw.manga_achieve,
+                    "manga_hit" to R.raw.manga_hit, "manga_boss" to R.raw.manga_boss,
+                    "manga_page" to R.raw.manga_page, "manga_pop" to R.raw.manga_pop,
+                    "manga_don" to R.raw.manga_don,
                 )
                 raw.forEach { (k, res) -> soundIds[k] = pool.load(this, res, 1) }
             }

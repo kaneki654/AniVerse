@@ -182,6 +182,11 @@ class NativeBridge {
 class Sfx {
   static void play(String name) {
     if (!AppSettings.sfx) return;
+    // The manga UI has its own set: paper, ink and impacts (manga_<name>).
+    if (AppSettings.uiStyle.value == 'manga') {
+      NativeBridge._call('sfx', {'name': 'manga_$name', 'volume': AppSettings.volume, 'rate': 1.0});
+      return;
+    }
     final (rate, gain) = switch (AppSettings.theme.value) {
       'neon' => (1.3, 1.0),
       'sakura' => (0.82, 0.75),

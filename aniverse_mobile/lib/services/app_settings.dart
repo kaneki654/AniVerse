@@ -22,10 +22,15 @@ class AppSettings {
   /// app rebuilds for those too.
   static final ValueNotifier<int> effectsChanged = ValueNotifier<int>(0);
 
+  /// Which look the app wears: 'manga' (lib/ui_manga) or 'pixel' (lib/ui_2d).
+  /// main.dart swaps the whole app when it changes.
+  static final ValueNotifier<String> uiStyle = ValueNotifier<String>('manga');
+
   static Future<void> load() async {
     try {
       _prefs = await SharedPreferences.getInstance();
       theme.value = _prefs!.getString('av.theme') ?? 'blood';
+      uiStyle.value = _prefs!.getString('av.uiStyle') ?? 'manga';
     } catch (_) {
       // Defaults all round.
     }
@@ -177,6 +182,7 @@ class AppSettings {
       await p.setString('av.$key', value.toString());
     }
     if (key == 'theme') theme.value = value.toString();
+    if (key == 'uiStyle') uiStyle.value = value.toString();
     if (key == 'effects' || key == 'textScale' || key == 'highContrast') effectsChanged.value++;
     changes.value++;
   }

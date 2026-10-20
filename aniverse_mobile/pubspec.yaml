@@ -1,7 +1,7 @@
 name: aniverse_mobile
 description: A new Flutter project.
 publish_to: 'none'
-version: 1.13.1+26
+version: 1.14.0+27
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -34,6 +34,7 @@ flutter:
     - assets/icon/aniverse_icon.png
     # The logo as pixel art, for the 2D UI (built by scripts/make_pixel_icon.py).
     - assets/icon/aniverse_icon_pixel.png
+    - assets/manga/
 
   # Pixel fonts for the 2D UI (lib/ui_2d), bundled so they render offline and
   # never fall back to a smooth system font. Both are SIL OFL 1.1; the licence
@@ -45,6 +46,19 @@ flutter:
     - family: DotGothic16
       fonts:
         - asset: assets/fonts/DotGothic16-Regular.ttf
+    # The manga UI's lettering (scripts/make_manga_assets.py; licences beside them).
+    - family: MangaTitle
+      fonts:
+        - asset: assets/fonts/manga/Lato-Black.ttf
+    - family: MangaText
+      fonts:
+        - asset: assets/fonts/manga/RobotoCondensed-Regular.ttf
+        - asset: assets/fonts/manga/RobotoCondensed-Bold.ttf
+          weight: 700
+    - family: MangaSfx
+      fonts:
+        - asset: assets/fonts/manga/MangaSfx-Bold.otf
+          weight: 700
 
 flutter_launcher_icons:
   android: true

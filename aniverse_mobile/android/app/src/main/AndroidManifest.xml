@@ -18,7 +18,7 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
 
     <application
-        android:label="AniVerse Pixel"
+        android:label="AniVerse"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher_pixel"
         android:banner="@drawable/tv_banner"

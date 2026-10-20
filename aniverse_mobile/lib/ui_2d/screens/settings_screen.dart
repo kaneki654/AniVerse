@@ -94,6 +94,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             control: PixelSprite(Sprites.chevron, scale: 1.6, color: Px.ash),
           ),
           const SizedBox(height: 12),
+          const SectionHeader(title: 'Look'),
+          SettingRow(
+            title: 'App look',
+            text: 'Pixel: this pixel-art look, with its palettes. Manga: ink, paper and panels.',
+            control: ChoiceChipButton(
+              label: 'Pixel',
+              onTap: () async {
+                final v = await pickOption(context, 'App look', const [('manga', 'Manga'), ('pixel', 'Pixel art')], 'pixel');
+                // The whole app swaps to the other look (main.dart).
+                if (v == 'manga') await AppSettings.set('uiStyle', 'manga');
+              },
+            ),
+          ),
           const SectionHeader(title: 'Palette'),
           Wrap(
             spacing: 10,
