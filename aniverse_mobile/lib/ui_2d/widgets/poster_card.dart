@@ -49,12 +49,14 @@ class PosterCard extends StatelessWidget {
   final Map<String, dynamic> anime;
   final VoidCallback onTap;
   final double? width;
+  final FocusNode? focusNode;
 
   const PosterCard({
     super.key,
     required this.anime,
     required this.onTap,
     this.width,
+    this.focusNode,
   });
 
   @override
@@ -65,6 +67,7 @@ class PosterCard extends StatelessWidget {
     final score = anime['averageScore'];
 
     final card = PressableScale(
+      focusNode: focusNode,
       onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -120,6 +123,71 @@ class PosterCard extends StatelessWidget {
             width: width,
             child: Padding(padding: const EdgeInsets.only(right: 12), child: card),
           );
+  }
+}
+
+/// An anime as a row -- small cover, title, score, episodes and status -- for
+/// search results and the list view of genre results.
+class AnimeListRow extends StatelessWidget {
+  final Map<String, dynamic> anime;
+  final VoidCallback onTap;
+
+  const AnimeListRow({super.key, required this.anime, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final titles = (anime['title'] ?? {}) as Map<String, dynamic>;
+    final title = (titles['english'] ?? titles['romaji'] ?? 'Unknown').toString();
+    final poster = (((anime['coverImage'] ?? {}) as Map<String, dynamic>)['large'] ?? '').toString();
+    final score = anime['averageScore'];
+    final episodes = anime['episodes'];
+    final status = anime['status'];
+    return PressableScale(
+      onTap: onTap,
+      child: SizedBox(
+        height: 92,
+        child: PixelBox(
+          fill: Px.panel,
+          child: Row(
+            children: [
+              SizedBox(width: 60, child: PixelCover(url: poster, decodeWidth: 48)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: PxFont.text(15, height: 1.2)),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      if (score != null) ...[
+                        PixelSprite(Sprites.star, scale: 1, color: Px.gold),
+                        const SizedBox(width: 4),
+                        Text('$score  ', style: PxFont.label(7, color: Px.gold)),
+                      ],
+                      Flexible(
+                        child: Text(
+                          [
+                            if (episodes != null) '$episodes EPS',
+                            if (status != null) status.toString().replaceAll('_', ' '),
+                          ].join(' · '),
+                          overflow: TextOverflow.ellipsis,
+                          style: PxFont.label(7, color: Px.ash),
+                        ),
+                      ),
+                    ]),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: PixelSprite(Sprites.chevron, scale: 1.6, color: Px.ashDark),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

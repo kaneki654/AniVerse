@@ -132,6 +132,17 @@ class Sprites {
     'XXXX.XXXX',
   ]);
 
+  static const list = Sprite([
+    'XX.XXXXXX',
+    'XX.XXXXXX',
+    '.........',
+    'XX.XXXXXX',
+    'XX.XXXXXX',
+    '.........',
+    'XX.XXXXXX',
+    'XX.XXXXXX',
+  ]);
+
   static const clock = Sprite([
     '...XXXXX...',
     '..X.....X..',

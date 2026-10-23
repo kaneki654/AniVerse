@@ -1,6 +1,8 @@
 // Search: results as you type, plus filters (genre, year, season, format,
 // status, minimum score, sort). The URL keeps the query and filters, so a
-// filtered search can be shared or bookmarked.
+// filtered search can be shared or bookmarked. Searches that led somewhere (a
+// result opened, or Enter pressed) are remembered on this device and offered
+// again while the box is empty.
 import { h, clear } from "./px.js";
 import { api, GENRES } from "./api.js";
 import { initShell, posterCard, posterSkeleton, emptyState, sectionHead } from "./ui.js";
@@ -10,6 +12,27 @@ const input = document.getElementById("q");
 const results = document.getElementById("results");
 const form = document.getElementById("search-form");
 let timer = 0, seq = 0;
+
+// --- recent searches ------------------------------------------------------------------
+const RECENT = "av.search.recent";
+const recent = () => { try { return JSON.parse(localStorage.getItem(RECENT) || "[]").filter((x) => typeof x === "string"); } catch { return []; } };
+function remember(q) {
+  q = q.trim();
+  if (q.length < 2) return;
+  try { localStorage.setItem(RECENT, JSON.stringify([q, ...recent().filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, 10))); } catch { /* private mode */ }
+}
+function recentChips() {
+  const list = recent();
+  if (!list.length) return null;
+  const wrap = h("div.recent-searches", { role: "group", "aria-label": "Recent searches" },
+    list.map((q) => h("button.chip.px-box", { type: "button", onclick: () => { input.value = q; run(q); } }, q)),
+    h("button.px-btn.dark.px-box.bevel.small", { type: "button", onclick: () => {
+      try { localStorage.removeItem(RECENT); } catch { /* ignore */ }
+      wrap.previousSibling?.remove();
+      wrap.remove();
+    } }, "Clear"));
+  return [sectionHead("Recent searches"), wrap];
+}
 
 const YEAR = new Date().getFullYear();
 const FILTERS = {
@@ -44,10 +67,11 @@ async function run(q, page = 1, more = null) {
   document.title = q ? `${q} · Search · AniVerse` : "Search · AniVerse";
 
   if (!q && !filtered) {
-    clear(results).append(sectionHead("Trending Now"), h("div.grid", null, Array.from({ length: 12 }, posterSkeleton)));
+    const chips = recentChips() || [];
+    clear(results).append(...chips, sectionHead("Trending Now"), h("div.grid", null, Array.from({ length: 12 }, posterSkeleton)));
     const { trending } = await api.home();
     if (mine !== seq) return;
-    clear(results).append(sectionHead("Trending Now"), h("div.grid", null, trending.map(posterCard)));
+    clear(results).append(...(recentChips() || []), sectionHead("Trending Now"), h("div.grid", null, trending.map(posterCard)));
     return;
   }
   if (!more) clear(results).append(h("div.grid", null, Array.from({ length: 12 }, posterSkeleton)));
@@ -92,6 +116,8 @@ input.addEventListener("input", () => {
   clearTimeout(timer);
   timer = setTimeout(() => run(input.value.trim()), 350);
 });
-form.addEventListener("submit", (e) => { e.preventDefault(); clearTimeout(timer); run(input.value.trim()); });
+form.addEventListener("submit", (e) => { e.preventDefault(); clearTimeout(timer); remember(input.value); run(input.value.trim()); });
+// Opening a result means the search found what it was for.
+results.addEventListener("click", (e) => { if (e.target.closest("a") && input.value.trim()) remember(input.value); });
 run(input.value.trim());
 if (!input.value && !Object.keys(chosen()).length) input.focus();

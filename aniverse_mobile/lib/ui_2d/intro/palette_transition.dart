@@ -24,8 +24,9 @@ class PaletteTransition {
   /// Switch to [theme] with its transition.
   static void go(String theme) {
     if (theme == AppSettings.theme.value || _request.value != null) return;
-    // Reduced motion: switch straight away.
-    if (WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations) {
+    // Reduced motion, or effects off: switch straight away.
+    if (WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations ||
+        AppSettings.effects == 'off') {
       AppSettings.set('theme', theme);
       return;
     }
@@ -76,7 +77,7 @@ class _PaletteTransitionLayerState extends State<PaletteTransitionLayer> with Si
       _theme = t;
       _frame = 0;
     });
-    Sfx.play(switch (t) { 'neon' => 'hit', 'sakura' => 'skip', _ => 'slash' });
+    Sfx.play(switch (t) { 'neon' => 'hit', 'sakura' => 'skip', 'gameboy' => 'select', 'samurai' => 'boss', _ => 'slash' });
     _c.forward(from: 0);
   }
 
@@ -115,6 +116,10 @@ class _SwitchPainter extends CustomPainter {
         _neon(canvas, size, pc, c, cell, gw, gh);
       case 'sakura':
         _sakura(canvas, size, pc, c, cell, gw, gh);
+      case 'gameboy':
+        _gameboy(canvas, size, pc, c, cell, gw, gh);
+      case 'samurai':
+        _samurai(canvas, size, pc, c, cell, gw, gh);
       default:
         _blood(canvas, size, pc, c, cell, gw, gh);
     }
@@ -275,6 +280,71 @@ class _SwitchPainter extends CustomPainter {
         }
       }
     }
+  }
+
+  // --- Game Boy ----------------------------------------------------------------------------
+
+  void _gameboy(Canvas canvas, Size size, PixelCanvas pc, ({Color ink, Color blood, Color bloodDark, Color bloodDeep, Color bloodLight, Color gold}) c, double cell, int gw, int gh) {
+    final w = size.width, h = size.height;
+    if (f < _revealAt) {
+      // Fading through the handheld's greens to its darkest, in four steps.
+      final shades = [c.bloodLight, c.blood, c.bloodDark, c.ink];
+      final step = math.min(3, f * 4 ~/ _swapAt);
+      canvas.drawRect(Offset.zero & size, Paint()..color = shades[step].withValues(alpha: math.min(1.0, (f + 1) / 4)));
+      // The LCD's dot matrix over it.
+      for (var y = 1; y < gh; y += 3) {
+        for (var x = 1; x < gw; x += 3) {
+          pc.ghost(x, y, 1, 1, c.bloodDark, 0.25);
+        }
+      }
+      return;
+    }
+    // The screen redraws from the top, a band at a time, onto the new look.
+    final q = (f - _revealAt + 1) / (_frames - _revealAt);
+    final edge = h * q;
+    canvas.drawRect(Rect.fromLTWH(0, edge, w, h - edge), Paint()..color = c.ink);
+    canvas.drawRect(Rect.fromLTWH(0, edge, w, cell / 2), Paint()..color = c.bloodLight);
+  }
+
+  // --- Gold samurai ------------------------------------------------------------------------
+
+  void _samurai(Canvas canvas, Size size, PixelCanvas pc, ({Color ink, Color blood, Color bloodDark, Color bloodDeep, Color bloodLight, Color gold}) c, double cell, int gw, int gh) {
+    final w = size.width, h = size.height;
+    if (f < _revealAt) {
+      // Brush strokes of lacquer, band after band, alternating direction,
+      // each with a ragged vermilion edge where the brush leaves it.
+      const bands = 6;
+      final bh = (gh / bands).ceil();
+      final progress = math.min(1.0, (f + 1) / _swapAt) * bands;
+      for (var b = 0; b < bands; b++) {
+        final p = (progress - b).clamp(0.0, 1.0);
+        if (p <= 0) continue;
+        final len = (gw * p).round();
+        final fromLeft = b.isEven;
+        for (var y = b * bh; y < (b + 1) * bh && y < gh; y++) {
+          final ragged = (pxRand(y * 13 + b) * 3).round();
+          final l = math.max(0, len - ragged);
+          final x0 = fromLeft ? 0 : gw - l;
+          pc.rect(x0, y, l, 1, c.ink);
+          if (p < 1) pc.rect(fromLeft ? x0 + l : x0 - 1, y, 1, 1, c.gold);
+        }
+      }
+      if (f >= _swapAt - 1) {
+        // Covered: gold leaf drifting over the lacquer.
+        for (var i = 0; i < 16; i++) {
+          final x = (pxRand(i * 9) * gw).floor(), y = (pxRand(i * 9 + 1) * gh + f).floor() % gh;
+          pc.rect(x, y, 1, 1, i.isEven ? c.blood : c.bloodLight);
+        }
+      }
+      return;
+    }
+    // A sword cut across the middle, and the halves slide apart.
+    final p = (f - _revealAt) / (_frames - 1 - _revealAt);
+    final shift = h / 2 * p * p * 1.2;
+    final fill = Paint()..color = c.ink;
+    canvas.drawRect(Rect.fromLTWH(0, -shift, w, h / 2), fill);
+    canvas.drawRect(Rect.fromLTWH(0, h / 2 + shift, w, h / 2), fill);
+    if (f <= _revealAt + 1) canvas.drawRect(Rect.fromLTWH(0, h / 2 - cell / 2, w, cell), Paint()..color = Colors.white);
   }
 
   @override

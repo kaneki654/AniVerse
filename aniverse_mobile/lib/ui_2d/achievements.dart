@@ -25,6 +25,7 @@ class WatchStats {
   final int streak;
   final int bestDay;
   final bool nightOwl;
+  final bool earlyBird;
   final double hours;
   const WatchStats({
     required this.finished,
@@ -32,6 +33,7 @@ class WatchStats {
     required this.streak,
     required this.bestDay,
     required this.nightOwl,
+    this.earlyBird = false,
     required this.hours,
   });
 }
@@ -62,6 +64,13 @@ class Achievements {
     Badge('streak_30', 'Unstoppable', 'Watch 30 days in a row', Sprites.star, (s) => s.streak >= 30),
     Badge('night_owl', 'Night Owl', 'Finish an episode between 1 and 4 AM', Sprites.clock, (s) => s.nightOwl),
     Badge('marathon', 'Marathon', 'Watch 24 hours in total', Sprites.clock, (s) => s.hours >= 24),
+    // 1.11 (the website has the same in achievements.js)
+    Badge('possessed', 'Possessed', '10 episodes of one anime in a day', Sprites.sword, (s) => s.bestDay >= 10),
+    Badge('archivist', 'Archivist', 'Watch 50 different anime', Sprites.bookmark, (s) => s.anime >= 50),
+    Badge('early_bird', 'Early Bird', 'Finish an episode between 5 and 7 AM', Sprites.bell, (s) => s.earlyBird),
+    Badge('legion', 'Legion', 'Finish 500 episodes', Sprites.skull, (s) => s.finished >= 500),
+    Badge('ascended', 'Ascended', 'Watch 100 hours in total', Sprites.trophy, (s) => s.hours >= 100),
+    Badge('streak_100', 'Immortal', 'Watch 100 days in a row', Sprites.star, (s) => s.streak >= 100),
   ];
 
   static const ranks = ['Peasant', 'Ronin', 'Samurai', 'Hatamoto', 'Daimyo', 'Shogun', 'Demon Hunter', 'Demon Lord'];
@@ -97,6 +106,10 @@ class Achievements {
       nightOwl: done.any((e) {
         final h = DateTime.fromMillisecondsSinceEpoch(e.updatedAt).hour;
         return h >= 1 && h < 4;
+      }),
+      earlyBird: done.any((e) {
+        final h = DateTime.fromMillisecondsSinceEpoch(e.updatedAt).hour;
+        return h >= 5 && h < 7;
       }),
       hours: ms / 3600000,
     );

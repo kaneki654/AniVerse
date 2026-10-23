@@ -5,6 +5,8 @@ on:
     types: [opened, synchronize]
   push:
     branches: [main]
+    # The server address the app looks up; published on every server start.
+    paths-ignore: ["discovery/**"]
   workflow_dispatch:
     inputs:
       sha:

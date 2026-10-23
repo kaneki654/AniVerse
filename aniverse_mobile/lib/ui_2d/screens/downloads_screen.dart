@@ -43,7 +43,7 @@ class DownloadsScreen extends StatelessWidget {
             children: [
               Padding(
                 padding: const EdgeInsets.only(bottom: 12, left: 2),
-                child: Text('${items.length} EPISODE${items.length == 1 ? '' : 'S'} · ${_size(total)} · KEEP THE APP OPEN WHILE IT DOWNLOADS',
+                child: Text('${items.length} EPISODE${items.length == 1 ? '' : 'S'} · ${_size(total)} · DOWNLOADS CARRY ON IN THE BACKGROUND',
                     style: PxFont.label(6, color: Px.ash)),
               ),
               for (final item in items) ...[_row(context, item), const SizedBox(height: 10)],
@@ -59,6 +59,7 @@ class DownloadsScreen extends StatelessWidget {
       'done' => '${item.quality.isEmpty ? '' : '${item.quality} · '}${_size(item.bytes)}',
       'downloading' => 'DOWNLOADING ${(item.progress * 100).toStringAsFixed(0)}% · ${_size(item.bytes)}',
       'queued' => 'WAITING',
+      'waiting' => 'WAITING FOR WI-FI',
       _ => item.error ?? 'FAILED',
     };
     return PressableScale(

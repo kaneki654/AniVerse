@@ -36,6 +36,9 @@ class _DetailScreenState extends State<DetailScreen> {
   Map<int, Map<String, dynamic>> _epInfo = const {};
   bool _listView = AppSettings.epView == 'list';
 
+  /// The Tagalog dub, when this anime has one (app/tagalog.py).
+  Map<String, dynamic>? _tagalog;
+
   /// Collapsed height of the header, measured from the top of the screen.
   static const double _expandedHeight = 330;
 
@@ -43,6 +46,9 @@ class _DetailScreenState extends State<DetailScreen> {
   void initState() {
     super.initState();
     _loadDetails();
+    ApiService.tagalog(widget.id).then((t) {
+      if (mounted && t != null) setState(() => _tagalog = t);
+    });
   }
 
   Future<void> _loadDetails() async {
@@ -78,6 +84,52 @@ class _DetailScreenState extends State<DetailScreen> {
     final ok = DownloadService.enqueue(animeId: widget.id, episode: ep, title: _title, cover: _cover ?? '');
     Sfx.play('select');
     pixelToast(context, ok ? 'Episode $ep is downloading. It will be under Saved.' : 'Episode $ep is already saved or on its way.');
+  }
+
+  /// Every aired episode not yet saved, after a confirmation with the count.
+  Future<void> _downloadAll() async {
+    final aired = _aired;
+    final missing = [for (var ep = 1; ep <= aired; ep++) if (DownloadService.find(widget.id, ep) == null) ep].length;
+    if (missing == 0) {
+      pixelToast(context, 'Every aired episode is already saved or on its way.');
+      return;
+    }
+    final go = await pickOption<bool>(context, 'Download $missing episode${missing == 1 ? '' : 's'}?', [
+      (true, 'Download ${missing == aired ? 'all $aired' : 'the $missing not saved yet'}'),
+      (false, 'Cancel'),
+    ], null);
+    if (go != true || !mounted) return;
+    final n = DownloadService.enqueueSeason(animeId: widget.id, aired: aired, title: _title, cover: _cover ?? '');
+    Sfx.play('select');
+    pixelToast(context, '$n episode${n == 1 ? '' : 's'} queued. ${AppSettings.wifiOnly ? 'They download on Wi-Fi. ' : ''}They will be under Saved.');
+  }
+
+  /// Watch the Tagalog dub: from the episode last watched if it is dubbed,
+  /// else the first dubbed one. The show then opens in Tagalog until the
+  /// player is switched back to sub or dub.
+  Widget _tagalogButton() {
+    final dub = _tagalog!;
+    final eps = (dub['episodes'] as Map).keys.map((k) => int.parse('$k')).toList()..sort();
+    final last = HistoryService.episodesOf(widget.id).keys.fold<int>(0, (m, n) => n > m ? n : m);
+    final start = eps.contains(last) ? last : eps.first;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: PixelButton(
+        label: 'Tagalog dub · ${eps.length} EP${eps.length == 1 ? '' : 'S'}',
+        icon: Sprites.play,
+        fontSize: 8,
+        onPressed: () {
+          AppSettings.setTagalogFor(widget.id, true);
+          Navigator.push(
+            context,
+            FadeScaleRoute(
+              backdrop: false,
+              page: WatchScreen(animeId: widget.id, epNum: start, category: 'tl', title: _title, cover: _cover),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   void _openEpisode(int number) {
@@ -236,6 +288,7 @@ class _DetailScreenState extends State<DetailScreen> {
                       );
                     },
                   ),
+                  if (_tagalog != null) _tagalogButton(),
                   if (released)
                     _ResumeBanner(
                       animeId: widget.id,
@@ -245,12 +298,23 @@ class _DetailScreenState extends State<DetailScreen> {
                   Row(
                     children: [
                       const Expanded(child: SectionHeader(title: 'Episodes')),
+                      if (released && _aired > 1)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14, left: 8),
+                          child: PixelIconButton(
+                            sprite: Sprites.download,
+                            tooltip: 'Download every episode',
+                            color: Px.ash,
+                            framed: true,
+                            onPressed: _downloadAll,
+                          ),
+                        ),
                       if (released)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 14, left: 8),
                           child: PixelIconButton(
-                            sprite: _listView ? Sprites.grid : Sprites.flag,
-                            tooltip: _listView ? 'Show as a grid' : 'Show titles and downloads',
+                            sprite: _listView ? Sprites.grid : Sprites.list,
+                            tooltip: _listView ? 'Show as a grid' : 'Show as a list',
                             color: Px.ash,
                             framed: true,
                             onPressed: () {

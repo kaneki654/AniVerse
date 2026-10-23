@@ -2,7 +2,7 @@
 // the overlays (katana loader, blood-orb buffering, the boss fight when nothing
 // plays). Playback logic lives in watch.js; this only draws and reports what
 // the viewer does -- the app's player_controls.dart and buffer_overlay.dart.
-import { h, sprite, clear, katana, orb, fmtTime, animate, PixelCanvas, splat, shake } from "./px.js";
+import { h, sprite, clear, katana, orb, fmtTime, animate, PixelCanvas, splat, shake, fxStyle } from "./px.js";
 import { sfx } from "./sfx.js";
 
 export const pref = {
@@ -35,7 +35,7 @@ export function createPlayer(host, handlers) {
     h("button.skip10.px-box", { type: "button", "aria-label": "Forward 10 seconds", onclick: () => seekBy(10) }, sprite("forward", 2), "10"));
 
   const buf = h("i.buf"), done = h("i.done"), marks = h("div.marks");
-  const handle = h("span.handle", null, sprite("bloodDrop", 2.2));
+  const handle = h("span.handle", null, sprite("mark", 2.2));
   const tip = h("span.tip", { hidden: true });
   const seek = h("div.seek", { role: "slider", tabindex: "0", "aria-label": "Seek", "aria-valuemin": "0" },
     h("div.track", null, buf, marks, done), handle, tip);
@@ -67,7 +67,7 @@ export function createPlayer(host, handlers) {
   clear(host).append(video, captions, hud, skipFloat, bufStage, stage);
 
   // --- state shown -----------------------------------------------------------------
-  let duration = 0, intro = null, outro = null, dragging = null;
+  let duration = 0, intro = null, outro = null, recap = null, dragging = null;
 
   const syncVolume = () => {
     clear(volIcon).append(sprite(video.muted || video.volume === 0 ? "mute" : "volume", 2));
@@ -115,7 +115,7 @@ export function createPlayer(host, handlers) {
     seek.setAttribute("aria-valuetext", `${fmtTime(t)} of ${fmtTime(duration)}`);
     // Skip intro / outro while inside either range.
     const inRange = (r) => r && t >= r.start && t < r.end - 1;
-    const range = inRange(intro) ? ["Skip intro", intro] : inRange(outro) ? ["Skip outro", outro] : null;
+    const range = inRange(recap) ? ["Skip recap", recap] : inRange(intro) ? ["Skip intro", intro] : inRange(outro) ? ["Skip outro", outro] : null;
     if (range) {
       if (skipFloat._for !== range[0]) {
         skipFloat._for = range[0];
@@ -303,10 +303,11 @@ export function createPlayer(host, handlers) {
     video,
     setTitle: (t) => { titleEl.textContent = t; },
     setCategory(cat, canSwitch) {
-      audioBtn.querySelector("span").textContent = cat.toUpperCase();
+      const name = cat === "tl" ? "TAGALOG" : cat.toUpperCase();
+      audioBtn.querySelector("span").textContent = name;
       audioBtn.disabled = !canSwitch;
       audioBtn.classList.toggle("off", !canSwitch);
-      audioBtn.title = canSwitch ? `Audio: ${cat.toUpperCase()}. Switch to ${cat === "sub" ? "DUB" : "SUB"}` : "No dub for this episode";
+      audioBtn.title = canSwitch ? `Audio: ${name}. Switch to ${cat === "sub" ? "DUB" : "SUB"}` : "No dub for this episode";
     },
     setCaptions(available, on) {
       ccBtn.hidden = !available;
@@ -320,7 +321,7 @@ export function createPlayer(host, handlers) {
       if (capText.textContent !== text) capText.textContent = text;
       captions.hidden = false;
     },
-    setMarkers(i, o) { intro = i; outro = o; paintMarks(); },
+    setMarkers(i, o, r = null) { intro = i; outro = o; recap = r; paintMarks(); },
     /** Subtitle look: size s|m|l|xl, and the dark box behind the text or not. */
     captionStyle({ size = "m", bg = true } = {}) {
       captions.classList.remove("sz-s", "sz-l", "sz-xl");
@@ -362,6 +363,32 @@ export function createPlayer(host, handlers) {
     },
     hideBuffering() { bufStage.hidden = true; clear(bufStage); center.style.visibility = ""; },
     hideStage() { stage.hidden = true; clear(stage); },
+    /** Full-cover stage while the episode plays on a Chromecast: this page is the remote. */
+    /** Returns {update({time, duration}), setSkip(label | null, run)} for the TV's progress. */
+    casting(device, { onPlayPause, onStop }) {
+      currentOrb = null;
+      closeMenu();
+      const where = h("div.label.muted");
+      const skipSlot = h("span");
+      clear(stage).append(
+        h("a.icon-btn.back", { href: handlers.backHref, "aria-label": "Back" }, sprite("back", 2.2)),
+        h("div.label", null, `Casting to ${device}`),
+        where,
+        h("div.row", null,
+          h("button.px-btn.px-box.bevel.small", { type: "button", onclick: onPlayPause }, sprite("play", 1.4), "Play / pause"),
+          skipSlot,
+          h("button.px-btn.dark.px-box.bevel.small", { type: "button", onclick: onStop }, "Stop casting")));
+      stage.hidden = false;
+      let shown = null;
+      return {
+        update({ time, duration }) { where.textContent = duration > 0 ? `${fmtTime(time)} / ${fmtTime(duration)}` : ""; },
+        setSkip(label, run) {
+          if (label === shown) return;
+          shown = label;
+          clear(skipSlot).append(...(label ? [h("button.px-btn.bone.px-box.bevel.small", { type: "button", onclick: () => { sfx("skip"); run(); } }, sprite("forward", 1.4), label)] : []));
+        },
+      };
+    },
     /**
      * Failure screen with actions [{label, kind, run}]. With `boss`, the skull
      * is a boss to fight instead: knock its HP to zero and boss() runs (a retry).
@@ -411,6 +438,13 @@ const BOSS = [
   "...KrKWWWWKrK...", "...KrrKKKKrrK...", "....KrrrrrrK....", ".....KKKKKK.....",
 ];
 const BOSS_HP = 5;
+// Each palette has its own boss: Neon cyber a glitch virus, Sakura an oni mask.
+const BOSSES = {
+  gameboy: ["................", "...K........K...", "....K......K....", "...KKKKKKKKKK...", "..KRRRRRRRRRRK..", ".KRRWWRRRRWWRRK.", ".KRRWYRRRRWYRRK.", "KRRRRRRRRRRRRRRK", "KRHRRRRRRRRRRHRK", "KRKRRRRRRRRRRKRK", "KRKKRRRRRRRRKKRK", "KK.KRRRKKRRRK.KK", "...KRRK..KRRK...", "..KRRK....KRRK..", "..KKK......KKK..", "................"],
+  samurai: [".Y....YYYY....Y.", ".YY..YYYYYY..YY.", "..YYKKKKKKKKYY..", "...KRRRRRRRRK...", "..KRRRRRRRRRRK..", ".KRRRRRRRRRRRRK.", "KKKKKKKKKKKKKKKK", "KrrKWWKrrKWWKrrK", "KrKWYYWKKWYYWKrK", "KrrKWWKrrKWWKrrK", ".KrrrrrKKrrrrrK.", ".KrrKWKWWKWKrrK.", "..KrrrrrrrrrrK..", "..KRKRKRRKRKRK..", "...KRKRKKRKRK...", "....KKKKKKKK...."],
+  neon: ["..K..........K..", "...K........K...", "....KKKKKKKK....", "...KRRRRRRRRK...", "..KRHHRRRRRRRK..", ".KRHRRRRRRRRRRK.", "KRRRWWRRRRWWRRRK", "KRRWYYWRRWYYWRRK", "KRRRWWRRRRWWRRRK", "KRRRRRRRRRRRRRRK", ".KRrRKRKKRKRrRK.", ".KrrKWKWWKWKrrK.", "KK.KrrrrrrrrK.KK", "K..KKrKKKKrKK..K", "K...K.K..K.K...K", "...K..K..K..K..."],
+  sakura: [".K............K.", "KHK..........KHK", "KRHK.KKKKKK.KHRK", ".KRHKRRRRRRKHRK.", "..KRRRRRRRRRRK..", ".KRRRHRRRRHRRRK.", "KRRWWKRRRRKWWRRK", "KRWYYWKRRKWYYWRK", "KRRWWRRRRRRWWRRK", "KRRRRRRKKRRRRRRK", ".KRRRRRRRRRRRRK.", ".KRKWKWKKWKWKRK.", "..KRKWWWWWWKRK..", "...KRKKKKKKRK...", "....KKRRRRKK....", "......KKKK......"],
+};
 
 function bossFight(onDefeat) {
   const canvas = h("canvas", { width: "22", height: "22", "aria-hidden": "true" });
@@ -434,7 +468,7 @@ function bossFight(onDefeat) {
     pc.clear();
     const bob = dead ? 0 : frame % 4 < 2 ? 0 : 1;
     const blink = frame % 16 === 0;
-    BOSS.forEach((row, y) => {
+    (BOSSES[fxStyle()] || BOSS).forEach((row, y) => {
       for (let x = 0; x < row.length; x++) {
         let ch = row[x];
         if (ch === ".") continue;

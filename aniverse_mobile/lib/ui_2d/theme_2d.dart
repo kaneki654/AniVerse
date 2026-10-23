@@ -20,8 +20,8 @@ class AniVerseTheme {
   static Color get surfaceHigh => Px.panelHigh;
   static Color get skeleton => Px.panel;
   static Color get skeletonHigh => Px.panelHigh;
-  static const Color textDim = Px.ash;
-  static const Color textFaint = Px.ashDark;
+  static Color get textDim => Px.ash;
+  static Color get textFaint => Px.ashDark;
 
   /// Poster scrim in hard bands rather than a smooth fade -- the stepped,
   /// dithered look of a 16-bit shadow.

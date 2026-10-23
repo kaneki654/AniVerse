@@ -12,8 +12,10 @@ const DEFAULTS = {
   subBg: true,         // dark box behind subtitles
   subLang: "",         // preferred subtitle language; "" = the source's default
   alerts: false,       // system notifications for new episodes
+  effects: "full",     // full | lite (fewer particles, no glow) | off
+  contrast: false,     // brighter secondary text, for low vision
 };
-export const THEMES = { blood: "Blood", neon: "Neon cyber", sakura: "Sakura" };
+export const THEMES = { blood: "Blood", neon: "Neon cyber", sakura: "Sakura", gameboy: "Game Boy", samurai: "Gold samurai" };
 
 const listeners = new Set();
 
@@ -27,6 +29,8 @@ export const settings = {
     const next = { ...read(), ...patch };
     try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* storage off */ }
     if (patch.theme) document.documentElement.dataset.theme = next.theme;
+    if (patch.effects) document.documentElement.dataset.fx = next.effects;
+    if ("contrast" in patch) document.documentElement.dataset.contrast = next.contrast ? "on" : "off";
     listeners.forEach((fn) => fn(next));
     return next;
   },
