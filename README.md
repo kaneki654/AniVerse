@@ -1,4 +1,4 @@
-# AniVerse - Anime Streaming App
+# AniVerse - Anime Streaming App with Avengers theme
 
 A lightweight anime streaming application built with FastAPI, Jinja2, Vanilla JS, and HLS.js.
 
