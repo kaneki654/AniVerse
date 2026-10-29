@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#f5f1e8">
+  <meta name="description" content="Watch anime free in AniVerse -- subbed, dubbed and in Tagalog, synced with the app.">
+  <title>{{ title }}</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/manga/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="/static/manga/img/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="preload" href="/static/manga/fonts/MangaText-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/manga/fonts/MangaTitle.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/manga/fonts/MangaIcons.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/manga/manga.css?v={{ v }}">
+  <script>
+    /* Arriving through a page turn: start covered so nothing flashes. */
+    try { if (sessionStorage.getItem("av.dissolve")) document.documentElement.classList.add("entering"); } catch (e) {}
+    /* Effects and contrast before first paint. */
+    try { var avs = JSON.parse(localStorage.getItem("av.settings") || "{}"); document.documentElement.dataset.look = "manga"; document.documentElement.dataset.fx = avs.effects || "full"; document.documentElement.dataset.contrast = avs.contrast ? "on" : "off"; } catch (e) {}
+  </script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <a class="sr-only" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap bar">
+      <a class="logo" href="/" aria-label="AniVerse home">
+        <img src="/static/manga/img/logo.png" alt="" width="40" height="40">
+        <span class="word" data-text="ANIVERSE">ANIVERSE</span>
+      </a>
+      <form class="header-search" action="/search" role="search">
+        <div class="input-wrap">
+          <i data-sprite="search" data-scale="1.6"></i>
+          <input id="header-q" class="px-input px-box flat" name="q" type="search" placeholder="Search anime..." autocomplete="off" aria-label="Search anime" value="{{ q or '' }}">
+        </div>
+        <div id="header-suggest" class="suggest px-box" hidden></div>
+      </form>
+      <nav class="site-nav" aria-label="Main">
+        <a class="icon-btn nav-home" href="/" {% if nav == 'home' %}aria-current="page"{% endif %} aria-label="Home"><i data-sprite="home" data-scale="2.2"></i><span class="nav-text">Home</span></a>
+        <a class="icon-btn nav-search" href="/search" {% if nav == 'search' %}aria-current="page"{% endif %} aria-label="Search"><i data-sprite="search" data-scale="2"></i><span class="nav-text">Search</span></a>
+        <a class="icon-btn wide-only" href="/schedule" {% if nav == 'schedule' %}aria-current="page"{% endif %} aria-label="Schedule"><i data-sprite="calendar" data-scale="2"></i><span class="nav-text">Schedule</span></a>
+        <a class="icon-btn wide-only" href="/genres" {% if nav == 'genres' %}aria-current="page"{% endif %} aria-label="Genres"><i data-sprite="grid" data-scale="2.2"></i><span class="nav-text">Genres</span></a>
+        <a class="icon-btn wide-only nav-mylist" href="/mylist" {% if nav == 'mylist' %}aria-current="page"{% endif %} aria-label="My List"><i data-sprite="bookmark" data-scale="2"></i><span class="nav-text">My List</span><span class="alert-dot" hidden></span></a>
+        <a class="icon-btn wide-only" href="/history" {% if nav == 'history' %}aria-current="page"{% endif %} aria-label="History"><i data-sprite="clock" data-scale="2"></i><span class="nav-text">History</span></a>
+        <a id="nav-account" class="icon-btn" href="/account" {% if nav == 'account' %}aria-current="page"{% endif %} aria-label="Sign in"><span class="nav-icon"></span><span class="nav-text">Sign in</span></a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    {% block hero %}{% endblock %}
+    <div class="wrap">
+      {% block content %}{% endblock %}
+      <div id="app-promo"></div>
+    </div>
+  </main>
+
+  <!-- Phones: the main sections as a tab bar along the bottom. -->
+  <nav class="bottom-nav" aria-label="Sections">
+    <a href="/" {% if nav == 'home' %}aria-current="page"{% endif %}><i data-sprite="home" data-scale="2"></i><span>Home</span></a>
+    <a href="/schedule" {% if nav == 'schedule' %}aria-current="page"{% endif %}><i data-sprite="calendar" data-scale="2"></i><span>Airing</span></a>
+    <a href="/genres" {% if nav == 'genres' %}aria-current="page"{% endif %}><i data-sprite="grid" data-scale="2"></i><span>Genres</span></a>
+    <a href="/mylist" class="nav-mylist" {% if nav == 'mylist' %}aria-current="page"{% endif %}><i data-sprite="bookmark" data-scale="2"></i><span>My List</span><span class="alert-dot" hidden></span></a>
+    <a href="/history" {% if nav == 'history' %}aria-current="page"{% endif %}><i data-sprite="clock" data-scale="2"></i><span>History</span></a>
+  </nav>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <span class="lbl">AniVerse</span>
+      <span>Streams are found on third-party sites; AniVerse hosts no video.</span>
+      <span><a href="/settings">Settings</a> · <a href="/status">Status</a></span>
+    </div>
+  </footer>
+  <div class="credit-mark">Created by Zh3n and G0Ju.VBS</div>
+  <script type="module" src="/static/manga/js/{{ page }}.js?v={{ v }}"></script>
+</body>
+</html>

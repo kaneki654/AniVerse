@@ -130,7 +130,7 @@ async def _aniskip(client: httpx.AsyncClient, mal: int, episode: int, duration: 
     if hit and time.time() - hit[0] < 12 * 3600:
         results = hit[1]
     else:
-        query = "types=op&types=ed&types=mixed-op&types=mixed-ed&episodeLength=0"
+        query = "types=op&types=ed&types=mixed-op&types=mixed-ed&types=recap&episodeLength=0"
         try:
             r = await client.get(f"{ANISKIP.format(mal=mal, ep=episode)}?{query}", timeout=10)
             results = r.json().get("results") or [] if r.status_code in (200, 404) else []
@@ -139,7 +139,7 @@ async def _aniskip(client: httpx.AsyncClient, mal: int, episode: int, duration: 
         _aniskip_cache[key] = (time.time(), results)
 
     found: dict[str, Any] = {}
-    for kind, types in (("intro", ("op", "mixed-op")), ("outro", ("ed", "mixed-ed"))):
+    for kind, types in (("intro", ("op", "mixed-op")), ("outro", ("ed", "mixed-ed")), ("recap", ("recap",))):
         best = None
         for r in results:
             if r.get("skipType") not in types:
@@ -341,9 +341,10 @@ def _pick(streams: list[dict[str, Any]], server: str) -> dict[str, Any] | None:
 
 async def lookup(anilist_id: str, episode: int, duration: float = 0.0,
                  server: str = "", category: str = "sub") -> dict[str, Any]:
-    """{intro, outro, source, pending}: times for this video, and whether a
-    detection that may fill in what is missing is under way."""
-    result: dict[str, Any] = {"intro": None, "outro": None, "source": None, "pending": False}
+    """{intro, outro, recap, source, pending}: times for this video, and whether
+    a detection that may fill in what is missing is under way. Recaps come from
+    AniSkip only; the audio matching finds openings and endings."""
+    result: dict[str, Any] = {"intro": None, "outro": None, "recap": None, "source": None, "pending": False}
     if duration > 0:
         _note_interest(anilist_id, episode, category, server)
     row = _stored(anilist_id, episode, duration)
@@ -353,7 +354,8 @@ async def lookup(anilist_id: str, episode: int, duration: float = 0.0,
         if result["intro"] or result["outro"]:
             result["source"] = "audio"
 
-    if not (result["intro"] and result["outro"]):
+    # AniSkip is asked even when both are stored, for the recap (cached 12 h).
+    if not (result["intro"] and result["outro"]) or episode > 1:
         async with httpx.AsyncClient(follow_redirects=True, headers={"User-Agent": UA}) as client:
             try:
                 mal = (await anilist_media.get_media(client, anilist_id)).get("mal_id")
@@ -365,6 +367,7 @@ async def lookup(anilist_id: str, episode: int, duration: float = 0.0,
                     if not result[kind] and found.get(kind):
                         result[kind] = found[kind]
                         result["source"] = result["source"] or "aniskip"
+                result["recap"] = found.get("recap")
 
     # Find them in the audio, once per video per week, when they are missing or
     # only AniSkip's: its times are for one release, and a 1420 s episode from

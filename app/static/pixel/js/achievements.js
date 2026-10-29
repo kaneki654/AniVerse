@@ -17,6 +17,12 @@ export const BADGES = [
   { id: "streak_30", name: "Unstoppable", text: "Watch 30 days in a row", sprite: "star", test: (s) => s.streak >= 30 },
   { id: "night_owl", name: "Night Owl", text: "Finish an episode between 1 and 4 AM", sprite: "clock", test: (s) => s.nightOwl },
   { id: "marathon", name: "Marathon", text: "Watch 24 hours in total", sprite: "clock", test: (s) => s.hours >= 24 },
+  { id: "possessed", name: "Possessed", text: "10 episodes of one anime in a day", sprite: "sword", test: (s) => s.bestDay >= 10 },
+  { id: "archivist", name: "Archivist", text: "Watch 50 different anime", sprite: "bookmark", test: (s) => s.anime >= 50 },
+  { id: "early_bird", name: "Early Bird", text: "Finish an episode between 5 and 7 AM", sprite: "bell", test: (s) => s.earlyBird },
+  { id: "legion", name: "Legion", text: "Finish 500 episodes", sprite: "skull", test: (s) => s.finished >= 500 },
+  { id: "ascended", name: "Ascended", text: "Watch 100 hours in total", sprite: "trophy", test: (s) => s.hours >= 100 },
+  { id: "streak_100", name: "Immortal", text: "Watch 100 days in a row", sprite: "star", test: (s) => s.streak >= 100 },
 ];
 
 export const RANKS = ["Peasant", "Ronin", "Samurai", "Hatamoto", "Daimyo", "Shogun", "Demon Hunter", "Demon Lord"];
@@ -45,6 +51,7 @@ export function stats(entries = history.all()) {
     streak,
     bestDay: Math.max(0, ...perDay.values()),
     nightOwl: done.some((e) => { const h = new Date(e.updated_at).getHours(); return h >= 1 && h < 4; }),
+    earlyBird: done.some((e) => { const h = new Date(e.updated_at).getHours(); return h >= 5 && h < 7; }),
     hours: ms / 3600000,
   };
 }

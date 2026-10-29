@@ -23,9 +23,31 @@ import java.util.concurrent.TimeUnit
  * the list the Dart side keeps in SharedPreferences (av.watchlist.v1), asks
  * AniList in one request how many episodes each show has out, and posts a
  * notification for any show with more than when it was last looked at.
+ * Shows muted on My List (av.alertsMuted) are skipped, and nothing is posted
+ * during the quiet hours set in Settings: the next run after them catches up.
+ * Tapping the notification opens the new episode itself.
  */
 object AlertCheck {
     const val EXTRA_ANIME = "aniverse.anime_id"
+    const val EXTRA_EPISODE = "aniverse.episode"
+
+    // shared_preferences stores a Dart double as a string behind this marker.
+    private const val DOUBLE_PREFIX = "VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu"
+
+    private fun prefNumber(prefs: android.content.SharedPreferences, key: String, fallback: Double): Double =
+        when (val v = prefs.all["flutter.$key"]) {
+            is String -> v.removePrefix(DOUBLE_PREFIX).toDoubleOrNull() ?: fallback
+            is Number -> v.toDouble()
+            else -> fallback
+        }
+
+    /** Whether the hour now falls in the quiet hours (from..to, across midnight too). */
+    fun quietNow(prefs: android.content.SharedPreferences, hour: Int): Boolean {
+        val from = prefNumber(prefs, "av.quietFrom", -1.0).toInt()
+        val to = prefNumber(prefs, "av.quietTo", 8.0).toInt()
+        if (from < 0 || from == to) return false
+        return if (from < to) hour in from until to else hour >= from || hour < to
+    }
     private const val JOB_ID = 1907
     private const val CHANNEL = "episodes"
     private const val PREFS = "FlutterSharedPreferences"
@@ -51,7 +73,14 @@ object AlertCheck {
     fun run(ctx: Context): Int {
         val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (!prefs.getBoolean("flutter.av.alerts", false)) return 0
+        if (quietNow(prefs, java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY))) return 0
         val raw = prefs.getString("flutter.av.watchlist.v1", null) ?: return 0
+        val muted = HashSet<String>()
+        try {
+            val m = JSONArray(prefs.getString("flutter.av.alertsMuted", null) ?: "[]")
+            for (i in 0 until m.length()) muted.add(m.getString(i))
+        } catch (_: Exception) {
+        }
         val follows = HashMap<Int, Pair<String, Int>>() // id -> (title, seen episode)
         try {
             val list = JSONArray(raw)
@@ -59,6 +88,7 @@ object AlertCheck {
                 val e = list.getJSONObject(i)
                 if (e.optBoolean("deleted")) continue
                 val id = e.optString("anime_id").toIntOrNull() ?: continue
+                if (id.toString() in muted) continue
                 follows[id] = e.optString("title") to e.optInt("seen_episode")
             }
         } catch (_: Exception) {
@@ -129,6 +159,7 @@ object AlertCheck {
         }
         val open = Intent(ctx, MainActivity::class.java)
             .putExtra(EXTRA_ANIME, id.toString())
+            .putExtra(EXTRA_EPISODE, episode)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val tap = PendingIntent.getActivity(ctx, id, open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val text = if (fresh > 1) "$fresh new episodes, up to episode $episode" else "Episode $episode is out"

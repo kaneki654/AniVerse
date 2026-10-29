@@ -75,5 +75,12 @@ class AniSkipChoiceTests(unittest.TestCase):
         self.assertEqual(self.found(1560.0), {"intro": {"start": 3, "end": 93}, "outro": {"start": 1417, "end": 1507}})
 
 
+    def test_recap_for_the_same_cut(self):
+        skip_times._aniskip_cache[(1, 1)][1].append(
+            {"skipType": "recap", "episodeLength": 1560.4, "interval": {"startTime": 0.0, "endTime": 61.5}})
+        self.assertEqual(self.found(1560.0)["recap"], {"start": 0, "end": 62})
+        self.assertNotIn("recap", self.found(1471.2))
+
+
 if __name__ == "__main__":
     unittest.main()

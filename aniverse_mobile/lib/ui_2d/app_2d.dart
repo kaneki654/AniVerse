@@ -15,12 +15,14 @@ import 'pixel/fx.dart';
 import 'pixel/pixel.dart';
 import 'pixel/pixel_widgets.dart';
 import 'pixel/sprites.dart';
+import 'pixel/theme_fx.dart';
 import 'screens/detail_screen.dart';
 import 'screens/downloads_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/mylist_screen.dart';
 import 'screens/schedule_screen.dart';
 import 'screens/search_screen.dart';
+import 'screens/watch_screen.dart';
 import 'theme_2d.dart';
 import 'widgets/aniverse_logo.dart';
 import 'widgets/pixel_extras.dart';
@@ -40,7 +42,8 @@ class AniVerse2DApp extends StatelessWidget {
   // New keys for each palette: a kept Navigator would keep its screens, and
   // their unchanged widgets would never repaint in the new colours.
   static GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-  static GlobalKey<ScaffoldMessengerState> messengerKey = GlobalKey<ScaffoldMessengerState>();
+  static GlobalKey<ScaffoldMessengerState> messengerKey =
+      GlobalKey<ScaffoldMessengerState>();
   static String? _builtTheme;
 
   @override
@@ -52,23 +55,44 @@ class AniVerse2DApp extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          ValueListenableBuilder<String>(
-            valueListenable: AppSettings.theme,
-            builder: (context, theme, _) {
-              Px.apply(theme);
-              if (_builtTheme != null && _builtTheme != theme) {
+          ListenableBuilder(
+            listenable: Listenable.merge(
+                [AppSettings.theme, AppSettings.effectsChanged]),
+            builder: (context, _) {
+              final theme = AppSettings.theme.value;
+              final contrast = AppSettings.highContrast;
+              Px.apply(theme, highContrast: contrast);
+              // High contrast keeps the backgrounds calm: lite effects at most.
+              setFxLevel(contrast && AppSettings.effects == 'full' ? 'lite' : AppSettings.effects);
+              final scale = AppSettings.textScale;
+              // Only a change of colours needs a fresh app (const widgets keep
+              // the colours they were built with), and that loses the open
+              // screens. Effects and text size follow on their own.
+              final look = '$theme/$contrast';
+              if (_builtTheme != null && _builtTheme != look) {
                 navigatorKey = GlobalKey<NavigatorState>();
                 messengerKey = GlobalKey<ScaffoldMessengerState>();
               }
-              _builtTheme = theme;
+              _builtTheme = look;
               return MaterialApp(
-                key: ValueKey(theme),
+                key: ValueKey(look),
                 title: 'AniVerse Pixel',
                 debugShowCheckedModeBanner: false,
                 navigatorKey: navigatorKey,
                 scaffoldMessengerKey: messengerKey,
                 theme: AniVerseTheme.build(context),
-                home: IntroGate(enabled: AppSettings.intro, ready: ready, child: const PixelBackdrop(child: MainShell())),
+                // Text size from Settings, on top of the system's own.
+                builder: (context, child) {
+                  final mq = MediaQuery.of(context);
+                  return MediaQuery(
+                    data: mq.copyWith(textScaler: _Scaled(mq.textScaler, scale)),
+                    child: child ?? const SizedBox(),
+                  );
+                },
+                home: IntroGate(
+                    enabled: AppSettings.intro,
+                    ready: ready,
+                    child: const PixelBackdrop(child: MainShell())),
               );
             },
           ),
@@ -107,7 +131,8 @@ class _MainShellState extends State<MainShell> {
     AuthService.user.addListener(_onAuth);
     if (AuthService.signedIn) WatchlistService.sync();
     Future.delayed(const Duration(seconds: 3), _checkNew);
-    _alertTimer = Timer.periodic(const Duration(minutes: 30), (_) => _checkNew());
+    _alertTimer =
+        Timer.periodic(const Duration(minutes: 30), (_) => _checkNew());
     WatchlistService.changes.addListener(_recount);
   }
 
@@ -124,8 +149,21 @@ class _MainShellState extends State<MainShell> {
     if (AuthService.signedIn) WatchlistService.sync(full: true);
   }
 
-  void _openAnime(String id) {
-    AniVerse2DApp.navigatorKey.currentState?.push(FadeScaleRoute(page: DetailScreen(id: id)));
+  /// A tapped alert: "animeId:episode" plays the new episode, a bare id
+  /// (older alerts) opens the show.
+  void _openAnime(String alert) {
+    final parts = alert.split(':');
+    final ep = parts.length > 1 ? int.tryParse(parts[1]) : null;
+    final nav = AniVerse2DApp.navigatorKey.currentState;
+    if (ep == null) {
+      nav?.push(FadeScaleRoute(page: DetailScreen(id: parts[0])));
+      return;
+    }
+    final e = WatchlistService.entry(parts[0]);
+    nav?.push(FadeScaleRoute(
+      backdrop: false,
+      page: WatchScreen(animeId: parts[0], epNum: ep, title: e?.title, cover: e?.cover),
+    ));
   }
 
   // The aired counts last fetched, so My List edits recount without refetching.
@@ -157,6 +195,12 @@ class _MainShellState extends State<MainShell> {
         persist: false,
       ));
     }
+  }
+
+  void _select(int i) {
+    if (_tab == i) return;
+    Sfx.play('click');
+    setState(() => _tab = i);
   }
 
   static const _tabs = [
@@ -193,48 +237,56 @@ class _MainShellState extends State<MainShell> {
               children: [
                 for (var i = 0; i < _tabs.length; i++)
                   Expanded(
-                    child: Semantics(
-                      button: true,
-                      selected: _tab == i,
-                      label: _tabs[i].$2,
-                      excludeSemantics: true,
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: () {
-                          if (_tab == i) return;
-                          Sfx.play('click');
-                          setState(() => _tab = i);
-                        },
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Stack(
-                              clipBehavior: Clip.none,
-                              children: [
-                                PixelSprite(_tabs[i].$1, scale: 2.2, color: _tab == i ? Px.bloodLight : Px.ash),
-                                if (i == 3)
-                                  ValueListenableBuilder<int>(
-                                    valueListenable: _fresh,
-                                    builder: (_, n, __) => n == 0
-                                        ? const SizedBox.shrink()
-                                        : Positioned(
-                                            right: -7,
-                                            top: -5,
-                                            child: PixelBox(
-                                              fill: Px.blood,
-                                              shadow: 0,
-                                              borderWidth: 1,
-                                              padding: const EdgeInsets.fromLTRB(3, 2, 2, 1),
-                                              child: Text('$n', style: PxFont.label(5, height: 1.2)),
+                    child: PixelFocus(
+                      onActivate: () => _select(i),
+                      child: Semantics(
+                        button: true,
+                        selected: _tab == i,
+                        label: _tabs[i].$2,
+                        excludeSemantics: true,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _select(i),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  PixelSprite(_tabs[i].$1,
+                                      scale: 2.2,
+                                      color:
+                                          _tab == i ? Px.bloodLight : Px.ash),
+                                  if (i == 3)
+                                    ValueListenableBuilder<int>(
+                                      valueListenable: _fresh,
+                                      builder: (_, n, __) => n == 0
+                                          ? const SizedBox.shrink()
+                                          : Positioned(
+                                              right: -7,
+                                              top: -5,
+                                              child: PixelBox(
+                                                fill: Px.blood,
+                                                shadow: 0,
+                                                borderWidth: 1,
+                                                padding:
+                                                    const EdgeInsets.fromLTRB(
+                                                        3, 2, 2, 1),
+                                                child: Text('$n',
+                                                    style: PxFont.label(5,
+                                                        height: 1.2)),
+                                              ),
                                             ),
-                                          ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text(_tabs[i].$2.toUpperCase(),
-                                style: PxFont.label(6, color: _tab == i ? Px.bone : Px.ash, height: 1.2)),
-                          ],
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              Text(_tabs[i].$2.toUpperCase(),
+                                  style: PxFont.label(6,
+                                      color: _tab == i ? Px.bone : Px.ash,
+                                      height: 1.2)),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -246,4 +298,25 @@ class _MainShellState extends State<MainShell> {
       ),
     );
   }
+}
+
+
+/// The system's text scaling times the app's own (Settings, Text size).
+class _Scaled extends TextScaler {
+  final TextScaler base;
+  final double factor;
+  const _Scaled(this.base, this.factor);
+
+  @override
+  double scale(double fontSize) => base.scale(fontSize) * factor;
+
+  @override
+  // ignore: deprecated_member_use
+  double get textScaleFactor => base.textScaleFactor * factor;
+
+  @override
+  bool operator ==(Object other) => other is _Scaled && other.base == base && other.factor == factor;
+
+  @override
+  int get hashCode => Object.hash(base, factor);
 }

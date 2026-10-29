@@ -7,9 +7,10 @@ import { h, sprite, clear, toast, fmtTime } from "./px.js";
 import { api, history, titleOf, coverOf, airedEpisodes } from "./api.js";
 import { settings } from "./settings.js";
 import { sfx } from "./sfx.js";
-import { initShell } from "./ui.js";
+import { initShell, reportError } from "./ui.js";
 import { createPlayer, pref } from "./player.js";
 import { startParty, newPartyCode, validCode } from "./party.js";
+import { castReady, castDevice, startCast, stopCast, castLoad, castPlayPause, castSeek, onCastChange, onCastProgress, onCastFinished } from "./cast.js";
 
 initShell();
 const root = document.getElementById("watch");
@@ -30,10 +31,27 @@ let cues = [], currentTrack = null;
 const partyParam = new URLSearchParams(location.search).get("party");
 let partyCode = validCode(partyParam) ? partyParam.toUpperCase() : null;
 let party = null;
-const epHref = (n) => `/watch/${animeId}/${n}${partyCode ? `?party=${partyCode}` : ""}`;
+// ?audio=tl: the Tagalog dub (category "tl", from the Filipino anime sites --
+// app/tagalog.py). Picking it is remembered per show, so Continue Watching
+// reopens in Tagalog; ?audio=sub (the SUB / DUB button) forgets it.
+const TL_KEY = "av.tagalogShows";
+const tlShows = (() => { try { return new Set(JSON.parse(localStorage.getItem(TL_KEY) || "[]")); } catch { return new Set(); } })();
+const audioParam = new URLSearchParams(location.search).get("audio");
+if (audioParam === "tl") tlShows.add(String(animeId));
+if (audioParam === "sub") tlShows.delete(String(animeId));
+try { localStorage.setItem(TL_KEY, JSON.stringify([...tlShows].slice(-200))); } catch { /* private mode */ }
+const wantTagalog = audioParam === "tl" || (audioParam === null && tlShows.has(String(animeId)));
+let tagalog = null; // {sites, episodes: {episode: sites}} when this anime has a Tagalog dub
+const epHref = (n) => {
+  const q = new URLSearchParams();
+  if (partyCode) q.set("party", partyCode);
+  if (wantTagalog && tagalog?.episodes[n]) q.set("audio", "tl");
+  return `/watch/${animeId}/${n}${q.toString() ? `?${q}` : ""}`;
+};
 /** Another episode; in a party the room is told first so everyone comes along. */
 function goEpisode(n) {
   if (!party) { location.href = epHref(n); return; }
+  if (!party.canControl()) { party.toldLocked(); return; }
   party.sendEpisode(n);
   setTimeout(() => { location.href = epHref(n); }, 150);
 }
@@ -68,6 +86,57 @@ styleCaptions(settings.get());
 settings.onChange(styleCaptions);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// --- Chromecast (cast.js): the episode goes to the TV from where it is, the page becomes the remote.
+let canCast = false;
+castReady().then((ok) => { canCast = ok; });
+onCastChange(({ device, position }) => {
+  if (!device) {
+    castStage = null;
+    player.hideStage();
+    if (position > 0) video.currentTime = position;
+    if (phase === "playing") video.play().catch(() => {});
+    return;
+  }
+  castHere(device);
+});
+
+/** Sends this episode to the TV; before a stream is found, as soon as one is. */
+let castWaiting = false;
+function castHere(device) {
+  const src = sources[sourceIndex];
+  if (!src || phase !== "playing") { castWaiting = true; return; }
+  castWaiting = false;
+  video.pause();
+  const abs = (u) => new URL(u, location.href).href;
+  castLoad({
+    url: abs(src.url),
+    title: info ? titleOf(info) : "AniVerse",
+    subtitle: `Episode ${ep}${category === "dub" ? " (dub)" : category === "tl" ? " (Tagalog)" : ""}`,
+    position: video.currentTime || 0,
+    subtitles: captionsOn() && currentTrack ? abs(currentTrack.url) : null,
+    hls: src.isM3U8 === true || /m3u8/.test(src.url),
+  }).then((ok) => {
+    // Refused by the TV: stop casting (which hands playback back to this page).
+    if (!ok) { toast("The TV couldn't play this stream. Playing it here instead."); stopCast(); }
+  });
+  castStage = player.casting(device, { onPlayPause: castPlayPause, onStop: stopCast });
+  sfx("select");
+}
+
+// While casting: the TV's position, a skip button inside a marked range, and
+// the next episode when one ends there (the session carries over to the page).
+let castStage = null;
+onCastProgress(({ time, duration }) => {
+  if (!castStage || !castDevice()) return;
+  castStage.update({ time, duration });
+  const inRange = (r) => r && time >= r.start && time < r.end - 1;
+  const hit = [["Skip recap", skipMarks.recap], ["Skip intro", skipMarks.intro], ["Skip outro", skipMarks.outro]].find(([, r]) => inRange(r));
+  castStage.setSkip(hit ? hit[0] : null, () => hit && castSeek(hit[1].end));
+});
+onCastFinished(() => {
+  if (castDevice() && aired && ep < aired) { toast(`Episode ${ep + 1} is next on ${castDevice()}.`); goEpisode(ep + 1); }
+});
+
 // --- link speed ---------------------------------------------------------------------
 // Each finished segment's own download rate, smoothed: the link's real speed,
 // shown in the orb. Bytes are also what the loading orb fills from.
@@ -93,7 +162,7 @@ function explain(data) {
   if (category === "dub" && hasDub === false) return "This episode has no English dub yet.";
   const err = data.error || "";
   if (!err || err.includes("sources available")) {
-    return `No working ${category.toUpperCase()} stream was found for this episode right now. Streams come and go, so trying again in a minute often works.`;
+    return `No working ${category === "tl" ? "Tagalog" : category.toUpperCase()} stream was found for this episode right now. Streams come and go, so trying again in a minute often works.`;
   }
   return err;
 }
@@ -261,6 +330,7 @@ function openSource(src, start, g) {
 let startedOnce = false;
 function attached() {
   phase = "playing";
+  if (castWaiting && castDevice()) setTimeout(() => castHere(castDevice()), 0);
   reconnectTries = 0;
   mediaRecovered = false;
   player.hideStage();
@@ -286,6 +356,7 @@ function fail(reason) {
   sfx("error");
   const other = category === "sub" ? "DUB" : "SUB";
   const offerSwitch = category === "dub" || hasDub !== false;
+  reportError({ kind: "playback", message: `EP ${ep} (${category}): ${reason}`, where: `watch/${animeId}` });
   player.failed("Couldn't play this episode", reason, [
     { label: "Retry", run: () => resolve() },
     offerSwitch ? { label: `Try ${other}`, kind: "dark", run: () => { category = category === "sub" ? "dub" : "sub"; captionsChoice = null; resolve(); } } : null,
@@ -401,15 +472,18 @@ async function reconnect() {
 // its neighbour's. That last can take a couple of minutes the first time, so a
 // "pending" answer is asked again, and better times replace earlier ones.
 
-let skipMarks = { intro: null, outro: null };
+let skipMarks = { intro: null, outro: null, recap: null };
 let skipTimer = 0;
 
 function loadSkipTimes(src) {
   clearTimeout(skipTimer);
   const g = gen;
-  skipMarks = { intro: src?.intro || null, outro: src?.outro || null };
+  skipMarks = { intro: src?.intro || null, outro: src?.outro || null, recap: null };
   player.setMarkers(skipMarks.intro, skipMarks.outro);
-  if (skipMarks.intro && skipMarks.outro) return;
+  // Recaps only come from the server (AniSkip), and only from episode 2 on.
+  if (skipMarks.intro && skipMarks.outro && ep <= 1) return;
+  // The Tagalog dubs are TV recordings of their own length: no intro times fit them.
+  if (category === "tl") return;
   const ask = async (attempt) => {
     if (g !== gen) return;
     const d = video.duration;
@@ -417,8 +491,9 @@ function loadSkipTimes(src) {
     const r = await api.skipTimes(animeId, ep, d, src?.serverName, category);
     if (g !== gen || !r) return;
     // The source's own markers are exact for it; fill only what it lacks.
-    skipMarks = { intro: src?.intro || r.intro || skipMarks.intro, outro: src?.outro || r.outro || skipMarks.outro };
-    player.setMarkers(skipMarks.intro, skipMarks.outro);
+    skipMarks = { intro: src?.intro || r.intro || skipMarks.intro, outro: src?.outro || r.outro || skipMarks.outro,
+      recap: r.recap || skipMarks.recap };
+    player.setMarkers(skipMarks.intro, skipMarks.outro, skipMarks.recap);
     if (r.pending && attempt < 4) skipTimer = setTimeout(() => ask(attempt + 1), [60, 90, 150, 300][attempt] * 1000);
   };
   ask(0);
@@ -579,6 +654,9 @@ function buildMenu() {
       else if (hls) { hls.autoLevelCapping = -1; hls.currentLevel = -1; }
     },
   });
+  if (canCast && sources.length && phase === "playing") {
+    items.push({ label: castDevice() ? "Stop casting" : "Cast to TV", value: castDevice() || "", run: () => (castDevice() ? stopCast() : startCast()) });
+  }
   if (sources.length && phase === "playing") items.push("-", { label: "Report a problem", sub: reportPage });
   return { title: "Settings", items, refresh: buildMenu };
 }
@@ -714,7 +792,8 @@ video.addEventListener("pause", () => { if (!video.ended) viewerDid(); });
 video.addEventListener("seeked", viewerDid);
 
 function joinParty() {
-  party = startParty({ code: partyCode, mount: actionsEl, getState: partyState, applyState: applyPartyState });
+  party = startParty({ code: partyCode, mount: actionsEl, stage: document.getElementById("player"),
+    getState: partyState, applyState: applyPartyState });
 }
 
 // In a party, episode links move the whole room (before the page-change effect sees the click).
@@ -738,6 +817,12 @@ epsEl.after(rangeNav);
 
 function renderActions() {
   clear(actionsEl);
+  if (tagalog?.episodes[ep] && !party) {
+    actionsEl.append(wantTagalog
+      ? h("a.px-btn.dark.px-box.bevel.small", { href: `/watch/${animeId}/${ep}?audio=sub` }, "SUB / DUB")
+      : h("a.px-btn.px-box.bevel.small", { href: `/watch/${animeId}/${ep}?audio=tl`,
+          title: `Tagalog dub, from ${tagalog.sites.join(" and ")}` }, "Tagalog dub"));
+  }
   if (ep > 1) actionsEl.append(h("a.px-btn.dark.px-box.bevel.small", { href: epHref(ep - 1) }, h("span", { style: { transform: "scaleX(-1)", display: "grid" } }, sprite("skipNext", 1.4)), `EP ${ep - 1}`));
   if (aired && ep < aired) actionsEl.append(h("a.px-btn.px-box.bevel.small", { href: epHref(ep + 1) }, `EP ${ep + 1}`, sprite("skipNext", 1.4)));
   if (sources.length > 1 && phase === "playing") {
@@ -765,7 +850,8 @@ function renderActions() {
   }
   actionsEl.append(h("a.px-btn.dark.px-box.bevel.small", { href: backHref }, "Details"));
   const src = sources[sourceIndex];
-  metaEl.textContent = [`EP ${ep}`, category.toUpperCase(), src && phase === "playing" ? `Server: ${src.serverName || "Auto"}` : null].filter(Boolean).join(" · ");
+  metaEl.textContent = [`EP ${ep}`, category === "tl" ? "TAGALOG DUB" : category.toUpperCase(),
+    src && phase === "playing" ? `Server: ${src.serverName || "Auto"}` : null].filter(Boolean).join(" · ");
 }
 
 function renderEpisodes() {
@@ -812,4 +898,6 @@ api.info(animeId).then((a) => {
 player.setTitle(`Episode ${ep}`);
 renderActions();
 if (partyCode) joinParty();
-resolve();
+const tagalogReady = api.tagalog(animeId).then((t) => { tagalog = t; renderActions(); return t; });
+if (wantTagalog && !partyCode) tagalogReady.then((t) => { if (t?.episodes[ep]) category = "tl"; resolve(); });
+else resolve();

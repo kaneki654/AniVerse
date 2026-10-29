@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the app's FileProvider may hand to other apps: only the profile card
+     written to cache/share/ for the share sheet (account_screen.dart). -->
+<paths>
+    <cache-path name="share" path="share/" />
+</paths>

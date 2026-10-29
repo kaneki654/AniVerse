@@ -1,3 +1,5 @@
+import '../classic_plus/classic_extras.dart';
+import '../services/download_service.dart';
 import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -51,6 +53,15 @@ class _DetailScreenState extends State<DetailScreen> {
         ),
       ),
     );
+  }
+
+  /// Long-press on an episode: save it to watch offline (classic_plus Downloads).
+  void _download(int number) {
+    final added = DownloadService.enqueue(
+        animeId: widget.id, episode: number, category: 'sub', title: _title, cover: _cover ?? '');
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(added ? 'Downloading episode $number. It will be under Downloads.' : 'Episode $number is already saved or on its way.'),
+    ));
   }
 
   String get _title {
@@ -132,6 +143,7 @@ class _DetailScreenState extends State<DetailScreen> {
           SliverAppBar(
             pinned: true,
             expandedHeight: _expandedHeight,
+            actions: [ClassicFollowButton(animeId: widget.id, anime: anime)],
             backgroundColor: AniVerseTheme.bg,
             // FlexibleSpaceBar parks its title at the bottom of the expanded
             // area until the bar collapses, which drew the title a second time
@@ -224,6 +236,7 @@ class _DetailScreenState extends State<DetailScreen> {
                         number: index + 1,
                         progress: watched[index + 1],
                         onTap: () => _openEpisode(index + 1),
+                        onLongPress: () => _download(index + 1),
                       ),
                       childCount: epCount is num ? epCount.toInt() : 12,
                     ),
@@ -408,10 +421,11 @@ class _Header extends StatelessWidget {
 }
 
 class _EpisodeTile extends StatelessWidget {
-  const _EpisodeTile({required this.number, required this.onTap, this.progress});
+  const _EpisodeTile({required this.number, required this.onTap, this.onLongPress, this.progress});
 
   final int number;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   /// How far the user got, if they have started this episode.
   final HistoryEntry? progress;
@@ -428,6 +442,7 @@ class _EpisodeTile extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         splashColor: AniVerseTheme.red.withValues(alpha: 0.25),
         child: Stack(
           fit: StackFit.expand,

@@ -86,7 +86,9 @@ class _AniVersePlayerControlsState extends State<AniVersePlayerControls> {
   }
 
   void _togglePlay() {
-    setState(() => _c.value.isPlaying ? _c.pause() : _c.play());
+    // Not inside setState: play() and pause() return futures, which setState rejects.
+    _c.value.isPlaying ? _c.pause() : _c.play();
+    setState(() {});
     _scheduleHide();
   }
 

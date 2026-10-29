@@ -52,6 +52,42 @@ class MobileReleaseTests(unittest.TestCase):
         self.assertEqual(download.content, b"signed apk bytes")
         self.assertIn("no-store", download.headers["cache-control"])
 
+    def test_per_cpu_builds_are_offered_to_apps_that_say_their_cpu(self):
+        arm = self.root / "app-arm64-v8a-release.apk"
+        arm.write_bytes(b"arm64 build")
+
+        def inspect(path, *_):
+            meta = dict(self.metadata)
+            meta["nativeCode"] = ["arm64-v8a"] if Path(path).read_bytes() == b"arm64 build" else ["arm64-v8a", "x86_64"]
+            return meta
+
+        with patch.object(publisher, "inspect_apk", side_effect=inspect):
+            release = publisher.publish_apk(self.source, self.releases, "aapt", "apksigner", splits=[arm])
+        self.assertEqual(set(release["abis"]), {"arm64-v8a"})
+        old_app = self.client.get("/app/version.json").json()
+        self.assertEqual((old_app["url"], old_app["size"]), ("/app/aniverse.apk", len(b"signed apk bytes")))
+        new_app = self.client.get("/app/version.json", params={"abi": "arm64-v8a"}).json()
+        self.assertEqual((new_app["url"], new_app["size"]), ("/app/aniverse.apk?abi=arm64-v8a", len(b"arm64 build")))
+        self.assertEqual(self.client.get(new_app["url"]).content, b"arm64 build")
+        # A CPU nobody built for gets the universal APK.
+        self.assertEqual(self.client.get("/app/aniverse.apk", params={"abi": "mips"}).content, b"signed apk bytes")
+
+    def test_a_split_from_another_release_is_refused(self):
+        arm = self.root / "app-arm64-v8a-release.apk"
+        arm.write_bytes(b"older arm64 build")
+
+        def inspect(path, *_):
+            meta = dict(self.metadata)
+            if Path(path).read_bytes() == b"older arm64 build":
+                meta.update(versionCode=11, nativeCode=["arm64-v8a"])
+            return meta
+
+        with patch.object(publisher, "inspect_apk", side_effect=inspect):
+            with self.assertRaises(ValueError):
+                publisher.publish_apk(self.source, self.releases, "aapt", "apksigner", splits=[arm])
+        self.assertFalse((self.releases / "current.json").exists())
+        self.assertEqual(list(self.releases.glob("*.apk")), [])
+
     def test_failed_signature_leaves_previous_publication_intact(self):
         self.publish()
         previous = (self.releases / "current.json").read_bytes()
