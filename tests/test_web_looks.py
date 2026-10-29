@@ -40,6 +40,7 @@ class LookTest(unittest.TestCase):
                     r = self.client.get(page)
                     self.assertEqual(r.status_code, 200)
                     self.assertIn(f"/static/{look}/js/", r.text)
+                    self.assertIn("Created by Zh3n and G0Ju.VBS", r.text)
 
     def test_the_manifest_follows_the_look(self):
         m = self.client.get("/manifest.webmanifest").json()

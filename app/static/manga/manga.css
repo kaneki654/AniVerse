@@ -661,6 +661,15 @@ canvas.splat { position: fixed; z-index: 200; width: 132px; height: 132px; point
   .toasts { bottom: 84px; }
 }
 
+/* --- credit: a red ink stamp in the corner of every page, never in the way of a click -------- */
+.credit-mark {
+  position: fixed; right: 14px; bottom: 14px; z-index: 55; pointer-events: none;
+  padding: 4px 9px; border: 2px solid var(--blood); background: rgb(245 241 232 / 0.72);
+  color: var(--blood); font: 700 12px/1.2 var(--title); letter-spacing: 0.04em;
+  transform: rotate(-4deg); opacity: 0.8;
+}
+@media (max-width: 900px) { .credit-mark { bottom: calc(78px + env(safe-area-inset-bottom)); } }
+
 /* --- pixel form controls ------------------------------------------------------------- */
 .px-select {
   appearance: none; -webkit-appearance: none;

@@ -823,6 +823,13 @@ body.shake main { animation: shake 0.18s steps(3); }
   --blood-rgb: 212 165 55; --glow-rgb: 255 224 138;
 }
 
+/* --- credit: a pixel tag in the corner of every page, never in the way of a click ------------ */
+.credit-mark {
+  position: fixed; right: 12px; bottom: 12px; z-index: 55; pointer-events: none;
+  padding: 6px 8px; border: 2px solid var(--blood); background: rgb(5 3 5 / 0.7);
+  color: var(--blood-light); font: 7px/1.4 var(--display); opacity: 0.85;
+}
+
 /* --- phone tab bar ------------------------------------------------------------------ */
 .bottom-nav { display: none; }
 .alert-dot { position: absolute; top: 6px; right: 4px; width: 8px; height: 8px; background: var(--blood-light); box-shadow: 0 0 0 2px var(--k); }
@@ -840,6 +847,7 @@ body.shake main { animation: shake 0.18s steps(3); }
   .bottom-nav a[aria-current="page"]::before { content: ""; position: absolute; top: -6px; left: 30%; right: 30%; height: 2px; background: var(--blood-light); }
   body { padding-bottom: 64px; }
   .toasts { bottom: 84px; }
+  .credit-mark { bottom: calc(76px + env(safe-area-inset-bottom)); }
 }
 
 /* --- pixel form controls ------------------------------------------------------------- */
