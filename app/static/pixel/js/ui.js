@@ -1,6 +1,6 @@
 // Shared pieces of the pixel website: the header, poster cards, shelves, the
 // spotlight and continue-watching rows -- the app's widgets, as DOM.
-import { h, sprite, hydrateSprites, pixelCover, drips, clear, plainText, embers, dissolve, speedLines, emblemUrl, paletteSwitch } from "./px.js";
+import { h, sprite, hydrateSprites, pixelCover, drips, clear, plainText, embers, dissolve, speedLines, emblemUrl, paletteSwitch, refreshPalette } from "./px.js";
 import { api, auth, history, titleOf, coverOf } from "./api.js";
 import { watchlist } from "./watchlist.js";
 import { settings } from "./settings.js";
@@ -178,6 +178,31 @@ export function metaLine(a) {
 
 // --- the page shell -----------------------------------------------------------------
 
+function appearanceToggle() {
+  const button = document.getElementById("dark-mode-toggle");
+  const sync = (value) => {
+    const dark = value.darkMode !== false;
+    document.documentElement.dataset.mode = dark ? "dark" : "light";
+    refreshPalette();
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = dark ? "#050305" : "#fffdf9";
+    if (button) {
+      button.setAttribute("aria-checked", String(dark));
+      button.title = dark ? "Switch to light mode" : "Switch to dark mode";
+    }
+    document.querySelectorAll('[data-setting="darkMode"]').forEach((toggle) => {
+      toggle.setAttribute("aria-checked", String(dark));
+    });
+  };
+  sync(settings.get());
+  settings.onChange(sync);
+  addEventListener("pageshow", () => sync(settings.get()));
+  addEventListener("storage", (event) => {
+    if (event.key === "av.settings" || event.key === null) sync(settings.get());
+  });
+  button?.addEventListener("click", () => settings.set({ darkMode: !settings.get().darkMode }));
+}
+
 function headerSearch() {
   const input = document.getElementById("header-q");
   const box = document.getElementById("header-suggest");
@@ -320,6 +345,7 @@ function achievementToasts() {
 
 /** Everything every page needs once. */
 export function initShell() {
+  appearanceToggle();
   // The header emblem in the palette's colours (Blood keeps the crimson PNG).
   const emblem = emblemUrl();
   if (emblem) document.querySelectorAll('img[src$="/pixel/img/logo.png"]').forEach((img) => { img.src = emblem; });

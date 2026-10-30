@@ -107,6 +107,11 @@ async def status(request: Request):
     return _page(request, "status", "", "Status · AniVerse", heading="Status")
 
 
+@router.get("/sponsors", response_class=HTMLResponse)
+async def sponsors(request: Request):
+    return _page(request, "sponsors", "sponsors", "Sponsors · AniVerse")
+
+
 @router.get("/offline", response_class=HTMLResponse)
 async def offline(request: Request):
     return _page(request, "offline", "", "Offline · AniVerse")

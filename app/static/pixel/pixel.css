@@ -250,7 +250,7 @@ main { flex: 1; padding: 20px 0 48px; }
   box-shadow: 0 0 0 2px var(--k);
 }
 
-.header-search { position: relative; flex: 1; max-width: 420px; margin-left: 12px; }
+.header-search { position: relative; flex: 1; min-width: 0; max-width: 420px; margin-left: 12px; }
 .px-input {
   width: 100%;
   min-height: 44px;
@@ -282,6 +282,7 @@ main { flex: 1; padding: 20px 0 48px; }
 .suggest .empty { padding: 10px; color: var(--ash); }
 
 @media (min-width: 901px) { .nav-search { display: none !important; } }
+@media (min-width: 901px) and (max-width: 1200px) { .site-nav .nav-text { display: none; } }
 @media (max-width: 900px) {
   .header-search { display: none; }
   .site-nav .nav-text { display: none; }
@@ -808,6 +809,50 @@ body.shake main { animation: shake 0.18s steps(3); }
   --gold: #ffd36b; --gold-dark: #a8801f;
   --blood-rgb: 255 95 162; --glow-rgb: 255 179 209;
 }
+
+/* Appearance changes the surfaces independently of the chosen palette. */
+:root[data-mode="light"] {
+  color-scheme: light;
+  --ink: #faf6f2; --panel: #fffdf9; --panel-high: #eee5e3;
+  --bone: #281c23; --ash: #6b5864; --ash-dark: #826e78;
+  --blood-light: #b80823; --gold: #946000;
+  --outline: none; --outline-2: none;
+}
+:root[data-mode="light"][data-theme="neon"] {
+  --blood: #00758e; --blood-light: #006b85; --gold: #98168e;
+}
+:root[data-mode="light"][data-theme="sakura"] {
+  --blood: #b82d68; --blood-light: #a3305f;
+}
+:root[data-mode="light"] :is(.site-header, .site-footer, .bottom-nav) { background: var(--panel); }
+:root[data-mode="light"] body::before {
+  background: repeating-linear-gradient(to bottom, rgb(40 28 35 / 0.025) 0 1px, transparent 1px 3px);
+}
+:root[data-mode="light"] ::selection { color: #fffdf9; }
+:root[data-mode="light"] :is(.logo .word, .section-head h2, .page-title, .profile .who b) { text-shadow: none; }
+:root[data-mode="light"] .px-btn:not(.dark):not(:disabled) { --text: #fffdf9; }
+:root[data-mode="light"] :is(.chip:not(.dark), .ep-btn.current, .site-nav .avatar, .avatar-frame, .profile .avatar-big, .form-error) { color: #fffdf9; }
+:root[data-mode="light"] :is(.hero-stage, .detail-hero, .player, .poster .frame, .ep-row .shot) {
+  --bone: #f2e8d5; --ash: #b8aea8; --ash-dark: #807572;
+  --panel: #1b1114; --panel-high: #2a1a1f;
+  color: var(--bone);
+}
+:root[data-mode="light"] :is(.hero-info h3, .detail-info h1) { text-shadow: none; }
+.mode-sun { display: none; }
+:root[data-mode="light"] .mode-sun { display: block; }
+:root[data-mode="light"] .mode-moon { display: none; }
+
+/* Sponsors use the same pixel frame and palette as the rest of the site. */
+.sponsors-page { padding-bottom: 32px; }
+.sponsor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 24px; max-width: 840px; }
+.sponsor-card {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 24px; min-height: 280px; padding: 40px 24px;
+  --b: var(--blood); --s: 5px;
+  background: linear-gradient(135deg, rgb(var(--blood-rgb) / 0.08), transparent 65%), var(--panel);
+}
+.sponsor-mark { display: grid; place-items: center; width: 80px; height: 80px; background: var(--panel-high); color: var(--blood-light); }
+.sponsor-card h2 { margin: 0; font: clamp(18px, 4vw, 28px)/1.5 var(--display); overflow-wrap: anywhere; }
 
 /* --- phone tab bar ------------------------------------------------------------------ */
 .bottom-nav { display: none; }

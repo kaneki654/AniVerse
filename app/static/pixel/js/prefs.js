@@ -15,6 +15,7 @@ function toggle(key, label, text, onChange) {
   return h("div.setting.px-box", null,
     h("div", null, h("b", null, label), h("span", null, text)),
     h("button.px-switch", {
+      "data-setting": key,
       type: "button", role: "switch", "aria-checked": String(!!s[key]), "aria-label": label,
       onclick: async (e) => {
         const btn = e.currentTarget;
@@ -41,6 +42,7 @@ function render() {
   const s = settings.get();
   clear(root).append(
     h("section.setting-group", null,
+      toggle("darkMode", "Dark mode", "Use dark backgrounds. Turn off for light mode."),
       h("div.setting.px-box", null,
         h("div", null, h("b", null, "Palette"), h("span", null, "The colour of blood, glows and effects. Everything stays pixel art.")),
         h("div.theme-swatches", null, Object.entries(THEMES).map(([id, name]) =>

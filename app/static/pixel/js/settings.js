@@ -5,6 +5,7 @@
 const KEY = "av.settings";
 const DEFAULTS = {
   theme: "blood",      // blood | neon | sakura
+  darkMode: true,      // independent of the accent palette
   sfx: true,           // 8-bit sound effects
   volume: 0.35,
   dataSaver: false,    // stay on the lowest quality
@@ -16,17 +17,21 @@ const DEFAULTS = {
 export const THEMES = { blood: "Blood", neon: "Neon cyber", sakura: "Sakura" };
 
 const listeners = new Set();
+let current = { ...DEFAULTS };
 
 function read() {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || "{}") }; } catch { return { ...DEFAULTS }; }
+  try { current = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || "{}") }; } catch { /* storage off: keep this visit's settings */ }
+  return { ...current };
 }
 
 export const settings = {
   get: read,
   set(patch) {
     const next = { ...read(), ...patch };
+    current = next;
     try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* storage off */ }
     if (patch.theme) document.documentElement.dataset.theme = next.theme;
+    if ("darkMode" in patch) document.documentElement.dataset.mode = next.darkMode ? "dark" : "light";
     listeners.forEach((fn) => fn(next));
     return next;
   },

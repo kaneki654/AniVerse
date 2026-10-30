@@ -173,6 +173,7 @@ export function createPlayer(host, handlers) {
 
   // --- HUD visibility: shown on activity, hidden 3s later while playing --------------
   let hideTimer = 0, hudOn = true;
+  const activePointers = new Set();
   const setHud = (on) => {
     hudOn = on;
     hud.classList.toggle("off", !on);
@@ -180,22 +181,41 @@ export function createPlayer(host, handlers) {
     captions.classList.toggle("lifted", on);
     skipFloat.style.bottom = on ? "" : "20px";
   };
-  function poke() {
-    setHud(true);
+  function scheduleHide() {
     clearTimeout(hideTimer);
-    hideTimer = setTimeout(function hide() {
-      // A seek usually lands mid-buffer, when the video reports paused-ish
-      // states; still buffering is not paused, so look again shortly.
-      if (video.readyState < 3 && !video.paused) { hideTimer = setTimeout(hide, 1000); return; }
-      const busy = top.matches(":hover") || bottom.matches(":hover") || bottom.contains(document.activeElement) || !!menuEl;
-      if (!video.paused && !busy) setHud(false);
-      else hideTimer = setTimeout(hide, 2000);
+    hideTimer = 0;
+    if (video.paused || video.ended || menuEl || dragging !== null || activePointers.size) return;
+    hideTimer = setTimeout(() => {
+      hideTimer = 0;
+      // A stationary mouse or a button's retained focus is not activity.
+      if (!video.paused && !video.ended && !menuEl && dragging === null && !activePointers.size) setHud(false);
     }, 3000);
   }
+  function poke() {
+    setHud(true);
+    scheduleHide();
+  }
   host.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse") poke(); });
-  host.addEventListener("pointerleave", () => { if (!video.paused) { clearTimeout(hideTimer); hideTimer = setTimeout(() => setHud(false), 800); } });
+  host.addEventListener("pointerdown", (e) => {
+    activePointers.add(e.pointerId);
+    clearTimeout(hideTimer);
+    // A touch on the empty surface is toggled by pointerup below.
+    if (e.pointerType !== "touch" || (e.target !== hud && e.target !== center)) poke();
+  });
+  const releasePointer = (e) => {
+    if (activePointers.delete(e.pointerId)) scheduleHide();
+  };
+  document.addEventListener("pointerup", releasePointer);
+  document.addEventListener("pointercancel", releasePointer);
+  host.addEventListener("click", (e) => {
+    if (e.target.closest("button, input, [role=slider]")) poke();
+  });
+  host.addEventListener("input", poke);
+  host.addEventListener("focusin", poke);
+  host.addEventListener("keydown", poke);
   video.addEventListener("play", poke);
   video.addEventListener("pause", () => { clearTimeout(hideTimer); setHud(true); });
+  video.addEventListener("ended", () => { clearTimeout(hideTimer); setHud(true); });
 
   // Mouse: click plays/pauses, double-click goes fullscreen. Touch: a tap shows
   // or hides the HUD, as in the app.
@@ -216,9 +236,11 @@ export function createPlayer(host, handlers) {
   // handlers.menu() -> {title, items: [{label, value, checked, run, sub, stay} | "-"]}
   let menuEl = null;
   function closeMenu() {
+    const wasOpen = !!menuEl;
     menuEl?.remove();
     menuEl = null;
     menuBtn.setAttribute("aria-expanded", "false");
+    if (wasOpen) scheduleHide();
   }
   function showMenu(page, stack = []) {
     closeMenu();

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-mode="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -17,7 +17,12 @@
     /* Arriving through the page dissolve: start covered so nothing flashes. */
     try { if (sessionStorage.getItem("av.dissolve") || sessionStorage.getItem("av.palette")) document.documentElement.classList.add("entering"); } catch (e) {}
     /* The chosen palette before first paint, so it never flashes the default. */
-    try { document.documentElement.dataset.theme = (JSON.parse(localStorage.getItem("av.settings") || "{}").theme) || "blood"; } catch (e) {}
+    try {
+      const saved = JSON.parse(localStorage.getItem("av.settings") || "{}") || {};
+      document.documentElement.dataset.theme = saved.theme || "blood";
+      document.documentElement.dataset.mode = saved.darkMode === false ? "light" : "dark";
+      document.querySelector('meta[name="theme-color"]').content = saved.darkMode === false ? "#fffdf9" : "#050305";
+    } catch (e) {}
   </script>
   {% block head %}{% endblock %}
 </head>
@@ -45,6 +50,11 @@
         <a class="icon-btn wide-only" href="/genres" {% if nav == 'genres' %}aria-current="page"{% endif %} aria-label="Genres"><i data-sprite="grid" data-scale="2.2"></i><span class="nav-text">Genres</span></a>
         <a class="icon-btn wide-only nav-mylist" href="/mylist" {% if nav == 'mylist' %}aria-current="page"{% endif %} aria-label="My List"><i data-sprite="bookmark" data-scale="2"></i><span class="nav-text">My List</span><span class="alert-dot" hidden></span></a>
         <a class="icon-btn wide-only" href="/history" {% if nav == 'history' %}aria-current="page"{% endif %} aria-label="History"><i data-sprite="clock" data-scale="2"></i><span class="nav-text">History</span></a>
+        <a class="icon-btn wide-only" href="/sponsors" {% if nav == 'sponsors' %}aria-current="page"{% endif %} aria-label="Sponsors"><i data-sprite="star" data-scale="2"></i><span class="nav-text">Sponsors</span></a>
+        <button id="dark-mode-toggle" class="icon-btn" type="button" role="switch" aria-label="Dark mode" aria-checked="true" title="Dark mode">
+          <svg class="mode-moon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z"/></svg>
+          <svg class="mode-sun" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg>
+        </button>
         <a id="nav-account" class="icon-btn" href="/account" {% if nav == 'account' %}aria-current="page"{% endif %} aria-label="Sign in"><span class="nav-icon"></span><span class="nav-text">Sign in</span></a>
       </nav>
     </div>
@@ -71,7 +81,7 @@
     <div class="wrap">
       <span class="lbl">AniVerse Pixel</span>
       <span>Streams are found on third-party sites; AniVerse hosts no video.</span>
-      <span><a href="/settings">Settings</a> · <a href="/status">Status</a></span>
+      <span><a href="/sponsors" {% if nav == 'sponsors' %}aria-current="page"{% endif %}>Sponsors</a> · <a href="/settings">Settings</a> · <a href="/status">Status</a></span>
     </div>
   </footer>
   <script type="module" src="/static/pixel/js/{{ page }}.js?v={{ v }}"></script>
