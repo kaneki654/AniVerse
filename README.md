@@ -1,4 +1,4 @@
-# AniVerse - Anime Streaming App
+# AniVerse - Anime Streaming App with Avengers theme
 
 A lightweight anime streaming application built with FastAPI, Jinja2, Vanilla JS, and HLS.js.
 
@@ -44,6 +44,11 @@ fonts, sprite icons, blood effects, the katana loader and blood-orb buffering
 circle), and talks to the same endpoints, so accounts and watch history are
 shared with the app. Its pages are `app/pixel_web.py`, `app/templates/pixel/`
 and `app/static/pixel/`. There is no manga section.
+
+Use the moon/sun button in the header or the Dark mode switch in Settings to
+change between dark and light mode. The choice is saved in your browser and
+works with all three palettes. The Sponsors page (`/sponsors`), linked from
+the header and footer, features our first sponsor, **resufx**.
 
 The original site is still there, untouched. To switch back to it, start the
 frontend with:

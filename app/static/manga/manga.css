@@ -641,6 +641,13 @@ canvas.splat { position: fixed; z-index: 200; width: 132px; height: 132px; point
 .app-promo .measured { margin: 6px 0 0; color: var(--ash); font-size: .82em; }
 @media (max-width: 560px) { .app-promo .head { flex-direction: column; align-items: stretch; text-align: center; } .app-promo .emblem { align-self: center; } }
 
+/* Sponsors: one ink-framed panel each, as on the pixel look. */
+.sponsors-page { padding-bottom: 32px; }
+.sponsor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 24px; max-width: 840px; }
+.sponsor-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; min-height: 280px; padding: 40px 24px; }
+.sponsor-mark { display: grid; place-items: center; width: 80px; height: 80px; background: var(--panel-high); color: var(--blood); }
+.sponsor-card h2 { margin: 0; font: italic clamp(22px, 4vw, 32px)/1.3 var(--title); overflow-wrap: anywhere; }
+
 @media (prefers-reduced-motion: reduce) {
   .skel { animation: none; }
 }

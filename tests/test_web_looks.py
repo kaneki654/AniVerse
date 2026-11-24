@@ -16,7 +16,7 @@ from app.main import app
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 STATIC = ROOT / "app" / "static"
 PAGES = ["/", "/search", "/genres", "/genre/Action", "/anime/1", "/watch/1/1", "/history", "/account",
-         "/schedule", "/mylist", "/settings", "/status", "/offline"]
+         "/schedule", "/mylist", "/settings", "/status", "/offline", "/sponsors"]
 
 
 class LookTest(unittest.TestCase):
