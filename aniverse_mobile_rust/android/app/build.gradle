@@ -1,0 +1,56 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+android {
+    namespace 'app.aniverse.rust'
+    compileSdk 35
+    defaultConfig {
+        // Separate identity while parity is developed; never overwrite Flutter.
+        applicationId 'app.aniverse.rust'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0'
+        ndk { abiFilters 'arm64-v8a' }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildTypes {
+        release {
+            // The key the original app's releases use (this machine's debug key,
+            // SHA-256 8d90dc68…); scripts/publish_apk.py checks it.
+            signingConfig signingConfigs.debug
+        }
+    }
+    // Release builds run offline and lint's tooling (~200 MB) is not in the Gradle cache.
+    lint { checkReleaseBuilds false }
+    sourceSets.main.jniLibs.srcDirs = ['src/main/jniLibs']
+    // Compressed native code keeps the download small; Android unpacks it once at install.
+    packaging { jniLibs { useLegacyPackaging = true } }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+    }
+}
+
+def nativeBuild = tasks.register('buildRust', Exec) {
+    workingDir rootProject.projectDir.parentFile
+    commandLine 'bash', 'scripts/build_android.sh', '--native-only'
+    inputs.files(fileTree('../../src'), fileTree('../../ui'), fileTree('../../assets'))
+    inputs.files('../../Cargo.toml', '../../Cargo.lock', '../../build.rs')
+    outputs.file('src/main/jniLibs/arm64-v8a/libaniverse_rust.so')
+}
+tasks.named('preBuild').configure { dependsOn nativeBuild }
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.15.0'
+    implementation 'androidx.media3:media3-exoplayer:1.5.1'
+    implementation 'androidx.media3:media3-exoplayer-hls:1.5.1'
+    implementation 'androidx.media3:media3-exoplayer-dash:1.5.1'
+    implementation 'androidx.media3:media3-ui:1.5.1'
+}

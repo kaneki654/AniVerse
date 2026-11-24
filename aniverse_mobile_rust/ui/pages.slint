@@ -1,0 +1,1140 @@
+// Pages pushed over the tabs: Settings, Account, History, Genres and a
+// genre's shows (lib/ui_manga/screens/settings_screen.dart, account_screen.dart,
+// history_screen.dart, genres_screen.dart, genre_results_screen.dart).
+import { Theme, Label, Body, Heading } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Glyph, PanelBox, Press, InkButton, IconButton, Chip, InkBar, Skeleton, Cover, PlayBox, SectionHeader, Logo, Loader, Enso, InkSwitch, ChoiceChip, SettingRow, AppBar, InkField, Scroller, Clamp } from "ink.slint";
+import { PosterCard, AnimeRow } from "cards.slint";
+import { UserAvatar } from "home.slint";
+import { Store, Prefs, Actions, Resume, Badge, GenreTile } from "store.slint";
+
+// --- settings -------------------------------------------------------------
+
+export component SettingsPage inherits Rectangle {
+    VerticalLayout {
+        AppBar {
+            title: "SETTINGS";
+            back: true;
+            back-clicked => { Actions.back(); }
+        }
+        Scroller {
+            vertical-stretch: 1;
+            pad-top: 8px;
+            pad-bottom: 32px + Theme.safe-bottom;
+            gap: 12px;
+            SectionHeader { title: "SERVER"; gap-below: 2px; }
+            SettingRow {
+                title: "SERVER ADDRESS";
+                text: Prefs.host;
+                tappable: true;
+                clicked => { Actions.edit-server(); }
+                Glyph {
+                    icon: Icons.chevron;
+                    scale: 1.6;
+                    tint: Theme.gray;
+                }
+            }
+            Rectangle { height: 0px; }
+            SectionHeader { title: "LOOK"; gap-below: 2px; }
+            SettingRow {
+                title: "APP LOOK";
+                text: "Manga: ink, paper and panels. Pixel: the pixel-art look, with its palettes.";
+                ChoiceChip {
+                    label: Prefs.look;
+                    clicked => { Actions.choose-pref("look"); }
+                }
+            }
+            if !Theme.manga: SettingRow {
+                title: "PALETTE";
+                text: "The pixel look's colours.";
+                ChoiceChip {
+                    label: Prefs.palette;
+                    clicked => { Actions.choose-pref("theme"); }
+                }
+            }
+            SettingRow {
+                title: "EFFECTS";
+                text: "The animation in the background, on taps and on buttons. Lite saves battery; Off keeps the screens still.";
+                ChoiceChip {
+                    label: Prefs.effects;
+                    clicked => { Actions.choose-pref("effects"); }
+                }
+            }
+            SettingRow {
+                title: "INTRO ANIMATION";
+                text: "The manga intro when the app opens: panels inking in, the logo landing. Tap it to skip.";
+                InkSwitch {
+                    label: "Intro animation";
+                    on: Prefs.intro;
+                    toggled => { Actions.toggle-pref("intro"); }
+                }
+            }
+            HorizontalLayout {
+                alignment: start;
+                InkButton {
+                    label: "REPLAY INTRO";
+                    icon: Icons.play;
+                    kind: "paper";
+                    size: 8;
+                    clicked => { Actions.replay-intro(); }
+                }
+            }
+            Rectangle { height: 10px; }
+            SectionHeader { title: "SOUND"; gap-below: 2px; }
+            SettingRow {
+                title: "SOUND EFFECTS";
+                text: "Paper, ink and impact sounds: taps, page turns, hits and achievements.";
+                InkSwitch {
+                    label: "Sound effects";
+                    on: Prefs.sfx;
+                    toggled => { Actions.toggle-pref("sfx"); }
+                }
+            }
+            SettingRow {
+                title: "EFFECTS VOLUME";
+                text: "How loud the sound effects are.";
+                ChoiceChip {
+                    label: Prefs.volume;
+                    clicked => { Actions.choose-pref("volume"); }
+                }
+            }
+            Rectangle { height: 0px; }
+            SectionHeader { title: "WATCHING"; gap-below: 2px; }
+            SettingRow {
+                title: "DATA SAVER";
+                text: "Always play and download the lowest quality.";
+                InkSwitch {
+                    label: "Data saver";
+                    on: Prefs.data-saver;
+                    toggled => { Actions.toggle-pref("dataSaver"); }
+                }
+            }
+            if Prefs.pip-supported: SettingRow {
+                title: "PICTURE IN PICTURE";
+                text: "Leaving the app while a video plays shrinks it into a floating window.";
+                InkSwitch {
+                    label: "Picture in picture";
+                    on: Prefs.pip;
+                    toggled => { Actions.toggle-pref("pipAuto"); }
+                }
+            }
+            SettingRow {
+                title: "BACKGROUND AUDIO";
+                text: "Keep the sound playing with the screen off or the app in the background.";
+                InkSwitch {
+                    label: "Background audio";
+                    on: Prefs.bg-audio;
+                    toggled => { Actions.toggle-pref("bgAudio"); }
+                }
+            }
+            SettingRow {
+                title: "SKIP LENGTH";
+                text: "How far the skip buttons, a double-tap and the remote jump.";
+                ChoiceChip {
+                    label: Prefs.seek;
+                    clicked => { Actions.choose-pref("seekStep"); }
+                }
+            }
+            SettingRow {
+                title: "SKIP RECAPS";
+                text: "Jump past the \"previously on\" at the start of an episode by itself, when it is known.";
+                InkSwitch {
+                    label: "Skip recaps";
+                    on: Prefs.skip-recap;
+                    toggled => { Actions.toggle-pref("skipRecap"); }
+                }
+            }
+            SettingRow {
+                title: "SUBTITLE COLOUR";
+                text: "The colour subtitles are drawn in.";
+                ChoiceChip {
+                    label: Prefs.sub-color;
+                    clicked => { Actions.choose-pref("subColor"); }
+                }
+            }
+            SettingRow {
+                title: "SUBTITLE SIZE";
+                text: "How big subtitles are drawn.";
+                ChoiceChip {
+                    label: Prefs.sub-size;
+                    clicked => { Actions.choose-pref("subSize"); }
+                }
+            }
+            SettingRow {
+                title: "SUBTITLE BACKGROUND";
+                text: "A dark box behind subtitles, for bright scenes.";
+                InkSwitch {
+                    label: "Subtitle background";
+                    on: Prefs.sub-bg;
+                    toggled => { Actions.toggle-pref("subBg"); }
+                }
+            }
+            SettingRow {
+                title: "SUBTITLE LANGUAGE";
+                text: "Used when a stream has more than one.";
+                ChoiceChip {
+                    label: Prefs.sub-lang;
+                    clicked => { Actions.choose-pref("subLang"); }
+                }
+            }
+            Rectangle { height: 0px; }
+            SectionHeader { title: "DOWNLOADS"; gap-below: 2px; }
+            SettingRow {
+                title: "WI-FI ONLY";
+                text: "Wait for Wi-Fi before downloading, so it never uses mobile data.";
+                InkSwitch {
+                    label: "Wi-Fi only";
+                    on: Prefs.wifi-only;
+                    toggled => { Actions.toggle-pref("wifiOnly"); }
+                }
+            }
+            SettingRow {
+                title: "STORAGE LIMIT";
+                text: "The most saved episodes may take up.";
+                ChoiceChip {
+                    label: Prefs.storage;
+                    clicked => { Actions.choose-pref("downloadLimitGb"); }
+                }
+            }
+            SettingRow {
+                title: "SMART DOWNLOADS";
+                text: "The next episode of each show on My List downloads by itself once it airs.";
+                InkSwitch {
+                    label: "Smart downloads";
+                    on: Prefs.smart-downloads;
+                    toggled => { Actions.toggle-pref("smartDownloads"); }
+                }
+            }
+            SettingRow {
+                title: "DELETE WHEN WATCHED";
+                text: "Remove an episode's saved copy once you've watched it to the end.";
+                InkSwitch {
+                    label: "Delete when watched";
+                    on: Prefs.auto-delete;
+                    toggled => { Actions.toggle-pref("autoDeleteWatched"); }
+                }
+            }
+            Rectangle { height: 0px; }
+            SectionHeader { title: "ALERTS"; gap-below: 2px; }
+            SettingRow {
+                title: "NEW-EPISODE ALERTS";
+                text: "A notification when a show on My List airs a new episode, even with the app closed.";
+                InkSwitch {
+                    label: "New-episode alerts";
+                    on: Prefs.alerts;
+                    toggled => { Actions.toggle-pref("alerts"); }
+                }
+            }
+            if Prefs.alerts: SettingRow {
+                title: "QUIET HOURS";
+                text: "No alerts at night; they arrive when quiet hours end.";
+                ChoiceChip {
+                    label: Prefs.quiet;
+                    clicked => { Actions.choose-pref("quietFrom"); }
+                }
+            }
+            Rectangle { height: 0px; }
+            SectionHeader { title: "ACCESSIBILITY"; gap-below: 2px; }
+            SettingRow {
+                title: "TEXT SIZE";
+                text: "Make the text bigger everywhere in the app.";
+                ChoiceChip {
+                    label: Prefs.text-size;
+                    clicked => { Actions.choose-pref("textScale"); }
+                }
+            }
+            SettingRow {
+                title: "HIGH CONTRAST";
+                text: "Brighter text and borders, and calmer backgrounds, on any palette.";
+                InkSwitch {
+                    label: "High contrast";
+                    on: Prefs.high-contrast;
+                    toggled => { Actions.toggle-pref("highContrast"); }
+                }
+            }
+            Rectangle { height: 16px; }
+            Label {
+                text: Prefs.version;
+                size: 6;
+                color: Theme.gray-light;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}
+
+// --- account --------------------------------------------------------------
+
+component Tile {
+    in property <string> icon;
+    in property <string> title;
+    in property <string> subtitle;
+    in property <bool> danger: false;
+    in property <bool> enabled: true;
+    callback clicked();
+    min-height: panel.min-height;
+    preferred-height: panel.preferred-height;
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+    panel := PanelBox {
+        width: root.width;
+        height: root.height;
+        fill: Theme.panel;
+        line: root.danger ? Theme.red-dark : Theme.line;
+        pressed: touch.pressed;
+        pad-left: 14px;
+        pad-right: 12px;
+        pad-top: 14px;
+        pad-bottom: 14px;
+        HorizontalLayout {
+            spacing: 16px;
+            VerticalLayout {
+                alignment: center;
+                Glyph {
+                    icon: root.icon;
+                    scale: 2.2;
+                    tint: root.danger ? Theme.red-light : Theme.ink;
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 4px;
+                Label {
+                    text: root.title;
+                    size: 10;
+                    color: root.danger ? Theme.red-light : Theme.ink;
+                }
+                if root.subtitle != "": Body {
+                    text: root.subtitle;
+                    size: 13;
+                    color: Theme.gray;
+                }
+            }
+            if !root.danger: VerticalLayout {
+                alignment: center;
+                Glyph {
+                    icon: Icons.chevron;
+                    scale: 1.6;
+                    tint: Theme.gray-light;
+                }
+            }
+        }
+    }
+}
+
+component Stat {
+    in property <string> value;
+    in property <string> label;
+    horizontal-stretch: 1;
+    min-height: panel.min-height;
+    preferred-height: panel.preferred-height;
+    panel := PanelBox {
+        width: root.width;
+        height: root.height;
+        pad-left: 8px;
+        pad-right: 6px;
+        pad-top: 8px;
+        pad-bottom: 6px;
+        spacing: 4px;
+        Label {
+            text: root.value;
+            size: 11;
+        }
+        Label {
+            text: root.label;
+            size: 5;
+            color: Theme.gray;
+            overflow: elide;
+        }
+    }
+}
+
+// Level card, stats and badges, from watch history (it counts signed out too).
+component ProgressCard {
+    property <length> cell-w: (self.width - 16px) / 3;
+    property <length> cell-h: self.cell-w / 0.82;
+    min-height: col.min-height;
+    preferred-height: col.preferred-height;
+    col := VerticalLayout {
+        PanelBox {
+            pad: 14px;
+            HorizontalLayout {
+                spacing: 14px;
+                VerticalLayout {
+                    alignment: center;
+                    PanelBox {
+                        width: 64px + 9px;
+                        height: 64px + 9px;
+                        fill: Theme.red;
+                        line: Store.frame-color;
+                        border: 4px;
+                        shadow: 3px;
+                        Heading {
+                            text: Store.level-initial;
+                            size: 30;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 6px;
+                    Label {
+                        text: Store.level-line;
+                        size: 9;
+                        color: Theme.red;
+                    }
+                    InkBar {
+                        height: 12px;
+                        fraction: Store.level-progress;
+                    }
+                    Label {
+                        text: Store.xp-line;
+                        size: 6;
+                        color: Theme.gray;
+                    }
+                }
+            }
+        }
+        Rectangle { height: 10px; }
+        HorizontalLayout {
+            spacing: 8px;
+            Stat { value: Store.stat-episodes; label: "EPISODES"; }
+            Stat { value: Store.stat-anime; label: "ANIME"; }
+            Stat { value: Store.stat-streak; label: "DAY STREAK"; }
+            Stat { value: Store.stat-hours; label: "WATCHED"; }
+        }
+        Rectangle { height: 10px; }
+        HorizontalLayout {
+            alignment: start;
+            InkButton {
+                label: "SHARE CARD";
+                icon: Icons.trophy;
+                kind: "paper";
+                size: 7;
+                clicked => { Actions.share-card(); }
+            }
+        }
+        Rectangle { height: 18px; }
+        SectionHeader { title: Store.badges-title; }
+        Rectangle {
+            height: ceil(Store.badges.length / 3) * (root.cell-h + 8px) - 8px;
+            for b[i] in Store.badges: Rectangle {
+                x: mod(i, 3) * (root.cell-w + 8px);
+                y: floor(i / 3) * (root.cell-h + 8px);
+                width: root.cell-w;
+                height: root.cell-h;
+                opacity: b.got ? 1 : 0.35;
+                PanelBox {
+                    line: b.got ? Theme.red : Theme.line;
+                    pad-left: 6px;
+                    pad-right: 6px;
+                    pad-top: 10px;
+                    pad-bottom: 6px;
+                    HorizontalLayout {
+                        alignment: center;
+                        Glyph {
+                            icon: b.icon;
+                            scale: 2.6;
+                            tint: b.got ? Theme.red : Theme.gray;
+                        }
+                    }
+                    Rectangle { height: 8px; }
+                    Label {
+                        text: b.name;
+                        size: 5;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                    Rectangle { height: 4px; }
+                    Clamp {
+                        text: b.text;
+                        lines: 3;
+                        size: Theme.text(10);
+                        tint: Theme.gray;
+                        align: center;
+                        vertical-stretch: 1;
+                    }
+                }
+            }
+        }
+    }
+}
+
+component TrackingRow {
+    in property <string> title;
+    in property <string> text;
+    in property <string> action;
+    callback acted();
+    SettingRow {
+        title: root.title;
+        text: root.text;
+        if root.action != "": InkButton {
+            label: root.action;
+            kind: root.action == "DISCONNECT" ? "paper" : "red";
+            size: 7;
+            clicked => { root.acted(); }
+        }
+    }
+}
+
+export component AccountPage inherits Rectangle {
+    VerticalLayout {
+        AppBar {
+            title: "ACCOUNT";
+            back: true;
+            back-clicked => { Actions.back(); }
+        }
+        // --- signed in
+        if Store.signed-in: Scroller {
+            vertical-stretch: 1;
+            pad-left: 20px;
+            pad-right: 20px;
+            pad-top: 24px;
+            pad-bottom: 24px + Theme.safe-bottom;
+            HorizontalLayout {
+                alignment: center;
+                UserAvatar { size: 92px; }
+            }
+            Rectangle { height: 18px; }
+            Heading {
+                text: Store.user-name;
+                size: 22;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            if Store.account-handle != "": Rectangle { height: 6px; }
+            if Store.account-handle != "": Body {
+                text: Store.account-handle;
+                size: 15;
+                color: Theme.gray;
+                horizontal-alignment: center;
+            }
+            Rectangle { height: 12px; }
+            HorizontalLayout {
+                alignment: center;
+                Chip {
+                    text: Store.account-provider;
+                    fill: Theme.panel-high;
+                }
+            }
+            Rectangle { height: 26px; }
+            ProgressCard { }
+            Rectangle { height: 18px; }
+            SectionHeader { title: "TRACKING"; }
+            TrackingRow {
+                title: "ANILIST";
+                text: Store.anilist-text;
+                action: Store.anilist-action;
+                acted => { Actions.tracking("anilist"); }
+            }
+            Rectangle { height: 12px; }
+            TrackingRow {
+                title: "MYANIMELIST";
+                text: Store.mal-text;
+                action: Store.mal-action;
+                acted => { Actions.tracking("mal"); }
+            }
+            Rectangle { height: 30px; }
+            Tile {
+                icon: Icons.gear;
+                title: "SETTINGS";
+                subtitle: "Palette, sound, subtitles, alerts";
+                clicked => { Actions.open-page("settings"); }
+            }
+            Rectangle { height: 12px; }
+            Tile {
+                icon: Icons.clock;
+                title: "WATCH HISTORY";
+                subtitle: Store.history-line;
+                clicked => { Actions.open-page("history"); }
+            }
+            Rectangle { height: 12px; }
+            Tile {
+                icon: Icons.logout;
+                title: Store.signing-out ? "SIGNING OUT..." : "SIGN OUT";
+                danger: true;
+                enabled: !Store.signing-out;
+                clicked => { Actions.sign-out(); }
+            }
+        }
+        // --- signed out
+        if !Store.signed-in: Scroller {
+            vertical-stretch: 1;
+            pad-left: 22px;
+            pad-right: 22px;
+            pad-top: 18px;
+            pad-bottom: 32px + Theme.safe-bottom;
+            HorizontalLayout {
+                alignment: center;
+                Logo { font-size: 18; }
+            }
+            Rectangle { height: 30px; }
+            Body {
+                text: "Sign in to keep your watch history on every device.";
+                size: 14;
+                color: Theme.gray;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            Rectangle { height: 22px; }
+            InkButton {
+                label: "CONTINUE WITH GOOGLE";
+                kind: "ink";
+                expand: true;
+                size: 9;
+                leading: "G";
+                leading-color: Store.google-ready ? Theme.google-blue : Theme.gray;
+                enabled: !Store.auth-busy && Store.google-ready;
+                clicked => { Actions.google(); }
+            }
+            if Store.auth-config-known && !Store.google-ready: Rectangle { height: 8px; }
+            if Store.auth-config-known && !Store.google-ready: Body {
+                text: "Google sign-in is not set up on this server yet.";
+                size: 13;
+                color: Theme.gray-light;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            Rectangle { height: 24px; }
+            HorizontalLayout {
+                spacing: 10px;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    Rectangle {
+                        height: 2px;
+                        background: Theme.panel-high;
+                    }
+                }
+                Label {
+                    text: "OR USE A USERNAME";
+                    size: 7;
+                    color: Theme.gray-light;
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    Rectangle {
+                        height: 2px;
+                        background: Theme.panel-high;
+                    }
+                }
+            }
+            Rectangle { height: 20px; }
+            HorizontalLayout {
+                spacing: 10px;
+                InkButton {
+                    label: "SIGN IN";
+                    kind: Store.creating ? "paper" : "red";
+                    expand: true;
+                    size: 8;
+                    enabled: !Store.auth-busy;
+                    clicked => { Actions.auth-mode(false); }
+                }
+                InkButton {
+                    label: "CREATE ACCOUNT";
+                    kind: Store.creating ? "red" : "paper";
+                    expand: true;
+                    size: 8;
+                    enabled: !Store.auth-busy;
+                    clicked => { Actions.auth-mode(true); }
+                }
+            }
+            Rectangle { height: 20px; }
+            InkField {
+                label: "Username";
+                icon: Icons.user;
+                enabled: !Store.auth-busy;
+                text <=> Store.username;
+            }
+            Rectangle { height: 14px; }
+            InkField {
+                label: "Password";
+                icon: Icons.lock;
+                secret: Store.hide-password;
+                enabled: !Store.auth-busy;
+                text <=> Store.password;
+                suffix-icon: Store.hide-password ? Icons.eye : Icons.eye-off;
+                suffix-tooltip: Store.hide-password ? "Show password" : "Hide password";
+                suffix-clicked => { Store.hide-password = !Store.hide-password; }
+                accepted => {
+                    if !Store.creating { Actions.auth-submit(); }
+                }
+            }
+            if Store.creating: Rectangle { height: 14px; }
+            if Store.creating: InkField {
+                label: "Confirm password";
+                icon: Icons.lock;
+                secret: Store.hide-password;
+                enabled: !Store.auth-busy;
+                text <=> Store.confirm;
+                accepted => { Actions.auth-submit(); }
+            }
+            if Store.auth-error != "": Rectangle { height: 16px; }
+            if Store.auth-error != "": PanelBox {
+                fill: Theme.red-deep;
+                line: Theme.red;
+                shadow: 2px;
+                pad: 10px;
+                HorizontalLayout {
+                    spacing: 10px;
+                    VerticalLayout {
+                        alignment: start;
+                        Glyph {
+                            icon: Icons.skull-small;
+                            scale: 2;
+                            tint: Theme.white;
+                        }
+                    }
+                    Body {
+                        horizontal-stretch: 1;
+                        text: Store.auth-error;
+                        size: 14;
+                        color: Theme.white;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+            Rectangle { height: 22px; }
+            InkButton {
+                label: Store.creating ? "CREATE ACCOUNT" : "SIGN IN";
+                expand: true;
+                busy: Store.auth-busy;
+                clicked => { Actions.auth-submit(); }
+            }
+            if Store.creating: Rectangle { height: 14px; }
+            if Store.creating: Body {
+                text: "There's no email and no password reset, so pick a password you'll remember.";
+                size: 13;
+                color: Theme.gray-light;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+            Rectangle { height: 34px; }
+            ProgressCard { }
+        }
+    }
+}
+
+// --- history ----------------------------------------------------------------
+
+// One anime's latest episode. Swipe left to remove it; hold for its page.
+component HistoryTile {
+    in property <Resume> item;
+    callback play();
+    callback remove();
+    callback details();
+    height: 108px;
+    property <length> dx: swipe.swiping ? min(0px, swipe.current-position.x - swipe.pressed-position.x) : 0px;
+    property <bool> held: false;
+    property <bool> long-fired: false;
+    if root.dx < 0: PanelBox {
+        width: root.width;
+        height: root.height;
+        fill: Theme.red-dark;
+        shadow: 0px;
+        Rectangle {
+            Glyph {
+                x: parent.width - self.width - 20px;
+                y: (parent.height - self.height) / 2;
+                icon: Icons.trash;
+                scale: 2.4;
+            }
+        }
+    }
+    Timer {
+        interval: 500ms;
+        running: root.held;
+        triggered => {
+            root.held = false;
+            root.long-fired = true;
+            root.details();
+        }
+    }
+    swipe := SwipeGestureHandler {
+        handle-swipe-left: true;
+        swiped => {
+            if self.current-position.x - self.pressed-position.x < -root.width * 0.35 { root.remove(); }
+        }
+        Rectangle {
+            x: root.dx + (touch.pressed ? 2px : 0px);
+            y: touch.pressed ? 2px : 0px;
+            width: root.width;
+            height: root.height;
+            touch := TouchArea {
+                pointer-event(e) => {
+                    if e.kind == PointerEventKind.down { root.long-fired = false; root.held = true; }
+                    if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel { root.held = false; }
+                }
+                moved => {
+                    if abs(self.mouse-x - self.pressed-x) > 8px || abs(self.mouse-y - self.pressed-y) > 8px { root.held = false; }
+                }
+                clicked => {
+                    if !root.long-fired { root.play(); }
+                }
+            }
+            PanelBox {
+                width: parent.width;
+                height: parent.height;
+                fill: Theme.panel;
+                HorizontalLayout {
+                    Rectangle {
+                        width: 70px;
+                        Cover {
+                            source: root.item.cover;
+                            has-url: root.item.cover-url != "";
+                        }
+                        if root.item.finished: Glyph {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            icon: Icons.skull-small;
+                            scale: 3;
+                        }
+                    }
+                    Rectangle { width: 12px; }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: center;
+                        spacing: 6px;
+                        Clamp {
+                            text: root.item.title;
+                            lines: 2;
+                            size: Theme.text(15);
+                        }
+                        HorizontalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            Chip { text: "EP \{root.item.episode}"; }
+                            Label {
+                                text: root.item.watched;
+                                size: 7;
+                                color: Theme.gray;
+                                overflow: elide;
+                            }
+                        }
+                        HorizontalLayout {
+                            padding-right: 4px;
+                            InkBar {
+                                height: 7px;
+                                fraction: root.item.fraction;
+                            }
+                        }
+                        Body {
+                            text: root.item.ago;
+                            size: 12;
+                            color: Theme.gray-light;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        PlayBox { scale: 1.8; }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component HistoryPage inherits Rectangle {
+    VerticalLayout {
+        AppBar {
+            title: "HISTORY";
+            back: true;
+            back-clicked => { Actions.back(); }
+            if Store.signed-in && Store.history-syncing: Rectangle {
+                width: 48px;
+                Enso {
+                    x: 15px;
+                    y: 15px;
+                    width: 18px;
+                    height: 18px;
+                    tint: Theme.gray;
+                }
+            }
+            if Store.signed-in && !Store.history-syncing: IconButton {
+                icon: Icons.refresh;
+                tint: Theme.gray;
+                tooltip: "Sync";
+                clicked => { Actions.sync-history(); }
+            }
+            if Store.history.length > 0: IconButton {
+                icon: Icons.trash;
+                tint: Theme.gray;
+                tooltip: "Clear history";
+                clicked => { Actions.clear-history(); }
+            }
+            Rectangle { width: 4px; }
+        }
+        if Store.history.length == 0: Rectangle {
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: center;
+                padding: 32px;
+                spacing: 0px;
+                HorizontalLayout {
+                    alignment: center;
+                    Glyph {
+                        icon: Icons.skull;
+                        scale: 5;
+                    }
+                }
+                Rectangle { height: 22px; }
+                Label {
+                    text: "NOTHING WATCHED YET";
+                    size: 11;
+                    horizontal-alignment: center;
+                }
+                Rectangle { height: 10px; }
+                Body {
+                    text: "Episodes you watch show up here, and you can pick up right where you stopped.";
+                    size: 14;
+                    color: Theme.gray;
+                    horizontal-alignment: center;
+                    wrap: word-wrap;
+                }
+            }
+        }
+        if Store.history.length > 0: Scroller {
+            vertical-stretch: 1;
+            pad-top: 6px;
+            pad-bottom: 24px + Theme.safe-bottom;
+            gap: 12px;
+            if Store.signed-in: Body {
+                text: "Synced to \{Store.user-name}. Swipe left to remove, long-press for details.";
+                size: 13;
+                color: Theme.gray-light;
+                wrap: word-wrap;
+            }
+            if !Store.signed-in: Press {
+                clicked => { Actions.open-page("account"); }
+                PanelBox {
+                    fill: Theme.panel-high;
+                    line: Theme.red-dark;
+                    pad: 12px;
+                    HorizontalLayout {
+                        spacing: 12px;
+                        VerticalLayout {
+                            alignment: center;
+                            Glyph {
+                                icon: Icons.floppy;
+                                scale: 2.2;
+                                tint: Theme.red-light;
+                            }
+                        }
+                        Body {
+                            horizontal-stretch: 1;
+                            text: "History is saved on this phone only. Sign in to keep it across devices.";
+                            size: 14;
+                            wrap: word-wrap;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Glyph {
+                                icon: Icons.chevron;
+                                scale: 1.6;
+                                tint: Theme.gray-light;
+                            }
+                        }
+                    }
+                }
+            }
+            for h in Store.history: HistoryTile {
+                item: h;
+                play => { Actions.open-resume(h.id); }
+                remove => { Actions.remove-history(h.id); }
+                details => { Actions.history-details(h.id); }
+            }
+        }
+    }
+}
+
+// --- genres -----------------------------------------------------------------
+
+component GenreCard {
+    in property <GenreTile> tile;
+    callback clicked();
+    Press {
+        width: root.width;
+        height: root.height;
+        clicked => { root.clicked(); }
+        PanelBox {
+            fill: root.tile.fill;
+            bevel: root.tile.art-url == "";
+            Rectangle {
+                clip: true;
+                if root.tile.art-url != "": Cover {
+                    source: root.tile.art;
+                }
+                if root.tile.art-url == "" && root.tile.loading: Skeleton { }
+                // Hard bands, darkest at the bottom where the label sits.
+                if root.tile.art-url != "": Rectangle {
+                    background: @linear-gradient(180deg, #33050305 0%, #33050305 30%, #8C050305 30%, #8C050305 58%, #E6050305 58%, #E6050305 100%);
+                }
+                VerticalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    padding-top: 8px;
+                    padding-bottom: 9px;
+                    alignment: end;
+                    spacing: 4px;
+                    Label {
+                        text: root.tile.name;
+                        size: 9;
+                        color: Theme.white;
+                        stroke: Theme.ink;
+                        stroke-width: 1.2px;
+                        stroke-style: outside;
+                    }
+                    if root.tile.title != "": HorizontalLayout {
+                        spacing: 3px;
+                        VerticalLayout {
+                            alignment: center;
+                            Glyph {
+                                icon: Icons.star;
+                                scale: 0.9;
+                                tint: Theme.red;
+                            }
+                        }
+                        if root.tile.score != "": Label {
+                            text: root.tile.score;
+                            size: 6;
+                            color: Theme.red;
+                        }
+                        Body {
+                            horizontal-stretch: 1;
+                            text: root.tile.title;
+                            size: 11;
+                            color: Theme.white;
+                            stroke: Theme.ink;
+                            stroke-width: 1px;
+                            stroke-style: outside;
+                            overflow: elide;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component GenresPage inherits Rectangle {
+    property <length> cell-w: (self.width - 32px - 14px) / 2;
+    property <length> cell-h: self.cell-w * 9 / 16;
+    VerticalLayout {
+        AppBar {
+            title: "GENRES";
+            back: true;
+            back-clicked => { Actions.back(); }
+        }
+        Flickable {
+            vertical-stretch: 1;
+            viewport-width: self.width;
+            viewport-height: 32px + ceil(Store.genres.length / 2) * (root.cell-h + 14px) - 14px + Theme.safe-bottom;
+            for g[i] in Store.genres: GenreCard {
+                x: 16px + mod(i, 2) * (root.cell-w + 14px);
+                y: 16px + floor(i / 2) * (root.cell-h + 14px);
+                width: root.cell-w;
+                height: root.cell-h;
+                tile: g;
+                clicked => { Actions.open-genre(g.name); }
+            }
+        }
+    }
+}
+
+// A genre's shows, page by page as you reach the bottom: posters or rows.
+export component GenrePage inherits Rectangle {
+    property <length> cell-w: (self.width - 24px - 24px) / 3;
+    property <length> cell-h: self.cell-w / 0.58;
+    VerticalLayout {
+        AppBar {
+            title: Store.genre-name;
+            back: true;
+            title-font: "Press Start 2P";
+            title-color: Theme.red;
+            title-size: 12px;
+            back-clicked => { Actions.back(); }
+            IconButton {
+                icon: Store.genre-list ? Icons.grid : Icons.list;
+                tooltip: Store.genre-list ? "Show as a grid" : "Show as a list";
+                clicked => { Actions.toggle-genre-view(); }
+            }
+            Rectangle { width: 8px; }
+        }
+        if Store.genre-items.length == 0 && Store.genre-loading: Rectangle {
+            vertical-stretch: 1;
+            Loader {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: self.preferred-width;
+                height: self.preferred-height;
+                label: "LOADING";
+            }
+        }
+        if Store.genre-items.length == 0 && !Store.genre-loading: Rectangle {
+            vertical-stretch: 1;
+            Text {
+                text: "NOTHING FOUND";
+                font-family: "Press Start 2P";
+                font-size: 10px;
+                color: Theme.gray-light;
+            }
+        }
+        if Store.genre-items.length > 0 && Store.genre-list: Flickable {
+            vertical-stretch: 1;
+            viewport-width: self.width;
+            viewport-height: list-col.preferred-height;
+            changed viewport-y => {
+                if -self.viewport-y > self.viewport-height - self.height - 600px { Actions.genre-more(); }
+            }
+            list-col := VerticalLayout {
+                width: parent.width;
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 12px;
+                padding-bottom: 24px + Theme.safe-bottom;
+                spacing: 12px;
+                for a in Store.genre-items: AnimeRow {
+                    anime: a;
+                    clicked => { Actions.open-anime(a.id); }
+                }
+                if Store.genre-loading: HorizontalLayout {
+                    alignment: center;
+                    Loader { size: 24px; }
+                }
+            }
+        }
+        if Store.genre-items.length > 0 && !Store.genre-list: Flickable {
+            vertical-stretch: 1;
+            viewport-width: self.width;
+            viewport-height: 24px + ceil((Store.genre-items.length + (Store.genre-loading ? 1 : 0)) / 3) * (root.cell-h + 12px) - 12px + Theme.safe-bottom;
+            changed viewport-y => {
+                if -self.viewport-y > self.viewport-height - self.height - 600px { Actions.genre-more(); }
+            }
+            for a[i] in Store.genre-items: PosterCard {
+                x: 12px + mod(i, 3) * (root.cell-w + 12px);
+                y: 12px + floor(i / 3) * (root.cell-h + 12px);
+                width: root.cell-w;
+                height: root.cell-h;
+                anime: a;
+                clicked => { Actions.open-anime(a.id); }
+            }
+            if Store.genre-loading: Loader {
+                x: 12px + mod(Store.genre-items.length, 3) * (root.cell-w + 12px) + (root.cell-w - 36px) / 2;
+                y: 12px + floor(Store.genre-items.length / 3) * (root.cell-h + 12px) + (root.cell-h - 36px) / 2;
+                width: 36px;
+                height: 36px;
+                size: 24px;
+            }
+        }
+    }
+}

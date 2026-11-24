@@ -1,0 +1,461 @@
+// The AniVerse window, after lib/ui_manga/manga_app.dart: five tabs under a
+// paper tab bar (the open one lettered white on a black caption box that
+// slides over), pages turned in over them, and the overlays.
+import { Theme, Label, Body, Heading } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Tex, Lines, Glyph, PanelBox, InkButton, IconButton, Bubble, PaperBackdrop, InkField, Loader, SfxText } from "ink.slint";
+import { Store, Prefs, Actions, Anime, Shelf, Resume, Slide, Episode, Person, Airing, Day, Followed, Saved, GenreTile, Badge, Choice, Filter, ChipRow } from "store.slint";
+import { HomeScreen, DetailPage } from "home.slint";
+import { SearchScreen, AiringScreen, MyListScreen, SavedScreen } from "tabs.slint";
+import { SettingsPage, AccountPage, HistoryPage, GenresPage, GenrePage } from "pages.slint";
+import { Intro } from "intro.slint";
+
+export { Theme, Tex, Lines, Icons, Store, Prefs, Actions, Anime, Shelf, Resume, Slide, Episode, Person, Airing, Day, Followed, Saved, GenreTile, Badge, Choice, Filter, ChipRow }
+
+// The player's page while a stream is being found: black, the ensō round the
+// emblem with what it is doing, or the shock panel when nothing plays. The
+// native player opens over it.
+component PlayerPage inherits Rectangle {
+    background: #000000;
+    TouchArea { }
+    if Store.player-error == "": Loader {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: self.preferred-width;
+        height: self.preferred-height;
+        label: Store.player-status;
+    }
+    if Store.player-error != "": VerticalLayout {
+        x: 24px;
+        width: parent.width - 48px;
+        y: (parent.height - self.preferred-height) / 2;
+        height: self.preferred-height;
+        spacing: 16px;
+        HorizontalLayout {
+            alignment: center;
+            SfxText {
+                text: "ガーン!";
+                size: 40;
+                tint: Theme.white;
+            }
+        }
+        Label {
+            text: Store.player-status;
+            size: 9;
+            color: Theme.white;
+            horizontal-alignment: center;
+        }
+        Body {
+            text: Store.player-error;
+            size: 14;
+            color: #CFC8BC;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            alignment: center;
+            spacing: 12px;
+            InkButton {
+                label: "RETRY";
+                icon: Icons.refresh;
+                size: 8;
+                clicked => { Actions.player-retry(); }
+            }
+            InkButton {
+                label: "BACK";
+                kind: "paper";
+                size: 8;
+                clicked => { Actions.back(); }
+            }
+        }
+    }
+    IconButton {
+        x: 8px;
+        y: Theme.safe-top + 8px;
+        icon: Icons.back;
+        framed: true;
+        scale: 2;
+        tooltip: "Back";
+        clicked => { Actions.back(); }
+    }
+}
+
+// A page turned in from the right (or, going back, slid in from the left),
+// with a line of ink on its leading edge while it moves.
+component PageFrame inherits Rectangle {
+    property <float> pos: Theme.fx == 0 ? 0 : (Store.page-back ? -0.3 : 1);
+    property <bool> closing: Store.closing;
+    changed closing => {
+        if self.closing { self.pos = 1; }
+    }
+    init => { self.pos = 0; }
+    animate pos { duration: 330ms; easing: cubic-bezier(0.645, 0.045, 0.355, 1); }
+    x: self.pos * self.width;
+    PaperBackdrop {
+        width: root.width;
+        height: root.height;
+    }
+    @children
+    if root.pos > 0.001: Rectangle {
+        x: -4px;
+        width: 4px;
+        background: Theme.line;
+    }
+}
+
+export component MainWindow inherits Window {
+    title: "AniVerse";
+    preferred-width: 411px;
+    preferred-height: 891px;
+    min-width: 320px;
+    min-height: 480px;
+    background: Theme.paper;
+    default-font-family: Theme.body-font;
+
+    property <length> bar-h: 64px + Theme.safe-bottom + 3px;
+    init => { Theme.win-w = self.width; }
+    changed width => { Theme.win-w = self.width; }
+
+    // MangaClock: limited animation, a dozen frames a second.
+    Timer {
+        interval: 83ms;
+        running: Theme.fx > 0;
+        triggered => { Theme.frame = mod(Theme.frame + 1, 7200); }
+    }
+
+    keys := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Escape {
+                Actions.back();
+                return accept;
+            }
+            return reject;
+        }
+
+        PaperBackdrop {
+            width: root.width;
+            height: root.height - root.bar-h;
+        }
+
+        // The tabs stay built underneath, as in an IndexedStack.
+        HomeScreen {
+            width: root.width;
+            height: root.height - root.bar-h;
+            visible: Store.tab == 0;
+        }
+        SearchScreen {
+            width: root.width;
+            height: root.height - root.bar-h;
+            visible: Store.tab == 1;
+        }
+        AiringScreen {
+            width: root.width;
+            height: root.height - root.bar-h;
+            visible: Store.tab == 2;
+        }
+        MyListScreen {
+            width: root.width;
+            height: root.height - root.bar-h;
+            visible: Store.tab == 3;
+        }
+        SavedScreen {
+            width: root.width;
+            height: root.height - root.bar-h;
+            visible: Store.tab == 4;
+        }
+
+        // The tab bar: a paper strip ruled off in ink.
+        tabbar := Rectangle {
+            y: root.height - root.bar-h;
+            height: root.bar-h;
+            background: Theme.panel;
+            property <length> w: self.width / 5;
+            Rectangle {
+                y: 0;
+                height: 3px;
+                background: Theme.line;
+            }
+            Path {
+                x: tabbar.w * Store.tab + 6px;
+                y: 10px;
+                width: tabbar.w - 12px;
+                height: 50px;
+                viewbox-width: self.width / 1px;
+                viewbox-height: 50;
+                fill: Theme.caption;
+                commands: "M 3 0 L \{self.width / 1px + 3} 0 L \{self.width / 1px - 3} 50 L -3 50 Z";
+                animate x { duration: Theme.fx == 0 ? 0ms : 240ms; easing: cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+            }
+            for item[i] in [
+                { icon: Icons.home, label: "HOME" },
+                { icon: Icons.search, label: "SEARCH" },
+                { icon: Icons.calendar, label: "AIRING" },
+                { icon: Icons.bookmark, label: "MY LIST" },
+                { icon: Icons.download, label: "SAVED" },
+            ]: Rectangle {
+                x: i * tabbar.w;
+                y: 3px;
+                width: tabbar.w;
+                height: 64px;
+                accessible-role: tab;
+                accessible-label: item.label;
+                TouchArea {
+                    clicked => { Actions.select-tab(i); }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 3px;
+                    HorizontalLayout {
+                        alignment: center;
+                        Rectangle {
+                            width: 23.75px;
+                            height: 23.75px;
+                            Glyph {
+                                icon: item.icon;
+                                size: 23.75px;
+                                tint: Store.tab == i ? Theme.white : Theme.gray;
+                            }
+                            if i == 3 && Store.fresh-count > 0: Rectangle {
+                                x: parent.width - 4px;
+                                y: -8px;
+                                width: badge.preferred-width + 10px;
+                                height: badge.preferred-height + 2px;
+                                background: Theme.red;
+                                border-width: 1.5px;
+                                border-color: Theme.line;
+                                badge := Label {
+                                    x: 5px;
+                                    y: 1px;
+                                    text: "\{Store.fresh-count}";
+                                    size: 6;
+                                    color: Theme.white;
+                                }
+                            }
+                        }
+                    }
+                    Label {
+                        text: item.label;
+                        size: 6;
+                        color: Store.tab == i ? Theme.white : Theme.gray;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Pages turned in over the tabs. Two copies of each, so turning to the
+        // same kind of page (one anime to a related one) builds a fresh one.
+        if Store.page == "detail" && mod(Store.page-serial, 2) == 0: PageFrame {
+            DetailPage { }
+        }
+        if Store.page == "detail" && mod(Store.page-serial, 2) == 1: PageFrame {
+            DetailPage { }
+        }
+        if Store.page == "settings": PageFrame {
+            SettingsPage { }
+        }
+        if Store.page == "account": PageFrame {
+            AccountPage { }
+        }
+        if Store.page == "history": PageFrame {
+            HistoryPage { }
+        }
+        if Store.page == "genres": PageFrame {
+            GenresPage { }
+        }
+        if Store.page == "genre" && mod(Store.page-serial, 2) == 0: PageFrame {
+            GenrePage { }
+        }
+        if Store.page == "genre" && mod(Store.page-serial, 2) == 1: PageFrame {
+            GenrePage { }
+        }
+        if Store.page == "player": PlayerPage {
+            width: root.width;
+            height: root.height;
+        }
+
+        // The speech-bubble toast, popping up from the foot of the screen.
+        if Store.toast-visible: Rectangle {
+            property <float> t: 0;
+            init => { self.t = 1; }
+            animate t { duration: Theme.fx == 0 ? 0ms : 420ms; easing: cubic-bezier(0.34, 1.56, 0.64, 1); }
+            x: 16px;
+            width: root.width - 32px;
+            height: bubble.preferred-height;
+            y: root.height - Theme.safe-bottom - 86px - self.height + (1 - self.t) * 24px;
+            opacity: min(1, self.t * 2);
+            TouchArea {
+                clicked => { Actions.toast-tapped(); }
+            }
+            bubble := Bubble {
+                width: parent.width;
+                height: parent.height;
+                tail-x: -0.6;
+                HorizontalLayout {
+                    spacing: 10px;
+                    Body {
+                        horizontal-stretch: 1;
+                        text: Store.toast-text;
+                        size: 15;
+                        wrap: word-wrap;
+                        vertical-alignment: center;
+                    }
+                    if Store.toast-action != "": VerticalLayout {
+                        alignment: center;
+                        InkButton {
+                            label: Store.toast-action;
+                            size: 8;
+                            clicked => { Actions.toast-tapped(); }
+                        }
+                    }
+                }
+            }
+        }
+
+        // A sheet of options, the current one stamped in red.
+        if Store.sheet-open: Rectangle {
+            background: #12101073;
+            TouchArea {
+                clicked => { Actions.sheet-dismiss(); }
+            }
+            sheet := PanelBox {
+                x: 12px;
+                width: root.width - 24px;
+                height: min(self.preferred-height, root.height * 0.7 + 40px);
+                y: root.height - self.height - 12px - Theme.safe-bottom;
+                shadow: 5px;
+                border: 3px;
+                pad-left: 14px;
+                pad-right: 14px;
+                pad-bottom: 8px;
+                TouchArea { }
+                HorizontalLayout {
+                    alignment: start;
+                    Rectangle {
+                        background: Theme.caption;
+                        width: sheet-title.preferred-width + 22px;
+                        height: sheet-title.preferred-height + 12px;
+                        sheet-title := Heading {
+                            x: 10px;
+                            text: Store.sheet-title;
+                            size: 15;
+                            color: Theme.white;
+                        }
+                    }
+                }
+                Rectangle { height: 6px; }
+                Flickable {
+                    preferred-height: options.preferred-height;
+                    viewport-height: options.preferred-height;
+                    options := VerticalLayout {
+                        for o in Store.sheet-options: Rectangle {
+                            height: 46px;
+                            TouchArea {
+                                clicked => { Actions.sheet-pick(o.value); }
+                            }
+                            Rectangle {
+                                y: parent.height - 1.5px;
+                                height: 1.5px;
+                                background: Theme.tone;
+                            }
+                            HorizontalLayout {
+                                padding-left: 6px;
+                                padding-right: 6px;
+                                Label {
+                                    horizontal-stretch: 1;
+                                    text: o.label;
+                                    size: 8.5;
+                                    color: o.value == Store.sheet-current ? Theme.red : Theme.ink;
+                                }
+                                if o.value == Store.sheet-current: VerticalLayout {
+                                    alignment: center;
+                                    Glyph {
+                                        icon: Icons.check;
+                                        scale: 2;
+                                        tint: Theme.red;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // A dialog: a question, an answer field, its buttons.
+        if Store.dialog-open: Rectangle {
+            background: #0000008A;
+            TouchArea {
+                clicked => { Actions.dialog-answer(false, Store.dialog-value); }
+            }
+            PanelBox {
+                width: min(root.width - 80px, 420px);
+                x: (root.width - self.width) / 2;
+                y: (root.height - self.height) / 2 - 40px;
+                height: self.preferred-height;
+                border: 3px;
+                shadow: 0px;
+                pad-left: 24px;
+                pad-right: 24px;
+                pad-top: 24px;
+                pad-bottom: 12px;
+                TouchArea { }
+                Heading {
+                    text: Store.dialog-title;
+                    size: 20;
+                    wrap: word-wrap;
+                }
+                Rectangle { height: 16px; }
+                if Store.dialog-text != "": Body {
+                    text: Store.dialog-text;
+                    size: 15;
+                    color: Theme.gray;
+                    wrap: word-wrap;
+                }
+                if Store.dialog-input: InkField {
+                    hint: Store.dialog-hint;
+                    text <=> Store.dialog-value;
+                    accepted => { Actions.dialog-answer(true, Store.dialog-value); }
+                }
+                Rectangle { height: 20px; }
+                HorizontalLayout {
+                    alignment: end;
+                    spacing: 8px;
+                    Rectangle {
+                        width: cancel.preferred-width + 24px;
+                        height: 40px;
+                        TouchArea {
+                            clicked => { Actions.dialog-answer(false, Store.dialog-value); }
+                        }
+                        cancel := Label {
+                            x: 12px;
+                            height: parent.height;
+                            text: Store.dialog-cancel;
+                            size: 9;
+                            color: Theme.gray;
+                        }
+                    }
+                    Rectangle {
+                        width: ok.preferred-width + 24px;
+                        height: 40px;
+                        TouchArea {
+                            clicked => { Actions.dialog-answer(true, Store.dialog-value); }
+                        }
+                        ok := Label {
+                            x: 12px;
+                            height: parent.height;
+                            text: Store.dialog-ok;
+                            size: 9;
+                            color: Store.dialog-danger ? Theme.red-light : Theme.ink;
+                        }
+                    }
+                }
+            }
+        }
+
+        if Store.intro: Intro {
+            width: root.width;
+            height: root.height;
+        }
+    }
+}

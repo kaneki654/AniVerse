@@ -1,0 +1,1212 @@
+// The manga UI's building blocks, after lib/ui_manga/ink/ink_widgets.dart,
+// lib/ui_manga/manga_theme.dart and lib/ui_manga/widgets/manga_extras.dart.
+import { Theme, Label, Body, Heading } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Actions } from "store.slint";
+
+// Screentone and focus lines, drawn in Rust (textures.rs) at the screen's
+// pixel density so the dots stay crisp; shown at their logical size.
+export global Tex {
+    in-out property <image> paper-top;      // 600 x 140: tone fading out downward
+    in-out property <image> paper-bottom;   // 600 x 110: tone fading in at the foot
+    in-out property <image> cover-foot;     // 600 x 28: ink tone darkening a cover's foot
+    in-out property <image> bevel;          // 200 x 60: tone shading a small panel
+    in-out property <image> tone;           // 420 x 260: flat tone (loading, no art)
+    in-out property <image> bar-tone;       // 600 x 14: the empty part of a bar
+    in-out property <image> hero-ground;    // spotlight panel: tone thickening rightward
+}
+
+// Focus lines (集中線) as vector paths, made in Rust for the size they are
+// drawn at (each with its own viewbox), so they stay sharp and cost no
+// texture memory.
+export global Lines {
+    in-out property <string> hero;          // spotlight panel, behind the title
+    in-out property <length> hero-w: 362px;
+    in-out property <length> hero-h: 221px;
+    in-out property <string> header;        // detail page: the banner's white lines
+    in-out property <length> header-w: 411px;
+    in-out property <length> header-h: 360px;
+    in-out property <string> intro-a;       // the intro's converging lines, 3 drawings
+    in-out property <string> intro-b;
+    in-out property <string> intro-c;
+    in-out property <string> impact;        // the intro's negative frame
+    in-out property <length> screen-w: 411px;
+    in-out property <length> screen-h: 891px;
+}
+
+// InkIcon: a Material glyph in ink. [scale] is the pixel UI's sprite scale.
+export component Glyph inherits Path {
+    in property <string> icon;
+    in property <float> scale: 2;
+    in property <length> size: self.scale * 9.5px;
+    in property <color> tint: Theme.ink;
+    width: self.size;
+    height: self.size;
+    commands: self.icon;
+    fill: self.tint;
+    viewbox-width: 512;
+    viewbox-height: 512;
+}
+
+// PanelBox: white inside a thick ink border with a hard offset shadow, like a
+// cut-out pasted on the page. Held, it drops onto its shadow.
+export component PanelBox {
+    in property <color> fill: Theme.panel;
+    in property <color> line: Theme.line;
+    in property <length> border: 2px;
+    in property <length> shadow: 3px;
+    in property <bool> pressed: false;
+    in property <bool> bevel: false;
+    in property <length> pad: 0px;
+    in property <length> pad-left: self.pad;
+    in property <length> pad-right: self.pad;
+    in property <length> pad-top: self.pad;
+    in property <length> pad-bottom: self.pad;
+    in property <length> spacing: 0px;
+    in property <bool> clip-content: false;
+    property <length> bw: self.border + 0.5px;
+    property <length> off: self.pressed ? self.shadow : 0px;
+    property <length> cast: self.shadow - self.off;
+    min-width: body.min-width;
+    preferred-width: body.preferred-width;
+    min-height: body.min-height;
+    preferred-height: body.preferred-height;
+    face := Rectangle {
+        x: root.off;
+        y: root.off;
+        width: root.width;
+        height: root.height;
+        background: root.fill;
+        border-width: root.bw;
+        border-color: root.line;
+        drop-shadow-offset-x: root.cast;
+        drop-shadow-offset-y: root.cast;
+        drop-shadow-blur: 0px;
+        drop-shadow-color: root.cast > 0 ? Theme.shadow : transparent;
+        if root.bevel && Theme.manga: Rectangle {
+            x: root.bw;
+            y: root.bw;
+            width: parent.width - 2 * root.bw;
+            height: parent.height - 2 * root.bw;
+            clip: true;
+            Image {
+                y: parent.height - min(parent.height, 60px);
+                width: 200px;
+                height: 60px;
+                source: Tex.bevel;
+                image-fit: ImageFit.fill;
+            }
+        }
+    }
+    body := VerticalLayout {
+        x: root.off;
+        y: root.off;
+        width: root.width;
+        height: root.height;
+        padding-left: root.pad-left + root.bw;
+        padding-right: root.pad-right + root.bw;
+        padding-top: root.pad-top + root.bw;
+        padding-bottom: root.pad-bottom + root.bw;
+        spacing: root.spacing;
+        @children
+    }
+}
+
+// InkPress: presses whatever it holds into the page while held.
+export component Press {
+    in property <bool> enabled: true;
+    in property <length> shift: 2px;
+    out property <bool> down: touch.pressed;
+    callback clicked();
+    min-width: body.min-width;
+    preferred-width: body.preferred-width;
+    min-height: body.min-height;
+    preferred-height: body.preferred-height;
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+    body := VerticalLayout {
+        x: touch.pressed ? root.shift : 0px;
+        y: touch.pressed ? root.shift : 0px;
+        width: root.width;
+        height: root.height;
+        @children
+    }
+}
+
+// InkSpinner: a brush circle (ensō) drawing itself round and round.
+export component Enso {
+    in property <color> tint: Theme.ink;
+    property <float> t: 0;
+    property <length> r: min(self.width, self.height) / 2;
+    property <angle> start: self.t * 360deg;
+    property <float> sweep: 216 + 90 * sin(self.t * 360deg);
+    Timer {
+        interval: 33ms;
+        running: Theme.fx > 0 && root.visible;
+        triggered => { root.t = mod(root.t + 0.03, 1.0); }
+    }
+    for i in 28: Rectangle {
+        property <angle> a: root.start + root.sweep * (i / 28) * 1deg;
+        property <length> w: root.r * 0.28 * (1 - i / 28) + root.r * 0.06;
+        x: root.width / 2 + cos(self.a) * (root.r - self.w / 2) - self.w / 2;
+        y: root.height / 2 + sin(self.a) * (root.r - self.w / 2) - self.w / 2;
+        width: self.w;
+        height: self.w;
+        border-radius: self.w / 2;
+        background: root.tint;
+    }
+}
+
+// InkButton: bold condensed lettering in a heavy ink frame. Held, it drops
+// onto its shadow; let go, it lands with a burst of impact strokes.
+export component InkButton {
+    in property <string> label;
+    in property <string> icon;
+    in property <string> kind: "red";
+    in property <float> size: 10;
+    in property <bool> enabled: true;
+    in property <bool> busy: false;
+    in property <bool> expand: false;
+    in property <length> leading-gap: 8px;
+    in property <string> leading;
+    in property <color> leading-color: Theme.gray;
+    callback clicked();
+    property <bool> live: self.enabled && !self.busy;
+    property <bool> dim: !self.enabled && !self.busy;
+    property <color> face: self.dim ? Theme.panel-high : self.kind == "paper" ? Theme.panel : self.kind == "ink" ? Theme.caption : Theme.red;
+    property <color> fg: self.dim ? Theme.gray-light : self.kind == "paper" ? Theme.ink : Theme.white;
+    property <float> burst: 0;
+    horizontal-stretch: self.expand ? 1 : 0;
+    min-width: panel.min-width;
+    preferred-width: panel.preferred-width;
+    min-height: panel.min-height;
+    preferred-height: panel.preferred-height;
+    accessible-role: button;
+    accessible-label: self.label;
+    touch := TouchArea {
+        enabled: root.live;
+        clicked => {
+            Actions.sfx("click");
+            if Theme.fx == 2 { root.burst = 0.001; }
+            root.clicked();
+        }
+    }
+    Timer {
+        interval: 16ms;
+        running: root.burst > 0;
+        triggered => { root.burst = root.burst + 0.062 >= 1 ? 0 : root.burst + 0.062; }
+    }
+    panel := PanelBox {
+        width: root.width;
+        height: root.height;
+        fill: root.face;
+        shadow: 3px;
+        pressed: touch.pressed;
+        pad-left: 14px;
+        pad-right: 14px;
+        pad-top: (8 + root.size * 0.2) * 1px;
+        pad-bottom: (8 + root.size * 0.2) * 1px;
+        HorizontalLayout {
+            alignment: center;
+            spacing: 6px;
+            if root.leading != "": Label {
+                text: root.leading;
+                size: 14;
+                color: root.leading-color;
+            }
+            if root.leading != "": Rectangle { width: root.leading-gap - 6px; }
+            if root.icon != "" && !root.busy: VerticalLayout {
+                alignment: center;
+                Glyph {
+                    icon: root.icon;
+                    size: root.size * 2px;
+                    tint: root.fg;
+                }
+            }
+            if root.busy: VerticalLayout {
+                alignment: center;
+                Enso {
+                    width: root.size * 1.8px;
+                    height: root.size * 1.8px;
+                    tint: root.fg;
+                }
+            }
+            Label {
+                text: root.label;
+                size: root.size;
+                color: root.fg;
+                overflow: elide;
+                horizontal-alignment: center;
+            }
+        }
+    }
+    // Short strokes flying out from the edge as it lands.
+    if root.burst > 0: Path {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        viewbox-width: self.width / 1px;
+        viewbox-height: self.height / 1px;
+        stroke: Theme.ink.with-alpha(1 - root.burst);
+        stroke-width: 2.5px;
+        property <float> w: self.width / 1px;
+        property <float> h: self.height / 1px;
+        property <float> t: root.burst;
+        property <float> d1: 6 + 14 * self.t;
+        property <float> d2: 6 + 14 * self.t + 8 * (1 - self.t) + 2;
+        commands: "M \{self.w / 2 + cos(11.5deg) * (self.w / 2 + self.d1)} \{self.h / 2 + sin(11.5deg) * (self.h / 2 + self.d1)} L \{self.w / 2 + cos(11.5deg) * (self.w / 2 + self.d2)} \{self.h / 2 + sin(11.5deg) * (self.h / 2 + self.d2)} "
+            + "M \{self.w / 2 + cos(41.5deg) * (self.w / 2 + self.d1)} \{self.h / 2 + sin(41.5deg) * (self.h / 2 + self.d1)} L \{self.w / 2 + cos(41.5deg) * (self.w / 2 + self.d2)} \{self.h / 2 + sin(41.5deg) * (self.h / 2 + self.d2)} "
+            + "M \{self.w / 2 + cos(71.5deg) * (self.w / 2 + self.d1)} \{self.h / 2 + sin(71.5deg) * (self.h / 2 + self.d1)} L \{self.w / 2 + cos(71.5deg) * (self.w / 2 + self.d2)} \{self.h / 2 + sin(71.5deg) * (self.h / 2 + self.d2)} "
+            + "M \{self.w / 2 + cos(101.5deg) * (self.w / 2 + self.d1)} \{self.h / 2 + sin(101.5deg) * (self.h / 2 + self.d1)} L \{self.w / 2 + cos(101.5deg) * (self.w / 2 + self.d2)} \{self.h / 2 + sin(101.5deg) * (self.h / 2 + self.d2)} "
+            + "M \{self.w / 2 + cos(131.5deg) * (self.w / 2 + self.d1)} \{self.h / 2 + sin(131.5deg) * (self.h / 2 + self.d1)} L \{self.w / 2 + cos(131.5deg) * (self.w / 2 + self.d2)} \{self.h / 2 + sin(131.5deg) * (self.h / 2 + self.d2)} "
+            + "M \{self.w / 2 + cos(161.5deg) * (self.w / 2 + self.d1)} \{self.h / 2 + sin(161.5deg) * (self.h / 2 + self.d1)} L \{self.w / 2 + cos(161.5deg) * (self.w / 2 + self.d2)} \{self.h / 2 + sin(161.5deg) * (self.h / 2 + self.d2)} "
+            + "M \{self.w / 2 + cos(191.5deg) * (self.w / 2 + self.d1)} \{self.h / 2 + sin(191.5deg) * (self.h / 2 + self.d1)} L \{self.w / 2 + cos(191.5deg) * (self.w / 2 + self.d2)} \{self.h / 2 + sin(191.5deg) * (self.h / 2 + self.d2)} "
+            + "M \{self.w / 2 + cos(221.5deg) * (self.w / 2 + self.d1)} \{self.h / 2 + sin(221.5deg) * (self.h / 2 + self.d1)} L \{self.w / 2 + cos(221.5deg) * (self.w / 2 + self.d2)} \{self.h / 2 + sin(221.5deg) * (self.h / 2 + self.d2)} "
+            + "M \{self.w / 2 + cos(251.5deg) * (self.w / 2 + self.d1)} \{self.h / 2 + sin(251.5deg) * (self.h / 2 + self.d1)} L \{self.w / 2 + cos(251.5deg) * (self.w / 2 + self.d2)} \{self.h / 2 + sin(251.5deg) * (self.h / 2 + self.d2)} "
+            + "M \{self.w / 2 + cos(281.5deg) * (self.w / 2 + self.d1)} \{self.h / 2 + sin(281.5deg) * (self.h / 2 + self.d1)} L \{self.w / 2 + cos(281.5deg) * (self.w / 2 + self.d2)} \{self.h / 2 + sin(281.5deg) * (self.h / 2 + self.d2)} "
+            + "M \{self.w / 2 + cos(311.5deg) * (self.w / 2 + self.d1)} \{self.h / 2 + sin(311.5deg) * (self.h / 2 + self.d1)} L \{self.w / 2 + cos(311.5deg) * (self.w / 2 + self.d2)} \{self.h / 2 + sin(311.5deg) * (self.h / 2 + self.d2)} "
+            + "M \{self.w / 2 + cos(341.5deg) * (self.w / 2 + self.d1)} \{self.h / 2 + sin(341.5deg) * (self.h / 2 + self.d1)} L \{self.w / 2 + cos(341.5deg) * (self.w / 2 + self.d2)} \{self.h / 2 + sin(341.5deg) * (self.h / 2 + self.d2)}";
+    }
+}
+
+// InkIconButton: an icon on its own, or in a small panel when [framed].
+export component IconButton {
+    in property <string> icon;
+    in property <float> scale: 2.2;
+    in property <color> tint: Theme.ink;
+    in property <bool> framed: false;
+    in property <length> box: 48px;
+    in property <bool> enabled: true;
+    in property <string> tooltip;
+    callback clicked();
+    property <length> glyph: self.scale * 10px;
+    width: self.box;
+    height: self.box;
+    accessible-role: button;
+    accessible-label: self.tooltip;
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            Actions.sfx("click");
+            root.clicked();
+        }
+    }
+    if !root.framed: Glyph {
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        icon: root.icon;
+        size: root.glyph * (touch.pressed ? 0.82 : 1);
+        tint: root.tint;
+    }
+    if root.framed: PanelBox {
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        width: root.glyph + 17px;
+        height: root.glyph + 17px;
+        shadow: 2px;
+        pressed: touch.pressed;
+        pad: 6px;
+        Glyph {
+            icon: root.icon;
+            size: root.glyph;
+            tint: root.tint;
+        }
+    }
+}
+
+// InkChip: condensed caps in an ink outline.
+export component Chip {
+    in property <string> text;
+    in property <color> fill: Theme.panel;
+    in property <color> fg: Theme.ink;
+    in property <float> size: 7;
+    min-width: lay.min-width;
+    preferred-width: lay.preferred-width;
+    min-height: lay.min-height;
+    preferred-height: lay.preferred-height;
+    Rectangle {
+        background: root.fill;
+        border-width: 1.5px;
+        border-color: Theme.line;
+    }
+    lay := HorizontalLayout {
+        padding-left: 7.5px;
+        padding-right: 7.5px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        Label {
+            text: root.text;
+            size: root.size;
+            color: root.fg;
+        }
+    }
+}
+
+// InkBar: red ink filling an outlined strip, screentone in the rest.
+export component InkBar {
+    in property <float> fraction;
+    height: 8px;
+    Rectangle {
+        background: Theme.panel;
+        border-width: 1.5px;
+        border-color: Theme.line;
+        clip: true;
+        if Theme.manga: Image {
+            x: 1.5px;
+            y: 1.5px;
+            width: 600px;
+            height: 14px;
+            source: Tex.bar-tone;
+            image-fit: ImageFit.fill;
+        }
+        Rectangle {
+            x: 1.5px;
+            y: 1.5px;
+            width: (parent.width - 3px) * clamp(root.fraction, 0, 1);
+            height: parent.height - 3px;
+            background: Theme.red;
+        }
+    }
+}
+
+// InkSkeleton: screentone sliding across a grey panel while something loads.
+export component Skeleton inherits Rectangle {
+    background: Theme.panel-high;
+    clip: true;
+    if Theme.manga: Image {
+        y: (Theme.fx > 0 ? mod(Theme.frame * 1.5, 8) - 8 : -8) * 1px;
+        width: 420px;
+        height: 260px;
+        source: Tex.tone;
+        image-fit: ImageFit.fill;
+    }
+}
+
+// InkCover: the picture as it is, screentone darkening its foot. No address
+// (or one that failed) shows the shrugging "no art" panel.
+export component Cover inherits Rectangle {
+    in property <image> source;
+    in property <bool> has-url: true;
+    in property <bool> foot: true;
+    clip: true;
+    background: Theme.panel-high;
+    if root.has-url && root.source.width > 0: Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.source;
+        image-fit: ImageFit.cover;
+    }
+    if root.has-url && root.source.width == 0: Skeleton {
+        width: parent.width;
+        height: parent.height;
+    }
+    if !root.has-url: Rectangle {
+        background: Theme.panel-high;
+        clip: true;
+        if Theme.manga: Image {
+            width: 420px;
+            height: 260px;
+            source: Tex.tone;
+            image-fit: ImageFit.fill;
+        }
+        Glyph {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            icon: Icons.skull;
+            scale: 3;
+            tint: Theme.gray;
+        }
+    }
+    if root.has-url && root.foot && Theme.manga: Image {
+        y: parent.height - 28px;
+        width: 600px;
+        height: 28px;
+        source: Tex.cover-foot;
+        image-fit: ImageFit.fill;
+    }
+}
+
+// The red play square with toned foot, on resume cards, history rows, trailers.
+export component PlayBox {
+    in property <float> scale: 2;
+    in property <length> shadow: 2px;
+    width: self.scale * 9.5px + 21px;
+    height: self.scale * 9.5px + 19px;
+    PanelBox {
+        width: parent.width;
+        height: parent.height;
+        fill: Theme.red;
+        shadow: root.shadow;
+        bevel: true;
+        pad-left: 9px;
+        pad-right: 7px;
+        pad-top: 7px;
+        pad-bottom: 7px;
+        Glyph {
+            icon: Icons.play;
+            scale: root.scale;
+            tint: Theme.ink;
+        }
+    }
+}
+
+// The section heading: the title white on a black caption box (a narration
+// box, skewed), a dry red brush stroke trailing off, and an optional MORE.
+export component SectionHeader {
+    in property <string> title;
+    in property <bool> more: false;
+    in property <length> gap-below: 14px;
+    callback more-clicked();
+    min-height: row.min-height;
+    preferred-height: row.preferred-height;
+    row := HorizontalLayout {
+        padding-bottom: root.gap-below;
+        spacing: 8px;
+        caption := Rectangle {
+            property <length> want: title.preferred-width + 22px;
+            width: min(self.want, Theme.win-w * 0.66);
+            height: title.preferred-height + 10px;
+            Path {
+                width: parent.width;
+                height: parent.height;
+                viewbox-width: self.width / 1px;
+                viewbox-height: self.height / 1px;
+                property <float> w: self.width / 1px;
+                property <float> h: self.height / 1px;
+                commands: "M 0 0 L \{self.w} 0 L \{self.w - 0.1206 * self.h} \{self.h} L \{-0.1206 * self.h} \{self.h} Z";
+                fill: Theme.caption;
+            }
+            title := Text {
+                x: 8px;
+                width: parent.width - 18px;
+                height: parent.height;
+                text: root.title;
+                font-family: Theme.caption-font;
+                font-weight: 900;
+                font-size: Theme.heading(17);
+                letter-spacing: -0.2px;
+                color: Theme.white;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+        // A dry red brush stroke, splitting into bristles as it runs out.
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Path {
+                height: 14px;
+                property <float> w: self.width / 1px;
+                viewbox-width: self.w;
+                viewbox-height: 14;
+                fill: Theme.red;
+                stroke: Theme.red;
+                stroke-width: 1.2px;
+                commands: "M 0 2.8 L \{self.w * 0.55} 5.6 L \{self.w * 0.62} 7.7 L 0 11.9 Z "
+                    + "M \{self.w * 0.4} 4.48 L \{self.w * 0.70} 3.28 "
+                    + "M \{self.w * 0.4} 5.88 L \{self.w * 0.82} 5.28 "
+                    + "M \{self.w * 0.4} 7.28 L \{self.w * 0.94} 7.28 "
+                    + "M \{self.w * 0.4} 8.68 L \{self.w * 0.76} 9.28 "
+                    + "M \{self.w * 0.4} 10.08 L \{self.w * 0.88} 11.28";
+            }
+        }
+        if root.more: Rectangle {
+            width: more-row.preferred-width + 12px;
+            TouchArea { clicked => { root.more-clicked(); } }
+            more-row := HorizontalLayout {
+                x: 6px;
+                alignment: center;
+                Label {
+                    text: "MORE";
+                    size: 8;
+                    color: Theme.red;
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Glyph {
+                        icon: Icons.chevron;
+                        scale: 1.5;
+                        tint: Theme.red;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// SpeechBubble: a rounded body with a tail at [tail-x] along its foot.
+export component Bubble {
+    in property <float> tail-x: -1;
+    in property <color> fill: Theme.panel;
+    in property <length> pad-left: 16px;
+    in property <length> pad-right: 16px;
+    in property <length> pad-top: 10px;
+    in property <length> pad-bottom: 22px;
+    min-width: lay.min-width;
+    preferred-width: lay.preferred-width;
+    min-height: lay.min-height;
+    preferred-height: lay.preferred-height;
+    property <float> w: self.width / 1px;
+    property <float> h: self.height / 1px;
+    property <float> bh: self.h - 12;
+    property <float> r: min(18, self.bh / 2);
+    property <float> base: (clamp(self.tail-x, -0.7, 0.7) + 1) / 2 * self.w;
+    property <float> tip: self.base + (self.tail-x < 0 ? -10 : 10);
+    Path {
+        width: root.width;
+        height: root.height;
+        viewbox-width: root.w;
+        viewbox-height: root.h;
+        fill: root.fill;
+        stroke: Theme.line;
+        stroke-width: 2.5px;
+        commands: "M \{root.r} 0 L \{root.w - root.r} 0 A \{root.r} \{root.r} 0 0 1 \{root.w} \{root.r} L \{root.w} \{root.bh - root.r} A \{root.r} \{root.r} 0 0 1 \{root.w - root.r} \{root.bh} "
+            + "L \{root.base + 9} \{root.bh} L \{root.tip} \{root.h} L \{root.base - 9} \{root.bh} L \{root.r} \{root.bh} "
+            + "A \{root.r} \{root.r} 0 0 1 0 \{root.bh - root.r} L 0 \{root.r} A \{root.r} \{root.r} 0 0 1 \{root.r} 0 Z";
+    }
+    lay := VerticalLayout {
+        padding-left: root.pad-left;
+        padding-right: root.pad-right;
+        padding-top: root.pad-top;
+        padding-bottom: root.pad-bottom;
+        @children
+    }
+}
+
+// ScoreBurst: the score on a red twelve-point starburst, slapped on a corner.
+export component Starburst {
+    in property <string> score;
+    in property <length> size: 34px;
+    width: self.size;
+    height: self.size;
+    Path {
+        width: root.size;
+        height: root.size;
+        viewbox-x: -1;
+        viewbox-y: -1;
+        viewbox-width: 2;
+        viewbox-height: 2;
+        fill: Theme.red;
+        stroke: Theme.line;
+        stroke-width: 2px;
+        commands: "M 0 -1 L 0.192 -0.715 L 0.5 -0.866 L 0.523 -0.523 L 0.866 -0.5 L 0.715 -0.192 L 1 0 L 0.715 0.192 L 0.866 0.5 L 0.523 0.523 L 0.5 0.866 L 0.192 0.715 L 0 1 L -0.192 0.715 L -0.5 0.866 L -0.523 0.523 L -0.866 0.5 L -0.715 0.192 L -1 0 L -0.715 -0.192 L -0.866 -0.5 L -0.523 -0.523 L -0.5 -0.866 L -0.192 -0.715 Z";
+    }
+    Text {
+        width: root.size;
+        height: root.size;
+        text: root.score;
+        font-family: Theme.title-font;
+        font-weight: 900;
+        font-size: root.size * 0.36 * Theme.heading-k;
+        color: Theme.white;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}
+
+// Sound-effect lettering (ドン, ゴゴゴ): heavy kana in a white outline and an
+// ink one outside it, tilted.
+export component SfxText {
+    in property <string> text;
+    in property <float> size: 40;
+    in property <color> tint: Theme.ink;
+    in property <angle> angle: -6.9deg;
+    property <bool> white: self.tint == Theme.white;
+    min-width: outer.preferred-width + self.size * 0.25px;
+    preferred-width: outer.preferred-width + self.size * 0.25px;
+    min-height: outer.preferred-height + self.size * 0.25px;
+    preferred-height: outer.preferred-height + self.size * 0.25px;
+    outer := Text {
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        text: root.text;
+        font-family: Theme.sfx-font;
+        font-weight: 700;
+        font-size: root.size * 1px;
+        color: root.white ? Theme.white : Theme.ink;
+        stroke: root.white ? Theme.white : Theme.ink;
+        stroke-width: root.size / 9 * 1px;
+        stroke-style: outside;
+        rotation-angle: root.angle;
+    }
+    Text {
+        x: outer.x;
+        y: outer.y;
+        width: outer.width;
+        height: outer.height;
+        text: root.text;
+        font-family: Theme.sfx-font;
+        font-weight: 700;
+        font-size: root.size * 1px;
+        color: root.tint;
+        stroke: root.white ? Theme.ink : Theme.white;
+        stroke-width: root.size / 16 * 1px;
+        stroke-style: outside;
+        rotation-angle: root.angle;
+    }
+}
+
+// Wrapped text cut cleanly after [lines] lines. Not `overflow: elide`: on
+// Android, Slint 1.9's Skia renderer counts elided lines with another face's
+// (taller) line height and shows fewer than fit, and it does not clip text.
+export component Clamp inherits Rectangle {
+    in property <string> text;
+    in property <int> lines: 2;
+    in property <length> size: Theme.text(14);
+    in property <string> family: Theme.body-font;
+    in property <int> weight: 400;
+    in property <color> tint: Theme.ink;
+    in property <float> line-k: 1.18;
+    in property <length> spacing: 0px;
+    in property <TextHorizontalAlignment> align: TextHorizontalAlignment.left;
+    in property <brush> stroke: transparent;
+    in property <length> stroke-width: 0px;
+    clip: true;
+    height: min(t.preferred-height, self.lines * self.size * self.line-k + 1px);
+    t := Text {
+        x: 0;
+        y: 0;
+        width: root.width;
+        text: root.text;
+        font-size: root.size;
+        font-family: root.family;
+        font-weight: root.weight;
+        color: root.tint;
+        letter-spacing: root.spacing;
+        horizontal-alignment: root.align;
+        vertical-alignment: top;
+        wrap: word-wrap;
+        stroke: root.stroke;
+        stroke-width: root.stroke-width;
+        stroke-style: outside;
+    }
+}
+
+// The inked AniVerse emblem.
+export component Emblem inherits Image {
+    source: Theme.manga ? @image-url("../assets/manga/logo.png") : @image-url("../assets/icon/aniverse_icon_pixel.png");
+    image-rendering: Theme.manga ? smooth : pixelated;
+    image-fit: ImageFit.contain;
+}
+
+// The wordmark: the emblem, then ANIVERSE in heavy italic red with an ink
+// outline and a paper one outside it, like a title on a manga cover. Every
+// few seconds a sparkle flicks off the emblem.
+export component Logo {
+    in property <float> font-size: 14;
+    property <length> s: self.font-size * 1.55px;
+    property <length> word-w: red.preferred-width + self.s * 0.5;
+    property <length> word-h: red.preferred-height + self.s * 0.3;
+    property <int> f: mod(Theme.frame, 72);
+    preferred-width: self.s * 1.7 + self.s * 0.25 + self.word-w;
+    preferred-height: max(self.s * 1.7, self.word-h);
+    min-width: self.preferred-width;
+    min-height: self.preferred-height;
+    emblem := Emblem {
+        x: (root.width - root.preferred-width) / 2;
+        y: (root.height - self.height) / 2;
+        width: root.s * 1.7;
+        height: root.s * 1.7;
+    }
+    if Theme.manga && Theme.fx == 2 && root.f >= 60 && root.f < 66: Path {
+        property <float> k: 0.5 + 0.5 * (1 - abs(root.f - 62.5) / 3);
+        x: emblem.x + emblem.width - root.s * 0.45;
+        y: emblem.y - root.s * 0.35;
+        width: root.s * 0.8;
+        height: root.s * 0.8;
+        viewbox-x: -1;
+        viewbox-y: -1;
+        viewbox-width: 2;
+        viewbox-height: 2;
+        fill: Theme.white;
+        stroke: Theme.ink;
+        stroke-width: 1.6px;
+        commands: "M 0 \{-self.k} L \{0.127 * self.k} \{-0.127 * self.k} L \{self.k} 0 L \{0.127 * self.k} \{0.127 * self.k} L 0 \{self.k} L \{-0.127 * self.k} \{0.127 * self.k} L \{-self.k} 0 L \{-0.127 * self.k} \{-0.127 * self.k} Z";
+    }
+    Rectangle {
+        x: emblem.x + emblem.width + root.s * 0.25;
+        y: (root.height - root.word-h) / 2;
+        width: root.word-w;
+        height: root.word-h;
+        if Theme.manga: Text {
+            x: red.x + root.s / 10;
+            y: red.y + root.s / 10;
+            text: "ANIVERSE";
+            font-family: Theme.title-font;
+            font-weight: 900;
+            font-size: root.s;
+            color: Theme.ink;
+            stroke: Theme.ink;
+            stroke-width: root.s / 9;
+            stroke-style: outside;
+        }
+        if Theme.manga: Text {
+            x: red.x;
+            y: red.y;
+            text: "ANIVERSE";
+            font-family: Theme.title-font;
+            font-weight: 900;
+            font-size: root.s;
+            color: Theme.white;
+            stroke: Theme.white;
+            stroke-width: root.s / 9;
+            stroke-style: outside;
+        }
+        red := Text {
+            x: root.s * 0.15;
+            y: root.s * 0.1;
+            text: "ANIVERSE";
+            font-family: Theme.title-font;
+            font-weight: 900;
+            font-size: Theme.manga ? root.s : root.s * 0.55;
+            color: Theme.red;
+            stroke: Theme.manga ? Theme.ink : Theme.black;
+            stroke-width: root.s / 16;
+            stroke-style: outside;
+        }
+    }
+}
+
+// AniVerseLoader: an ensō drawing itself round the inked emblem, with a
+// caption box under it (and 読込中, "loading").
+export component Loader {
+    in property <length> size: 72px;
+    in property <string> label;
+    preferred-width: col.preferred-width;
+    preferred-height: col.preferred-height;
+    col := VerticalLayout {
+        alignment: center;
+        spacing: 14px;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: root.size * 1.5;
+                height: root.size * 1.5;
+                Enso {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if root.size >= 40px: Emblem {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    width: root.size * 0.8;
+                    height: root.size * 0.8;
+                }
+            }
+        }
+        if root.label != "" && root.size >= 40px: HorizontalLayout {
+            alignment: center;
+            PanelBox {
+                shadow: 2px;
+                pad-left: 10px;
+                pad-right: 10px;
+                pad-top: 5px;
+                pad-bottom: 5px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Label {
+                        text: root.label;
+                        size: 8;
+                    }
+                    Text {
+                        text: "読込中";
+                        font-family: Theme.sfx-font;
+                        font-weight: 700;
+                        font-size: 12px;
+                        color: Theme.red;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// EmptyState: シーン… (the sound of silence), a heading, a line, maybe a button.
+export component EmptyState {
+    in property <string> title;
+    in property <string> text;
+    in property <string> action;
+    in property <string> action-icon;
+    callback acted();
+    min-height: col.min-height;
+    preferred-height: col.preferred-height;
+    col := VerticalLayout {
+        padding-left: 28px;
+        padding-right: 28px;
+        padding-top: 40px;
+        padding-bottom: 40px;
+        spacing: 0px;
+        HorizontalLayout {
+            alignment: center;
+            SfxText {
+                text: "シーン…";
+                size: 44;
+                angle: -3.4deg;
+            }
+        }
+        Rectangle { height: 18px; }
+        Heading {
+            text: root.title;
+            size: 20;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        Rectangle { height: 10px; }
+        Body {
+            text: root.text;
+            size: 15;
+            color: Theme.gray;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        if root.action != "": Rectangle { height: 18px; }
+        if root.action != "": HorizontalLayout {
+            alignment: center;
+            InkButton {
+                label: root.action;
+                icon: root.action-icon;
+                clicked => { root.acted(); }
+            }
+        }
+    }
+}
+
+// A message with a big faint icon (search: TYPE OR PICK A FILTER).
+export component Message {
+    in property <string> icon;
+    in property <string> text;
+    VerticalLayout {
+        alignment: center;
+        spacing: 18px;
+        HorizontalLayout {
+            alignment: center;
+            Glyph {
+                icon: root.icon;
+                scale: 4;
+                tint: Theme.gray-light;
+            }
+        }
+        Label {
+            text: root.text;
+            size: 10;
+            color: Theme.gray;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// InkSwitch: a small panel lettered OFF, or red with ON! when on, the block
+// inside thrown across.
+export component InkSwitch {
+    in property <bool> on;
+    in property <string> label;
+    callback toggled();
+    width: 62px;
+    height: 32px;
+    accessible-role: checkbox;
+    accessible-checked: self.on;
+    accessible-label: self.label;
+    TouchArea {
+        clicked => {
+            Actions.sfx("select");
+            root.toggled();
+        }
+    }
+    PanelBox {
+        width: parent.width;
+        height: parent.height;
+        fill: root.on ? Theme.red : Theme.panel;
+        shadow: 2px;
+        Rectangle {
+            Label {
+                x: root.on ? 6px : parent.width - self.width - 6px;
+                height: parent.height;
+                text: root.on ? "ON!" : "OFF";
+                size: 7;
+                color: root.on ? Theme.white : Theme.gray;
+            }
+            Rectangle {
+                x: root.on ? parent.width - 21px : 3px;
+                y: (parent.height - 22px) / 2;
+                width: 18px;
+                height: 22px;
+                background: Theme.ink;
+                animate x { duration: 160ms; easing: cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+            }
+        }
+    }
+}
+
+// ChoiceChipButton: a value chip that opens a list to pick from.
+export component ChoiceChip {
+    in property <string> label;
+    callback clicked();
+    min-width: panel.min-width;
+    preferred-width: panel.preferred-width;
+    min-height: panel.min-height;
+    preferred-height: panel.preferred-height;
+    accessible-role: button;
+    accessible-label: self.label;
+    touch := TouchArea {
+        clicked => {
+            Actions.sfx("pop");
+            root.clicked();
+        }
+    }
+    panel := PanelBox {
+        width: root.width;
+        height: root.height;
+        shadow: 2px;
+        pressed: touch.pressed;
+        pad-left: 10px;
+        pad-right: 6px;
+        pad-top: 7px;
+        pad-bottom: 6px;
+        HorizontalLayout {
+            Label {
+                text: root.label;
+                size: 7.5;
+            }
+            VerticalLayout {
+                alignment: center;
+                Glyph {
+                    icon: Icons.chevron;
+                    scale: 1.4;
+                }
+            }
+        }
+    }
+}
+
+// SettingRow: a label and explanation on the left, a control on the right.
+export component SettingRow {
+    in property <string> title;
+    in property <string> text;
+    in property <bool> tappable: false;
+    callback clicked();
+    min-height: panel.min-height;
+    preferred-height: panel.preferred-height;
+    if root.tappable: TouchArea {
+        clicked => { root.clicked(); }
+    }
+    panel := PanelBox {
+        width: root.width;
+        height: root.height;
+        pad-left: 14px;
+        pad-right: 12px;
+        pad-top: 12px;
+        pad-bottom: 12px;
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 4px;
+                Label {
+                    text: root.title;
+                    size: 8.5;
+                    wrap: word-wrap;
+                }
+                if root.text != "": Body {
+                    text: root.text;
+                    size: 14;
+                    color: Theme.gray;
+                    wrap: word-wrap;
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 0;
+                alignment: center;
+                @children
+            }
+        }
+    }
+}
+
+// The top bar: paper, an ink rule under it, a back arrow on pushed pages, the
+// title centred (or a custom title), actions on the right.
+export component AppBar inherits Rectangle {
+    in property <string> title;
+    in property <bool> back: false;
+    in property <length> bar-height: 56px;
+    in property <color> title-color: Theme.ink;
+    in property <string> title-font: Theme.title-font;
+    in property <length> title-size: Theme.heading(20);
+    in property <bool> show-title: true;
+    callback back-clicked();
+    height: Theme.safe-top + self.bar-height + 3px;
+    background: Theme.paper;
+    Rectangle {
+        y: parent.height - 3px;
+        height: 3px;
+        background: Theme.line;
+    }
+    if root.show-title: Text {
+        x: root.back ? max(56px, (root.width - self.width) / 2) : (root.width - self.width) / 2;
+        y: Theme.safe-top + (root.bar-height - self.height) / 2;
+        width: min(self.preferred-width, root.width - 2 * 64px);
+        text: root.title;
+        font-family: root.title-font;
+        font-weight: 900;
+        font-size: root.title-size;
+        color: root.title-color;
+        overflow: elide;
+        vertical-alignment: center;
+    }
+    if root.back: IconButton {
+        x: 4px;
+        y: Theme.safe-top + (root.bar-height - self.height) / 2;
+        icon: Icons.back;
+        scale: 2.28;
+        box: 48px;
+        tooltip: "Back";
+        clicked => { root.back-clicked(); }
+    }
+    HorizontalLayout {
+        x: 0;
+        y: Theme.safe-top + (root.bar-height - 48px) / 2;
+        width: root.width;
+        height: 48px;
+        alignment: end;
+        @children
+    }
+}
+
+// TextField with the manga input decoration: a white field in an ink frame
+// (red when focused), an icon in front, the label floating onto the frame.
+export component InkField {
+    in property <string> label;
+    in property <string> hint;
+    in property <string> icon;
+    in property <bool> secret: false;
+    in property <bool> enabled: true;
+    in property <string> suffix-icon;
+    in property <string> suffix-tooltip;
+    in property <float> text-size: 16;
+    in property <length> field-height: 56px;
+    in-out property <string> text;
+    out property <bool> focused: input.has-focus;
+    callback accepted();
+    callback edited(string);
+    callback suffix-clicked();
+    height: self.field-height;
+    property <bool> floating: self.label != "" && (input.has-focus || self.text != "");
+    property <length> left: self.icon != "" ? 48px : 12px;
+    Rectangle {
+        background: Theme.panel;
+        border-width: input.has-focus ? 3px : 2.5px;
+        border-color: input.has-focus ? Theme.red : Theme.line;
+    }
+    TouchArea {
+        clicked => { input.focus(); }
+    }
+    if root.icon != "": Glyph {
+        x: 14px;
+        y: (root.height - self.height) / 2;
+        icon: root.icon;
+        scale: root.text-size > 16.5 ? 1.8 : 2;
+        tint: Theme.gray;
+    }
+    if root.text == "" && !root.floating: Body {
+        x: root.left;
+        width: root.width - root.left - 48px;
+        height: root.height;
+        text: root.label != "" ? root.label : root.hint;
+        size: 15;
+        color: root.label != "" ? Theme.gray : Theme.gray-light;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+    if root.floating: Rectangle {
+        x: root.left - 4px;
+        y: -8px;
+        width: float-label.preferred-width + 8px;
+        height: 16px;
+        background: Theme.panel;
+        float-label := Label {
+            x: 4px;
+            height: parent.height;
+            text: root.label;
+            size: 9;
+            color: input.has-focus ? Theme.red : Theme.gray;
+        }
+    }
+    input := TextInput {
+        x: root.left;
+        width: root.width - root.left - (root.suffix-icon != "" ? 48px : 12px);
+        height: root.height;
+        text <=> root.text;
+        enabled: root.enabled;
+        color: Theme.ink;
+        font-family: Theme.body-font;
+        font-size: Theme.text(root.text-size);
+        vertical-alignment: center;
+        single-line: true;
+        input-type: root.secret ? InputType.password : InputType.text;
+        selection-background-color: Theme.red.with-alpha(0.3);
+        accepted => { root.accepted(); }
+        edited => { root.edited(self.text); }
+    }
+    if root.suffix-icon != "": IconButton {
+        x: root.width - 48px;
+        y: (root.height - self.height) / 2;
+        icon: root.suffix-icon;
+        scale: 1.8;
+        tint: Theme.gray;
+        tooltip: root.suffix-tooltip;
+        clicked => { root.suffix-clicked(); }
+    }
+}
+
+// The paper behind every screen: tone fading in at the top and the foot.
+export component PaperBackdrop inherits Rectangle {
+    background: Theme.paper;
+    if Theme.manga: Rectangle {
+        y: 0;
+        height: 140px;
+        clip: true;
+        Image {
+            width: max(600px, parent.width);
+            height: 140px;
+            source: Tex.paper-top;
+            image-fit: ImageFit.fill;
+        }
+    }
+    if Theme.manga: Rectangle {
+        y: parent.height - 110px;
+        height: 110px;
+        clip: true;
+        Image {
+            width: max(600px, parent.width);
+            height: 110px;
+            source: Tex.paper-bottom;
+            image-fit: ImageFit.fill;
+        }
+    }
+}
+
+// A vertical page of content that scrolls, reporting how far it is.
+export component Scroller inherits Flickable {
+    in property <length> pad-left: 16px;
+    in property <length> pad-right: 16px;
+    in property <length> pad-top: 16px;
+    in property <length> pad-bottom: 16px;
+    in property <length> gap: 0px;
+    viewport-width: self.width;
+    viewport-height: max(self.height, col.preferred-height);
+    col := VerticalLayout {
+        width: root.width;
+        height: max(root.height, self.preferred-height);
+        padding-left: root.pad-left;
+        padding-right: root.pad-right;
+        padding-top: root.pad-top;
+        padding-bottom: root.pad-bottom;
+        spacing: root.gap;
+        alignment: start;
+        @children
+    }
+}

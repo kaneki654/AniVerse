@@ -1,0 +1,297 @@
+// The manga opening (lib/ui_manga/intro/manga_intro.dart), about four seconds,
+// tap to skip:
+// 1. A blank page; three panel borders ink themselves in.
+// 2. The panels come alive: speed lines, screentone sweeping, ゴゴゴ.
+// 3. An impact frame: the page flashes to negative.
+// 4. One big panel: focus lines converge, the emblem is inked in stage by
+//    stage (line art, screentone, red) as it lands with a ドン!
+// 5. ANIVERSE slams in letter by letter on a caption strip.
+// 6. The page turns over onto the app.
+import { Theme } from "theme.slint";
+import { Tex, Lines, SfxText } from "ink.slint";
+import { Actions } from "store.slint";
+
+component Side inherits Path {
+    in property <float> x1;
+    in property <float> y1;
+    in property <float> x2;
+    in property <float> y2;
+    in property <float> f;
+    viewbox-width: self.width / 1px;
+    viewbox-height: self.height / 1px;
+    stroke: Theme.ink;
+    stroke-width: 5px;
+    commands: self.f <= 0 ? "" : "M \{self.x1} \{self.y1} L \{self.x1 + (self.x2 - self.x1) * self.f} \{self.y1 + (self.y2 - self.y1) * self.f}";
+}
+
+export component Intro inherits Rectangle {
+    property <float> ms: Theme.fx == 0 ? 3569 : 0;
+    property <bool> done: false;
+    property <float> w: self.width / 1px;
+    property <float> h: self.height / 1px;
+    property <float> short: min(self.w, self.h);
+    // three panels inside the page's margins
+    property <float> m: self.w * 0.06;
+    property <float> top: self.h * 0.12;
+    property <float> split: self.h * 0.5;
+    property <float> bottom: self.h * 0.86;
+    property <float> draw: 1 - pow(1 - self.beat(80, 700), 2);
+    property <float> life: self.beat(600, 1450);
+    property <float> lines: self.beat(1640, 1950);
+    property <float> tone: self.beat(1900, 2100);
+    property <float> red: self.beat(2050, 2350);
+    property <float> word: self.beat(2850, 3350);
+    property <float> underline: self.beat(3300, 3550);
+    property <int> flicker: floor((self.ms - 1640) / 70);
+    property <float> turn: pow(self.beat(3650, 4300), 3);
+    property <float> emblem: self.short * 0.56;
+    property <float> shake: self.red > 0 && self.red < 0.6 ? 8 * (1 - self.red / 0.6) : 0;
+    property <float> land: self.red >= 1 ? 1 : 1 + 2.70158 * pow(self.red - 1, 3) + 1.70158 * pow(self.red - 1, 2);
+    property <float> letter: self.short * 0.12;
+
+    pure function beat(a: float, b: float) -> float {
+        return clamp((self.ms - a) / (b - a), 0, 1);
+    }
+    pure function local(i: int) -> float {
+        return clamp(self.draw * 1.6 - i * 0.3, 0, 1);
+    }
+    pure function side(i: int, k: int) -> float {
+        return clamp(self.local(i) * 4 - k, 0, 1);
+    }
+    pure function wob(seed: int, amount: float) -> length {
+        return (sin(seed * 744.26deg) * 43758.5453 - floor(sin(seed * 744.26deg) * 43758.5453) - 0.5) * 2 * amount * 1px;
+    }
+    function finish() {
+        if !self.done {
+            self.done = true;
+            Actions.intro-done();
+        }
+    }
+
+    Timer {
+        interval: 16ms;
+        running: !root.done && Theme.fx > 0;
+        triggered => {
+            root.ms = root.ms + 16;
+            if root.ms >= 4300 { root.finish(); }
+        }
+    }
+    Timer {
+        interval: 900ms;
+        running: !root.done && Theme.fx == 0;
+        triggered => { root.finish(); }
+    }
+
+    // What is left of the intro page, turning away to the left.
+    page := Rectangle {
+        x: -root.turn * root.width;
+        width: root.width;
+        height: root.height;
+        clip: true;
+        // --- 1-2: three panels
+        if root.ms < 1450: Rectangle {
+            background: Theme.paper;
+            // Panel 1: speed lines racing.
+            if root.life > 0: Rectangle {
+                x: root.m * 1px;
+                y: root.top * 1px;
+                width: (root.w - 2 * root.m) * 1px;
+                height: (root.split - root.m / 2 - root.top) * 1px;
+                clip: true;
+                for i in 40: Rectangle {
+                    property <float> r1: mod(i * 37 + 11, 100) / 100;
+                    property <float> r2: mod(i * 53 + 7, 100) / 100;
+                    property <float> r3: mod(i * 71 + 3, 100) / 100;
+                    property <length> len: parent.width * (0.1 + 0.35 * self.r2);
+                    x: mod(self.r3 + root.life * 1.6 * (0.8 + self.r2), 1) * (parent.width + self.len) - self.len;
+                    y: parent.height * self.r1 + (self.x - parent.width / 2) * 0.08;
+                    width: self.len;
+                    height: (0.8 + 2.2 * mod(i * 29 + 5, 100) / 100) * 1px;
+                    background: Theme.ink;
+                }
+            }
+            // Panel 2: screentone sweeping in from the left.
+            if root.life > 0: Rectangle {
+                x: root.m * 1px;
+                y: (root.split + root.m / 2) * 1px;
+                width: (root.w * 0.505 - root.m) * root.life * 1px;
+                height: (root.bottom - root.split - root.m / 2) * 1px;
+                clip: true;
+                Image {
+                    x: 0;
+                    y: 0;
+                    width: (root.w * 0.505 - root.m) * 1px;
+                    height: parent.height;
+                    source: Tex.tone;
+                    image-fit: ImageFit.fill;
+                    colorize: Theme.ink;
+                }
+            }
+            // the slanted gutter: paper over the tone past the panel's edge
+            Path {
+                viewbox-width: root.w;
+                viewbox-height: root.h;
+                fill: Theme.paper;
+                commands: "M \{root.w * 0.505} \{root.split + root.m / 2} L \{root.w * 0.6} \{root.split + root.m / 2} L \{root.w * 0.6} \{root.bottom} L \{root.w * 0.41} \{root.bottom} Z";
+            }
+            // Panel 3: ゴゴゴ.
+            if root.life > 0.1: VerticalLayout {
+                x: (root.w * 0.565 + 12) * 1px;
+                y: (root.split + root.m / 2) * 1px;
+                width: (root.w - root.m - root.w * 0.565 - 12) * 1px;
+                height: (root.bottom - root.split - root.m / 2) * 1px;
+                alignment: center;
+                for i in 3: HorizontalLayout {
+                    padding-left: 18px * i;
+                    alignment: start;
+                    SfxText {
+                        text: "ゴ";
+                        size: root.short * 0.12;
+                        opacity: root.life > 0.1 + 0.17 * i ? 1 : 0;
+                    }
+                }
+            }
+            // The borders, inked in stroke by stroke.
+            for k in 4: Side {
+                x1: k == 0 || k == 3 ? root.m : root.w - root.m;
+                y1: k <= 1 ? root.top : root.split - root.m / 2;
+                x2: k == 0 || k == 1 ? root.w - root.m : root.m;
+                y2: k == 0 ? root.top : k == 3 ? root.top : root.split - root.m / 2;
+                f: root.side(0, k);
+            }
+            for k in 4: Side {
+                x1: k == 0 ? root.m : k == 1 ? root.w * 0.505 : k == 2 ? root.w * 0.41 : root.m;
+                y1: k <= 1 ? root.split + root.m / 2 : root.bottom;
+                x2: k == 0 ? root.w * 0.505 : k == 1 ? root.w * 0.41 : root.m;
+                y2: k == 0 ? root.split + root.m / 2 : k == 3 ? root.split + root.m / 2 : root.bottom;
+                f: root.side(1, k);
+            }
+            for k in 4: Side {
+                x1: k == 0 ? root.w * 0.565 : k == 1 ? root.w - root.m : k == 2 ? root.w - root.m : root.w * 0.47;
+                y1: k <= 1 ? root.split + root.m / 2 : (k == 2 ? root.bottom : root.bottom);
+                x2: k == 0 ? root.w - root.m : k == 1 ? root.w - root.m : k == 2 ? root.w * 0.47 : root.w * 0.565;
+                y2: k == 0 ? root.split + root.m / 2 : k == 1 ? root.bottom : k == 2 ? root.bottom : root.split + root.m / 2;
+                f: root.side(2, k);
+            }
+        }
+        // --- 3: the impact frame, negative then a white flash
+        if root.ms >= 1450 && root.ms < 1640: Rectangle {
+            background: root.ms < 1560 ? Theme.ink : Theme.white;
+            if root.ms < 1560: Path {
+                viewbox-width: Lines.screen-w / 1px;
+                viewbox-height: Lines.screen-h / 1px;
+                commands: Lines.impact;
+                fill: Theme.white;
+            }
+        }
+        // --- 4-5: the logo lands
+        if root.ms >= 1640: Rectangle {
+            background: Theme.paper;
+            Path {
+                viewbox-width: Lines.screen-w / 1px;
+                viewbox-height: Lines.screen-h / 1px;
+                commands: root.ms >= 2400 ? Lines.intro-a : mod(root.flicker, 3) == 0 ? Lines.intro-a : mod(root.flicker, 3) == 1 ? Lines.intro-b : Lines.intro-c;
+                fill: root.ms < 2400 ? Theme.ink : Theme.ink.with-alpha(0.85);
+            }
+            Rectangle {
+                x: (root.w - root.emblem) / 2 * 1px + root.wob(root.flicker, root.shake);
+                y: (root.h * 0.41 - root.emblem / 2) * 1px + root.wob(root.flicker + 7, root.shake);
+                width: root.emblem * 1px;
+                height: root.emblem * 1px;
+                if root.red > 0: Image {
+                    property <float> k: 1.35 - 0.35 * root.land;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    width: parent.width * self.k;
+                    height: parent.height * self.k;
+                    source: @image-url("../assets/manga/logo_color.png");
+                    opacity: root.red;
+                }
+                Image {
+                    width: parent.width;
+                    height: parent.height;
+                    source: @image-url("../assets/manga/logo_tone.png");
+                    opacity: root.tone;
+                }
+                // Line art, drawn top to bottom.
+                Rectangle {
+                    width: parent.width;
+                    height: parent.height * root.lines;
+                    clip: true;
+                    Image {
+                        y: 0;
+                        width: root.emblem * 1px;
+                        height: root.emblem * 1px;
+                        source: @image-url("../assets/manga/logo_lines.png");
+                    }
+                }
+            }
+            if root.red > 0.15: SfxText {
+                x: (root.width - self.width) * 0.91;
+                y: (root.height - self.height) * 0.19;
+                width: self.preferred-width;
+                height: self.preferred-height;
+                text: "ドン!";
+                size: root.short * 0.15;
+                tint: Theme.red;
+                angle: 10.3deg;
+            }
+            if root.word > 0: VerticalLayout {
+                x: (root.width - self.preferred-width) / 2;
+                y: (root.height - self.preferred-height) * 0.775;
+                width: self.preferred-width;
+                height: self.preferred-height;
+                spacing: root.letter * 0.18px;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: letters.preferred-width + root.letter * 0.9px;
+                        height: letters.preferred-height + root.letter * 0.24px;
+                        Path {
+                            property <float> pw: self.width / 1px;
+                            property <float> ph: self.height / 1px;
+                            viewbox-width: self.pw;
+                            viewbox-height: self.ph;
+                            fill: Theme.ink;
+                            commands: "M \{0.07 * self.ph} 0 L \{self.pw + 0.07 * self.ph} 0 L \{self.pw - 0.07 * self.ph} \{self.ph} L \{-0.07 * self.ph} \{self.ph} Z";
+                        }
+                        letters := HorizontalLayout {
+                            x: root.letter * 0.4px;
+                            y: root.letter * 0.12px;
+                            for c[i] in ["A", "N", "I", "V", "E", "R", "S", "E"]: Text {
+                                property <float> t: clamp((root.word * 11 - i) / 3, 0, 1);
+                                property <float> landed: self.t >= 1 ? 1 : 1 + 2.70158 * pow(self.t - 1, 3) + 1.70158 * pow(self.t - 1, 2);
+                                text: c;
+                                font-family: Theme.title-font;
+                                font-weight: 900;
+                                font-size: root.letter * 1px;
+                                color: Theme.white;
+                                opacity: self.t > 0 ? 1 : 0;
+                                rotation-angle: (mod(i, 2) == 0 ? -14.3deg : 14.3deg) * (1 - self.landed);
+                            }
+                        }
+                    }
+                }
+                Path {
+                    width: root.letter * 6px;
+                    height: root.letter * 0.28px;
+                    property <float> uw: self.width / 1px * root.underline;
+                    property <float> uh: self.height / 1px;
+                    viewbox-width: self.width / 1px;
+                    viewbox-height: self.uh;
+                    fill: Theme.red;
+                    commands: root.underline <= 0 ? "" : "M 0 \{self.uh * 0.25} Q \{self.uw * 0.5} 0 \{self.uw} \{self.uh * 0.45} L \{self.uw * 0.96} \{self.uh * 0.6} Q \{self.uw * 0.5} \{self.uh * 0.75} 0 \{self.uh * 0.85} Z";
+                }
+            }
+        }
+    }
+    // the fold's ink line as the page turns
+    if root.turn > 0: Rectangle {
+        x: page.x + page.width - 2px;
+        width: 4px;
+        background: Theme.ink;
+    }
+    TouchArea {
+        clicked => { root.finish(); }
+    }
+}

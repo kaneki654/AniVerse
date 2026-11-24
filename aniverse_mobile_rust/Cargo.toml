@@ -1,0 +1,37 @@
+[package]
+name = "aniverse-rust"
+version = "0.1.0"
+edition = "2021"
+[lib]
+name = "aniverse_rust"
+crate-type = ["cdylib", "rlib"]
+[[bin]]
+name = "aniverse-rust"
+path = "src/main.rs"
+[dependencies]
+anyhow = "1"
+jni = "0.21"
+chrono = { version = "0.4", features = ["serde"] }
+directories = "5"
+parking_lot = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+slint = { version = "=1.9.2", default-features = false, features = ["std", "compat-1-2", "renderer-software", "renderer-femtovg"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+# Screentone and slanted-cover textures (already in the tree through Slint's SVG support).
+tiny-skia = { version = "0.11.4", default-features = false, features = ["std", "simd"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "fs", "io-util"] }
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+slint = { version = "=1.9.2", default-features = false, features = ["backend-winit"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+# android-activity 0.6.1 moved to jni 0.22, whose thread setup aborts on startup under
+# Android's ARM translation ("Expected an exception after ExceptionCheck"); 0.5 does not.
+slint = { version = "=1.9.2", default-features = false, features = ["backend-android-activity-05"] }
+
+[build-dependencies]
+slint-build = "=1.9.2"

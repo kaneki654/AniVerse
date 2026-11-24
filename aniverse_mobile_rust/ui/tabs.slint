@@ -1,0 +1,489 @@
+// The tabs after Home: Search, Airing, My List and Saved
+// (lib/ui_manga/screens/search_screen.dart, schedule_screen.dart,
+// mylist_screen.dart, downloads_screen.dart).
+import { Theme, Label, Body, Heading } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Glyph, PanelBox, Press, InkButton, IconButton, Chip, InkBar, Cover, Loader, EmptyState, Message, ChoiceChip, AppBar, InkField, Scroller, Clamp } from "ink.slint";
+import { AnimeRow } from "cards.slint";
+import { Store, Prefs, Actions, Airing, Followed, Saved } from "store.slint";
+
+// Search as you type, plus filters: genre, year, season, format, status,
+// minimum score, sort.
+export component SearchScreen inherits Rectangle {
+    VerticalLayout {
+        Rectangle {
+            height: Theme.safe-top + 56px + 3px;
+            background: Theme.paper;
+            Rectangle {
+                y: parent.height - 3px;
+                height: 3px;
+                background: Theme.line;
+            }
+            InkField {
+                x: 0;
+                y: Theme.safe-top + (56px - self.height) / 2;
+                width: parent.width - 12px;
+                field-height: 46px;
+                hint: "Search anime...";
+                icon: Icons.search;
+                text-size: 17;
+                text <=> Store.search-text;
+                suffix-icon: Store.search-text != "" ? Icons.close : "";
+                suffix-tooltip: "Clear";
+                edited(t) => { Actions.search-edited(t); }
+                accepted => { Actions.search-submit(self.text); }
+                suffix-clicked => { Actions.search-clear(); }
+            }
+        }
+        Flickable {
+            height: 48px;
+            viewport-width: max(self.width, filter-row.preferred-width);
+            viewport-height: 48px;
+            filter-row := HorizontalLayout {
+                height: 48px;
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: 6px;
+                padding-bottom: 6px;
+                spacing: 8px;
+                alignment: start;
+                for f in Store.filters: ChoiceChip {
+                    label: f.label;
+                    clicked => { Actions.pick-filter(f.key); }
+                }
+                if Store.filtered: ChoiceChip {
+                    label: "CLEAR";
+                    clicked => { Actions.clear-filters(); }
+                }
+            }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            if Store.search-loading: Loader {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: self.preferred-width;
+                height: self.preferred-height;
+                label: "SEARCHING";
+            }
+            if !Store.search-loading && !Store.searched && Store.recent-rows.length == 0: Message {
+                icon: Icons.search;
+                text: "TYPE OR PICK A FILTER";
+            }
+            if !Store.search-loading && !Store.searched && Store.recent-rows.length > 0: Scroller {
+                pad-top: 16px;
+                pad-bottom: 24px;
+                // Searches that led somewhere before, one tap to run again.
+                HorizontalLayout {
+                    Label {
+                        horizontal-stretch: 1;
+                        text: "RECENT SEARCHES";
+                        size: 8;
+                        color: Theme.gray;
+                    }
+                    InkButton {
+                        label: "CLEAR";
+                        kind: "paper";
+                        size: 7;
+                        clicked => { Actions.clear-recent(); }
+                    }
+                }
+                Rectangle { height: 12px; }
+                for row in Store.recent-rows: HorizontalLayout {
+                    alignment: start;
+                    spacing: 8px;
+                    padding-bottom: 8px;
+                    for q in row.items: ChoiceChip {
+                        label: q;
+                        clicked => { Actions.run-recent(q); }
+                    }
+                }
+            }
+            if !Store.search-loading && Store.searched && Store.results.length == 0: Message {
+                icon: Icons.skull;
+                text: "NO RESULTS";
+            }
+            if !Store.search-loading && Store.searched && Store.results.length > 0: Scroller {
+                pad-top: 12px;
+                pad-bottom: 24px;
+                gap: 12px;
+                for a in Store.results: AnimeRow {
+                    anime: a;
+                    clicked => { Actions.open-anime(a.id); }
+                }
+                if Store.has-more: HorizontalLayout {
+                    alignment: center;
+                    InkButton {
+                        label: "LOAD MORE";
+                        kind: "paper";
+                        busy: Store.loading-more;
+                        clicked => { Actions.load-more(); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component AiringRow {
+    in property <Airing> item;
+    callback clicked();
+    callback bookmark();
+    opacity: self.item.aired ? 0.6 : 1;
+    Press {
+        width: root.width;
+        height: root.height;
+        clicked => { root.clicked(); }
+        PanelBox {
+            line: root.item.mine ? Theme.red : Theme.line;
+            pad: 8px;
+            HorizontalLayout {
+                VerticalLayout {
+                    width: 62px;
+                    alignment: center;
+                    spacing: 4px;
+                    Label {
+                        text: root.item.time;
+                        size: 9;
+                    }
+                    Label {
+                        text: root.item.countdown;
+                        size: 6;
+                        color: Theme.red-light;
+                    }
+                }
+                Cover {
+                    width: 44px;
+                    height: 62px;
+                    source: root.item.cover;
+                    has-url: root.item.cover-url != "";
+                }
+                Rectangle { width: 12px; }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 4px;
+                    Clamp {
+                        text: root.item.title;
+                        lines: 2;
+                        size: Theme.text(15);
+                    }
+                    Label {
+                        text: "EPISODE \{root.item.episode}" + (root.item.mine ? " · ON MY LIST" : "");
+                        size: 6;
+                        color: Theme.gray;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        icon: root.item.mine ? Icons.bookmark : Icons.bookmark-off;
+                        tint: root.item.mine ? Theme.red : Theme.gray;
+                        scale: 2;
+                        tooltip: root.item.mine ? "Remove from My List" : "Add to My List";
+                        clicked => { root.bookmark(); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The airing schedule: the next seven days, one tab per day, each episode
+// with its local air time and a countdown. Shows on My List float to the top.
+export component AiringScreen inherits Rectangle {
+    VerticalLayout {
+        AppBar { title: "AIRING"; }
+        if Store.schedule-state == 0: Rectangle {
+            vertical-stretch: 1;
+            Loader {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: self.preferred-width;
+                height: self.preferred-height;
+                label: "LOADING";
+            }
+        }
+        if Store.schedule-state == 1: Rectangle {
+            vertical-stretch: 1;
+            EmptyState {
+                y: (parent.height - self.preferred-height) / 2;
+                width: parent.width;
+                height: self.preferred-height;
+                title: "NO SCHEDULE RIGHT NOW";
+                text: "AniList didn't answer. Try again in a moment.";
+                action: "RETRY";
+                action-icon: Icons.refresh;
+                acted => { Actions.retry-schedule(); }
+            }
+        }
+        if Store.schedule-state == 2: Flickable {
+            height: 58px;
+            viewport-width: max(self.width, days-row.preferred-width);
+            viewport-height: 58px;
+            days-row := HorizontalLayout {
+                height: 58px;
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: 8px;
+                padding-bottom: 4px;
+                spacing: 8px;
+                alignment: start;
+                for d in Store.days: InkButton {
+                    label: d.label;
+                    size: 7;
+                    kind: d.key == Store.day ? "red" : "paper";
+                    clicked => { Actions.select-day(d.key); }
+                }
+            }
+        }
+        if Store.schedule-state == 2: Scroller {
+            vertical-stretch: 1;
+            pad-left: 12px;
+            pad-right: 12px;
+            pad-top: 8px;
+            pad-bottom: 24px;
+            gap: 10px;
+            for a[i] in Store.airing: AiringRow {
+                item: a;
+                clicked => { Actions.open-airing(i); }
+                bookmark => { Actions.follow-airing(i); }
+            }
+        }
+    }
+}
+
+component FollowedRow {
+    in property <Followed> item;
+    callback clicked();
+    callback play();
+    callback mute();
+    callback remove();
+    Press {
+        width: root.width;
+        height: root.height;
+        clicked => { root.clicked(); }
+        PanelBox {
+            line: root.item.highlight ? Theme.red-light : Theme.line;
+            pad: 8px;
+            HorizontalLayout {
+                Cover {
+                    width: 52px;
+                    height: 74px;
+                    source: root.item.cover;
+                    has-url: root.item.cover-url != "";
+                }
+                Rectangle { width: 12px; }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 6px;
+                    Clamp {
+                        text: root.item.title;
+                        lines: 2;
+                        size: Theme.text(15);
+                    }
+                    HorizontalLayout {
+                        alignment: start;
+                        if root.item.fresh != "": Label {
+                            text: root.item.fresh;
+                            size: 6;
+                            color: Theme.red-light;
+                        }
+                        Label {
+                            text: root.item.status;
+                            size: 6;
+                            color: root.item.status == "CHECKING…" ? Theme.gray-light : Theme.gray;
+                            overflow: elide;
+                        }
+                    }
+                }
+                if root.item.next > 0: VerticalLayout {
+                    alignment: center;
+                    InkButton {
+                        label: "EP \{root.item.next}";
+                        size: 7;
+                        clicked => { root.play(); }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        icon: Icons.bell;
+                        tint: root.item.alerts && Prefs.alerts ? Theme.red : Theme.gray-light;
+                        scale: 1.8;
+                        box: 40px;
+                        tooltip: root.item.alerts ? "Mute alerts for \{root.item.title}" : "Alerts for \{root.item.title} are muted";
+                        clicked => { root.mute(); }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        icon: Icons.trash;
+                        tint: Theme.gray;
+                        scale: 1.8;
+                        box: 40px;
+                        tooltip: "Remove \{root.item.title}";
+                        clicked => { root.remove(); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// My List: the anime you follow, with new episodes flagged and one tap to
+// the next episode.
+export component MyListScreen inherits Rectangle {
+    VerticalLayout {
+        AppBar {
+            title: "MY LIST";
+            IconButton {
+                icon: Icons.bell;
+                tint: Prefs.alerts ? Theme.red : Theme.gray;
+                tooltip: Prefs.alerts ? "Alerts on" : "Turn on alerts";
+                clicked => { Actions.open-page("settings"); }
+            }
+        }
+        if Store.followed.length == 0: Scroller {
+            vertical-stretch: 1;
+            pad-left: 0;
+            pad-right: 0;
+            pad-top: 0;
+            pad-bottom: 0;
+            EmptyState {
+                title: "YOUR LIST IS EMPTY";
+                text: "Tap the bookmark on any anime to follow it and get told when new episodes air.";
+            }
+        }
+        if Store.followed.length > 0: Scroller {
+            vertical-stretch: 1;
+            pad-left: 12px;
+            pad-right: 12px;
+            pad-top: 10px;
+            pad-bottom: 24px;
+            gap: 10px;
+            for f[i] in Store.followed: FollowedRow {
+                item: f;
+                clicked => { Actions.open-followed(i); }
+                play => { Actions.play-followed(i); }
+                mute => { Actions.mute-followed(i); }
+                remove => { Actions.remove-followed(i); }
+            }
+        }
+    }
+}
+
+component SavedRow {
+    in property <Saved> item;
+    callback clicked();
+    callback retry();
+    callback delete();
+    Press {
+        width: root.width;
+        height: root.height;
+        clicked => { root.clicked(); }
+        PanelBox {
+            line: root.item.failed ? Theme.red-dark : Theme.line;
+            pad: 8px;
+            spacing: 8px;
+            HorizontalLayout {
+                Cover {
+                    width: 46px;
+                    height: 64px;
+                    source: root.item.cover;
+                    has-url: root.item.cover-url != "";
+                }
+                Rectangle { width: 12px; }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: center;
+                    spacing: 4px;
+                    Body {
+                        text: root.item.title;
+                        size: 15;
+                        overflow: elide;
+                    }
+                    Label {
+                        text: root.item.line;
+                        size: 7;
+                    }
+                    Label {
+                        text: root.item.status;
+                        size: 6;
+                        color: root.item.failed ? Theme.red-light : Theme.gray;
+                        wrap: word-wrap;
+                    }
+                }
+                if root.item.done: VerticalLayout {
+                    alignment: center;
+                    Glyph {
+                        icon: Icons.play;
+                        scale: 2;
+                        tint: Theme.red-light;
+                    }
+                }
+                if root.item.failed: VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        icon: Icons.refresh;
+                        tooltip: "Retry";
+                        clicked => { root.retry(); }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    IconButton {
+                        icon: Icons.trash;
+                        tint: Theme.gray;
+                        scale: 1.8;
+                        tooltip: "Delete";
+                        clicked => { root.delete(); }
+                    }
+                }
+            }
+            if root.item.downloading: InkBar {
+                height: 8px;
+                fraction: root.item.progress;
+            }
+        }
+    }
+}
+
+// Episodes saved for watching offline, with what is still downloading.
+export component SavedScreen inherits Rectangle {
+    VerticalLayout {
+        AppBar { title: "DOWNLOADS"; }
+        if Store.saved.length == 0: Rectangle {
+            vertical-stretch: 1;
+            EmptyState {
+                y: (parent.height - self.preferred-height) / 2;
+                width: parent.width;
+                height: self.preferred-height;
+                title: "NOTHING SAVED YET";
+                text: "Open an anime, switch the episodes to the list view and tap the download arrow. Saved episodes play without a connection.";
+            }
+        }
+        if Store.saved.length > 0: Scroller {
+            vertical-stretch: 1;
+            pad-left: 12px;
+            pad-right: 12px;
+            pad-top: 10px;
+            pad-bottom: 24px;
+            gap: 10px;
+            Label {
+                text: Store.saved-summary;
+                size: 6;
+                color: Theme.gray;
+                wrap: word-wrap;
+            }
+            for s[i] in Store.saved: SavedRow {
+                item: s;
+                clicked => { Actions.play-saved(i); }
+                retry => { Actions.retry-saved(i); }
+                delete => { Actions.delete-saved(i); }
+            }
+        }
+    }
+}

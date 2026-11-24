@@ -1,0 +1,380 @@
+// What the screens show and what they ask for. src/app.rs fills Store and
+// Prefs and answers Actions; the screens only read and call.
+
+export struct Anime {
+    id: string,
+    title: string,
+    cover: image,
+    cover-url: string,
+    score: string,      // "79" for the starburst, "" when unrated
+    meta: string,       // list rows: ★ 77  ·  12 EPS  ·  RELEASING
+    chip: string,       // related shows: PREQUEL, SEQUEL...
+}
+
+export struct Shelf {
+    title: string,      // already in capitals
+    items: [Anime],
+}
+
+// One anime's latest episode: Continue Watching and History.
+export struct Resume {
+    id: string,
+    title: string,
+    cover: image,
+    cover-url: string,
+    episode: int,
+    fraction: float,
+    finished: bool,
+    watched: string,    // "Watched", "4:12 / 23:40"
+    ago: string,        // "5m ago"
+}
+
+export struct Slide {
+    id: string,
+    title: string,
+    cover: image,       // the cover already cut on the slant
+    cover-url: string,
+    meta: string,       // "Ep 9 out now!"
+}
+
+export struct Episode {
+    number: int,
+    title: string,
+    meta: string,       // 2 OCT 2026 · 24M · WATCHED
+    overview: string,
+    image: image,
+    image-url: string,
+    fraction: float,
+    started: bool,
+    finished: bool,
+    future: bool,
+    download: string,   // "" not saved, "done", "12%"
+}
+
+export struct Person {
+    name: string,
+    role: string,
+    image: image,
+    image-url: string,
+}
+
+export struct Airing {
+    id: string,
+    title: string,
+    cover: image,
+    cover-url: string,
+    time: string,
+    countdown: string,
+    episode: int,
+    aired: bool,
+    mine: bool,
+}
+
+export struct Day {
+    key: string,
+    label: string,
+}
+
+export struct Followed {
+    id: string,
+    title: string,
+    cover: image,
+    cover-url: string,
+    fresh: string,      // "2 NEW · " or ""
+    status: string,     // "28 OUT · AIRING · ON 3", or "CHECKING…"
+    next: int,          // the episode the EP button opens; 0 hides it
+    alerts: bool,
+    highlight: bool,
+}
+
+export struct Saved {
+    key: string,
+    title: string,
+    cover: image,
+    cover-url: string,
+    line: string,       // EP 3 · SUB
+    status: string,
+    failed: bool,
+    done: bool,
+    downloading: bool,
+    progress: float,
+}
+
+export struct GenreTile {
+    name: string,
+    art: image,
+    art-url: string,
+    title: string,
+    score: string,
+    fill: color,
+    loading: bool,
+}
+
+export struct Badge {
+    name: string,
+    text: string,
+    icon: string,
+    got: bool,
+}
+
+export struct Choice {
+    value: string,
+    label: string,
+}
+
+export struct Filter {
+    key: string,
+    label: string,
+}
+
+// Chips laid out in rows (Flutter's Wrap), split in Rust by width.
+export struct ChipRow {
+    items: [string],
+}
+
+export global Store {
+    // --- the shell: five tabs, pages pushed over them
+    in-out property <int> tab: 0;
+    in-out property <string> page: "";
+    in-out property <int> page-serial: 0;
+    in-out property <bool> page-back: false;
+    in-out property <bool> closing: false;
+    in-out property <int> fresh-count: 0;
+    in-out property <bool> intro: false;
+
+    // --- home
+    in-out property <bool> home-loaded: false;
+    in-out property <[Resume]> resume;
+    in-out property <[Slide]> slides;
+    in-out property <[Shelf]> shelves;
+    in-out property <bool> signed-in: false;
+    in-out property <string> user-name;
+    in-out property <string> user-initial;
+    in-out property <image> user-avatar;
+    in-out property <string> user-avatar-url;
+
+    // --- detail
+    in-out property <bool> detail-loading: false;
+    in-out property <string> detail-id;
+    in-out property <string> detail-title;
+    in-out property <string> detail-title-caps;
+    in-out property <image> detail-cover;
+    in-out property <string> detail-cover-url;
+    in-out property <image> detail-banner;
+    in-out property <string> detail-banner-url;
+    in-out property <[string]> detail-genres;
+    in-out property <[ChipRow]> detail-facts;
+    in-out property <string> detail-synopsis;
+    in-out property <bool> detail-following: false;
+    in-out property <string> detail-tagalog;
+    in-out property <bool> detail-released: true;
+    in-out property <string> detail-resume-title;
+    in-out property <string> detail-resume-text;
+    in-out property <float> detail-resume-fraction;
+    in-out property <bool> detail-resume-finished: false;
+    in-out property <bool> detail-download-all: false;
+    in-out property <bool> detail-list-view: true;
+    in-out property <int> episode-count: 0;
+    in-out property <int> episode-first: 0;
+    in-out property <[Episode]> episodes;
+    in-out property <bool> trailer: false;
+    in-out property <image> trailer-thumb;
+    in-out property <string> trailer-thumb-url;
+    in-out property <[Person]> characters;
+    in-out property <[Anime]> related;
+    in-out property <[Anime]> recommended;
+
+    // --- search
+    in-out property <string> search-text;
+    in-out property <[Filter]> filters;
+    in-out property <bool> filtered: false;
+    in-out property <bool> search-loading: false;
+    in-out property <bool> searched: false;
+    in-out property <[Anime]> results;
+    in-out property <bool> has-more: false;
+    in-out property <bool> loading-more: false;
+    in-out property <[ChipRow]> recent-rows;
+
+    // --- airing
+    in-out property <int> schedule-state: 0;   // 0 loading, 1 nothing, 2 ready
+    in-out property <[Day]> days;
+    in-out property <string> day;
+    in-out property <[Airing]> airing;
+
+    // --- my list
+    in-out property <[Followed]> followed;
+
+    // --- saved
+    in-out property <[Saved]> saved;
+    in-out property <string> saved-summary;
+
+    // --- genres
+    in-out property <[GenreTile]> genres;
+    in-out property <string> genre-name;
+    in-out property <[Anime]> genre-items;
+    in-out property <bool> genre-loading: false;
+    in-out property <bool> genre-list: false;
+
+    // --- history
+    in-out property <[Resume]> history;
+    in-out property <bool> history-syncing: false;
+
+    // --- account
+    in-out property <string> account-handle;
+    in-out property <string> account-provider;
+    in-out property <bool> auth-config-known: false;
+    in-out property <bool> google-ready: false;
+    in-out property <bool> creating: false;
+    in-out property <bool> auth-busy: false;
+    in-out property <string> auth-error;
+    in-out property <string> username;
+    in-out property <string> password;
+    in-out property <string> confirm;
+    in-out property <bool> hide-password: true;
+    in-out property <string> history-line;
+    in-out property <bool> signing-out: false;
+    in-out property <string> level-line;
+    in-out property <float> level-progress;
+    in-out property <string> xp-line;
+    in-out property <string> level-initial: "P";
+    in-out property <color> frame-color: #B06A2C;
+    in-out property <string> stat-episodes: "0";
+    in-out property <string> stat-anime: "0";
+    in-out property <string> stat-streak: "0";
+    in-out property <string> stat-hours: "0h";
+    in-out property <string> badges-title;
+    in-out property <[Badge]> badges;
+    in-out property <string> anilist-text;
+    in-out property <string> anilist-action;
+    in-out property <string> mal-text;
+    in-out property <string> mal-action;
+
+    // --- overlays: the option sheet, a dialog, the speech-bubble toast
+    in-out property <bool> sheet-open: false;
+    in-out property <string> sheet-title;
+    in-out property <[Choice]> sheet-options;
+    in-out property <string> sheet-current;
+    in-out property <bool> dialog-open: false;
+    in-out property <string> dialog-title;
+    in-out property <string> dialog-text;
+    in-out property <string> dialog-ok;
+    in-out property <string> dialog-cancel;
+    in-out property <bool> dialog-input: false;
+    in-out property <string> dialog-value;
+    in-out property <string> dialog-hint;
+    in-out property <bool> dialog-danger: false;
+    in-out property <bool> toast-visible: false;
+    in-out property <string> toast-text;
+    in-out property <string> toast-action;
+    in-out property <int> toast-serial: 0;
+
+    // Local visual checks only (ANIVERSE_PREVIEW_SCROLL): how far a page opens scrolled.
+    in-out property <length> preview-scroll: 0px;
+
+    // --- the player page while a stream is found (the native player covers it)
+    in-out property <string> player-title;
+    in-out property <string> player-status: "FINDING SOURCES";
+    in-out property <string> player-error;
+}
+
+// Settings, as shown (values already turned into their labels).
+export global Prefs {
+    in-out property <string> host;
+    in-out property <string> look: "MANGA";
+    in-out property <string> palette: "BLOOD";
+    in-out property <string> effects: "FULL";
+    in-out property <bool> intro: true;
+    in-out property <bool> sfx: true;
+    in-out property <string> volume: "NORMAL";
+    in-out property <bool> data-saver: false;
+    in-out property <bool> pip: true;
+    in-out property <bool> pip-supported: true;
+    in-out property <bool> bg-audio: false;
+    in-out property <string> seek: "10 SECONDS";
+    in-out property <bool> skip-recap: false;
+    in-out property <string> sub-color: "WHITE";
+    in-out property <string> sub-size: "MEDIUM";
+    in-out property <bool> sub-bg: true;
+    in-out property <string> sub-lang: "DEFAULT";
+    in-out property <bool> wifi-only: true;
+    in-out property <string> storage: "NO LIMIT";
+    in-out property <bool> smart-downloads: false;
+    in-out property <bool> auto-delete: false;
+    in-out property <bool> alerts: false;
+    in-out property <string> quiet: "OFF";
+    in-out property <string> text-size: "NORMAL";
+    in-out property <bool> high-contrast: false;
+    in-out property <string> version;
+}
+
+export global Actions {
+    // Sfx.play: click, page, select, pop, slash, achieve...
+    callback sfx(string);
+    // shell
+    callback select-tab(int);
+    callback back();
+    callback open-page(string);
+    callback open-anime(string);
+    callback open-resume(string);
+    callback refresh-home();
+    // detail
+    callback toggle-follow();
+    callback play-episode(int);
+    callback download-episode(int);
+    callback download-all();
+    callback toggle-episode-view();
+    callback play-tagalog();
+    callback open-trailer();
+    callback episodes-window(int, int);
+    // search
+    callback search-edited(string);
+    callback search-submit(string);
+    callback search-clear();
+    callback pick-filter(string);
+    callback clear-filters();
+    callback load-more();
+    callback run-recent(string);
+    callback clear-recent();
+    // airing
+    callback select-day(string);
+    callback open-airing(int);
+    callback follow-airing(int);
+    callback retry-schedule();
+    // my list
+    callback open-followed(int);
+    callback play-followed(int);
+    callback mute-followed(int);
+    callback remove-followed(int);
+    // saved
+    callback play-saved(int);
+    callback retry-saved(int);
+    callback delete-saved(int);
+    // genres
+    callback open-genre(string);
+    callback toggle-genre-view();
+    callback genre-more();
+    // history
+    callback sync-history();
+    callback clear-history();
+    callback remove-history(string);
+    callback history-details(string);
+    // account
+    callback auth-mode(bool);
+    callback auth-submit();
+    callback google();
+    callback sign-out();
+    callback share-card();
+    callback tracking(string);
+    // settings
+    callback toggle-pref(string);
+    callback choose-pref(string);
+    callback edit-server();
+    callback replay-intro();
+    // overlays
+    callback sheet-pick(string);
+    callback sheet-dismiss();
+    callback dialog-answer(bool, string);
+    callback toast-tapped();
+    callback intro-done();
+    callback player-retry();
+}

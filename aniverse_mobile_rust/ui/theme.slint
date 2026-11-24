@@ -1,0 +1,107 @@
+// The two looks of the Flutter app. Manga (lib/ui_manga/ink/manga.dart, the
+// default) is ink on paper with one red spot colour; Pixel (lib/ui_2d) keeps
+// its console palettes. Every component reads its colours and lettering from
+// here, so switching looks repaints the same screens.
+import "../assets/fonts/manga/MangaTitle-Oblique.ttf";
+import "../assets/fonts/manga/MangaCaption-Oblique.ttf";
+import "../assets/fonts/manga/Lato-Black.ttf";
+import "../assets/fonts/manga/RobotoCondensed-Regular.ttf";
+import "../assets/fonts/manga/RobotoCondensed-Bold.ttf";
+import "../assets/fonts/manga/MangaSfx-Bold.otf";
+import "../assets/fonts/PressStart2P-Regular.ttf";
+import "../assets/fonts/DotGothic16-Regular.ttf";
+
+export global Theme {
+    in-out property <string> style: "manga";
+    // Settings > Effects: 2 full, 1 lite, 0 off.
+    in-out property <int> fx: 2;
+    in-out property <float> text-scale: 1.0;
+    in-out property <bool> high-contrast: false;
+    // System bars drawn over the app (Android edge-to-edge), in logical px.
+    in-out property <length> safe-top: 0px;
+    in-out property <length> safe-bottom: 0px;
+    // A 12 fps clock for drawn-looking loops (MangaClock), bumped by the window.
+    in-out property <int> frame: 0;
+    // The window's width (MediaQuery.sizeOf(context).width), kept by the window.
+    in-out property <length> win-w: 411px;
+
+    // The pixel palette in use (theme.rs, from ui_2d/pixel/pixel.dart).
+    in-out property <color> px-ink: #0D0709;
+    in-out property <color> px-panel: #1B1114;
+    in-out property <color> px-panel-high: #2A1A1F;
+    in-out property <color> px-blood: #D10A1A;
+    in-out property <color> px-blood-dark: #7A0410;
+    in-out property <color> px-blood-deep: #3D0107;
+    in-out property <color> px-blood-light: #FF4D57;
+
+    out property <bool> manga: style != "pixel";
+    // Mg.paper / panel / panelHigh / tone / ink / gray / grayLight / red...
+    out property <color> paper: manga ? #F5F1E8 : px-ink;
+    out property <color> panel: manga ? #FFFFFF : px-panel;
+    out property <color> panel-high: manga ? #EAE4D8 : px-panel-high;
+    out property <color> tone: manga ? #D6CFC2 : px-panel-high;
+    out property <color> ink: manga ? #121010 : #F2E8D5;
+    out property <color> line: manga ? #121010 : #050305;
+    out property <color> shadow: manga ? #121010 : #050305;
+    out property <color> gray: manga ? #5C5852 : (high-contrast ? #E2DCD2 : #9A918C);
+    out property <color> gray-light: manga ? #9A948B : #5A5250;
+    out property <color> red: manga ? #E50914 : px-blood;
+    out property <color> red-dark: manga ? #9E0610 : px-blood-dark;
+    out property <color> red-deep: manga ? #4A0308 : px-blood-deep;
+    out property <color> red-light: manga ? #FF5A64 : px-blood-light;
+    out property <color> white: #FFFFFF;
+    out property <color> black: #0A0909;
+    // The black caption box behind section titles and the open tab.
+    out property <color> caption: manga ? #121010 : px-blood;
+    out property <color> google-blue: #4285F4;
+
+    // MgFont: heavy slanted titles, condensed captions and text, kana effects.
+    out property <string> title-font: manga ? "MangaTitle" : "Press Start 2P";
+    out property <string> caption-font: manga ? "MangaCaption" : "Press Start 2P";
+    out property <string> upright-title-font: manga ? "Lato" : "Press Start 2P";
+    out property <string> body-font: manga ? "Roboto Condensed" : "DotGothic16";
+    out property <string> sfx-font: manga ? "Noto Sans CJK JP" : "Press Start 2P";
+    // MgFont.label(size): sizes follow the pixel UI's, scaled up 1.5x.
+    out property <float> label-k: manga ? 1.5 : 1.0;
+    out property <float> text-k: manga ? 1.02 : 1.0;
+    out property <float> heading-k: manga ? 1.0 : 0.58;
+
+    public pure function label(size: float) -> length {
+        return size * label-k * text-scale * 1px;
+    }
+    public pure function text(size: float) -> length {
+        return size * text-k * text-scale * 1px;
+    }
+    public pure function heading(size: float) -> length {
+        return size * heading-k * text-scale * 1px;
+    }
+}
+
+// MgFont.label: bold condensed caps.
+export component Label inherits Text {
+    in property <float> size: 8;
+    font-family: Theme.body-font;
+    font-weight: 700;
+    font-size: Theme.label(self.size);
+    letter-spacing: 0.3px;
+    color: Theme.ink;
+    vertical-alignment: center;
+}
+
+// MgFont.text: condensed running text.
+export component Body inherits Text {
+    in property <float> size: 14;
+    font-family: Theme.body-font;
+    font-size: Theme.text(self.size);
+    color: Theme.ink;
+}
+
+// MgFont.heading: heavy, forward-leaning headline.
+export component Heading inherits Text {
+    in property <float> size: 20;
+    font-family: Theme.title-font;
+    font-weight: 900;
+    font-size: Theme.heading(self.size);
+    letter-spacing: -0.2px;
+    color: Theme.ink;
+}

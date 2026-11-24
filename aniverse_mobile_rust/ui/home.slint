@@ -1,0 +1,756 @@
+// Home and the anime page: lib/ui_manga/screens/home_screen.dart and
+// detail_screen.dart.
+import { Theme, Label, Body, Heading } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Tex, Lines, Glyph, PanelBox, Press, InkButton, IconButton, Chip, InkBar, Cover, PlayBox, SectionHeader, Logo, Loader, EmptyState, Scroller, Clamp } from "ink.slint";
+import { PosterCard, ResumeCard, PosterRow, SectionSkeleton, Spotlight, SpotlightSkeleton } from "cards.slint";
+import { Store, Actions, Episode, Anime } from "store.slint";
+
+// The square avatar: the account photo, or the initial on red.
+export component UserAvatar {
+    in property <length> size: 32px;
+    property <bool> framed: self.size >= 48px;
+    width: self.size;
+    height: self.size;
+    PanelBox {
+        width: parent.width;
+        height: parent.height;
+        fill: Theme.ink;
+        shadow: root.framed ? 4px : 2px;
+        border: root.framed ? 3px : 2px;
+        Rectangle {
+            if Store.user-avatar-url != "": Cover {
+                source: Store.user-avatar;
+                foot: false;
+            }
+            if Store.user-avatar-url == "": Rectangle {
+                background: Theme.red;
+                Text {
+                    text: Store.user-initial;
+                    font-family: Theme.title-font;
+                    font-weight: 900;
+                    font-size: Theme.heading(root.size / 1px * 0.5);
+                    color: Theme.white;
+                    stroke: Theme.ink;
+                    stroke-width: root.size * 0.03;
+                    stroke-style: outside;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
+
+export component HomeScreen inherits Rectangle {
+    VerticalLayout {
+        // The bar: the account on the left, the wordmark in the middle,
+        // genres and settings on the right.
+        Rectangle {
+            height: Theme.safe-top + 64px + 3px;
+            background: Theme.paper;
+            Rectangle {
+                y: parent.height - 3px;
+                height: 3px;
+                background: Theme.line;
+            }
+            Logo {
+                x: (parent.width - self.width) / 2;
+                y: Theme.safe-top + (64px - self.height) / 2;
+                width: self.preferred-width;
+                height: self.preferred-height;
+                font-size: 16;
+            }
+            if !Store.signed-in: IconButton {
+                x: 4px;
+                y: Theme.safe-top + 8px;
+                icon: Icons.user;
+                tint: Theme.gray;
+                tooltip: "Sign in";
+                clicked => { Actions.open-page("account"); }
+            }
+            if Store.signed-in: Rectangle {
+                x: 4px;
+                y: Theme.safe-top + 8px;
+                width: 48px;
+                height: 48px;
+                TouchArea { clicked => { Actions.open-page("account"); } }
+                UserAvatar {
+                    x: 9px;
+                    y: 9px;
+                    size: 30px;
+                }
+            }
+            HorizontalLayout {
+                y: Theme.safe-top + 8px;
+                height: 48px;
+                alignment: end;
+                padding-right: 4px;
+                IconButton {
+                    icon: Icons.grid;
+                    tint: Theme.gray;
+                    tooltip: "Genres";
+                    clicked => { Actions.open-page("genres"); }
+                }
+                IconButton {
+                    icon: Icons.gear;
+                    tint: Theme.gray;
+                    tooltip: "Settings";
+                    clicked => { Actions.open-page("settings"); }
+                }
+            }
+        }
+        Scroller {
+            vertical-stretch: 1;
+            // History is local, so it shows while the server answers.
+            if Store.resume.length > 0: VerticalLayout {
+                padding-bottom: 26px;
+                SectionHeader {
+                    title: "CONTINUE WATCHING";
+                    more: true;
+                    more-clicked => { Actions.open-page("history"); }
+                }
+                Flickable {
+                    height: 218px;
+                    viewport-width: max(self.width, Store.resume.length * 142px);
+                    viewport-height: 218px;
+                    for item[i] in Store.resume: ResumeCard {
+                        x: i * 142px;
+                        width: 130px;
+                        height: 218px;
+                        item: item;
+                        clicked => { Actions.open-resume(item.id); }
+                    }
+                }
+            }
+            if !Store.home-loaded: VerticalLayout {
+                SpotlightSkeleton { }
+                Rectangle { height: 24px; }
+                SectionHeader { title: "TRENDING NOW"; }
+                SectionSkeleton { }
+                Rectangle { height: 24px; }
+                SectionHeader { title: "POPULAR"; }
+                SectionSkeleton { }
+                Rectangle { height: 24px; }
+                SectionHeader { title: "LATEST EPISODES"; }
+                SectionSkeleton { }
+            }
+            if Store.home-loaded && Store.slides.length > 0: Spotlight {
+                slides: Store.slides;
+                opened(id) => { Actions.open-anime(id); }
+            }
+            if Store.home-loaded && Store.slides.length == 0 && Store.shelves.length == 0: EmptyState {
+                title: "THE SERVER DIDN'T ANSWER";
+                text: "Check your connection, or the server address in Settings.";
+                action: "RETRY";
+                action-icon: Icons.refresh;
+                acted => { Actions.refresh-home(); }
+            }
+            if Store.home-loaded: VerticalLayout {
+                for shelf in Store.shelves: VerticalLayout {
+                    padding-top: 24px;
+                    PosterRow {
+                        title: shelf.title;
+                        items: shelf.items;
+                        opened(id) => { Actions.open-anime(id); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// One episode in the list view: screenshot, number, title, air date, a line
+// of synopsis, progress, and the download button.
+component EpisodeRow {
+    in property <Episode> ep;
+    callback play();
+    callback download();
+    opacity: self.ep.future ? 0.45 : 1;
+    Press {
+        width: root.width;
+        height: root.height;
+        enabled: !root.ep.future;
+        clicked => { root.play(); }
+        PanelBox {
+            line: root.ep.finished ? Theme.red-dark : Theme.line;
+            pad: 6px;
+            HorizontalLayout {
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: start;
+                    Rectangle {
+                        width: 120px;
+                        height: 68px;
+                        Cover {
+                            source: root.ep.image;
+                            has-url: root.ep.image-url != "";
+                        }
+                        Rectangle {
+                            x: 0;
+                            y: parent.height - self.height;
+                            width: badge.preferred-width + 8px;
+                            height: badge.preferred-height + 4px;
+                            background: Theme.line;
+                            badge := Label {
+                                x: 4px;
+                                y: 2px;
+                                text: "EP \{root.ep.number}";
+                                size: 6;
+                                color: Theme.white;
+                            }
+                        }
+                        if root.ep.finished: Glyph {
+                            x: parent.width - self.width - 3px;
+                            y: 3px;
+                            icon: Icons.skull-small;
+                            scale: 1.6;
+                        }
+                        if root.ep.started && !root.ep.finished: InkBar {
+                            y: parent.height - 4px;
+                            width: parent.width;
+                            height: 4px;
+                            fraction: root.ep.fraction;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    alignment: start;
+                    spacing: 3px;
+                    Clamp {
+                        text: root.ep.title;
+                        lines: 2;
+                        size: Theme.text(14);
+                        tint: root.ep.finished ? Theme.gray : Theme.ink;
+                    }
+                    if root.ep.meta != "": Label {
+                        text: root.ep.meta;
+                        size: 5;
+                        color: Theme.gray-light;
+                    }
+                    if root.ep.overview != "": Clamp {
+                        text: root.ep.overview;
+                        lines: 2;
+                        size: Theme.text(11);
+                        tint: Theme.gray;
+                    }
+                }
+                if !root.ep.future && root.ep.download == "": VerticalLayout {
+                    alignment: start;
+                    IconButton {
+                        icon: Icons.download;
+                        tint: Theme.gray;
+                        scale: 1.8;
+                        box: 40px;
+                        tooltip: "Download episode \{root.ep.number}";
+                        clicked => { root.download(); }
+                    }
+                }
+                if !root.ep.future && root.ep.download == "done": VerticalLayout {
+                    alignment: start;
+                    Rectangle {
+                        width: 40px;
+                        height: 40px;
+                        Glyph {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            icon: Icons.check;
+                            scale: 1.8;
+                            tint: Theme.red-light;
+                        }
+                    }
+                }
+                if !root.ep.future && root.ep.download != "" && root.ep.download != "done": VerticalLayout {
+                    alignment: start;
+                    Label {
+                        width: 40px;
+                        height: 40px;
+                        text: root.ep.download;
+                        size: 6;
+                        color: Theme.gray;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// One episode in the grid: the number on a toned tile, red-black when done.
+component EpisodeTile {
+    in property <Episode> ep;
+    callback play();
+    Press {
+        width: root.width;
+        height: root.height;
+        clicked => { root.play(); }
+        PanelBox {
+            fill: root.ep.finished ? Theme.red-deep : Theme.panel-high;
+            line: root.ep.finished ? Theme.red-dark : Theme.line;
+            shadow: 2px;
+            bevel: !root.ep.finished;
+            Rectangle {
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 4px;
+                    if root.ep.finished: VerticalLayout {
+                        alignment: center;
+                        Glyph {
+                            icon: Icons.skull-small;
+                            scale: 1.4;
+                        }
+                    }
+                    Label {
+                        text: "\{root.ep.number}";
+                        size: 10;
+                        color: root.ep.finished ? Theme.gray : Theme.ink;
+                    }
+                }
+                if root.ep.started && !root.ep.finished: InkBar {
+                    y: parent.height - 5px;
+                    width: parent.width;
+                    height: 5px;
+                    fraction: root.ep.fraction;
+                }
+            }
+        }
+    }
+}
+
+// The title page: the banner in a wide panel, the cover tilted over it, the
+// title and tags lettered beside it; then synopsis, My List, episodes, extras.
+export component DetailPage inherits Rectangle {
+    property <length> top: Theme.safe-top;
+    property <length> scroll: -flick.viewport-y;
+    property <length> header-h: self.top + 360px;
+    property <bool> collapsed: self.header-h - self.scroll <= self.top + 56px + 12px;
+    // The episode area is drawn only where it can be seen (a show can have
+    // a thousand episodes).
+    property <length> tile-w: (self.width - 32px - 24px) / 4;
+    property <length> stride: Store.detail-list-view ? 102px : self.tile-w / 2 + 8px;
+    property <length> into: self.scroll - ep-area.y - 4px;
+    property <int> first-row: max(0, floor(max(0px, self.into) / self.stride) - 4);
+    property <int> row-count: ceil(self.height / self.stride) + 9;
+    property <int> columns: Store.detail-list-view ? 1 : 4;
+    property <int> rows-total: ceil(Store.episode-count / self.columns);
+    changed first-row => { Actions.episodes-window(self.first-row, self.row-count); }
+    changed row-count => { Actions.episodes-window(self.first-row, self.row-count); }
+    changed columns => { Actions.episodes-window(self.first-row, self.row-count); }
+    init => {
+        Actions.episodes-window(self.first-row, self.row-count);
+        if Store.preview-scroll > 0 { flick.viewport-y = -Store.preview-scroll; }
+    }
+
+    if Store.detail-loading: Loader {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: self.preferred-width;
+        height: self.preferred-height;
+        label: "LOADING";
+    }
+    flick := Flickable {
+        visible: !Store.detail-loading;
+        viewport-width: self.width;
+        viewport-height: col.preferred-height;
+        col := VerticalLayout {
+            width: root.width;
+            alignment: start;
+            // --- header
+            Rectangle {
+                height: root.header-h;
+                clip: true;
+                if Store.detail-banner-url != "": PanelBox {
+                    x: 12px;
+                    y: root.top + 52px;
+                    width: parent.width - 24px;
+                    height: 128px;
+                    border: 2.5px;
+                    shadow: 4px;
+                    Cover {
+                        source: Store.detail-banner;
+                        has-url: Store.detail-banner-url != "";
+                    }
+                }
+                // The banner's white focus lines, running out over the page.
+                if Theme.manga && Store.detail-banner-url != "": Path {
+                    width: parent.width;
+                    height: parent.height;
+                    viewbox-width: Lines.header-w / 1px;
+                    viewbox-height: Lines.header-h / 1px;
+                    commands: Lines.header;
+                    fill: #FFFFFF55;
+                }
+                if Store.detail-cover-url != "": Rectangle {
+                    x: 22px;
+                    y: root.top + 112px;
+                    width: 112px;
+                    height: 164px;
+                    property <float> w: self.width / 1px;
+                    property <float> h: self.height / 1px;
+                    // the panel turned by -0.035 rad: its hard shadow, frame, then the cover
+                    Path {
+                        x: 0;
+                        y: 0;
+                        width: parent.width;
+                        height: parent.height;
+                        viewbox-width: parent.w;
+                        viewbox-height: parent.h;
+                        fill: Theme.shadow;
+                        commands: "M \{5 + parent.w / 2 - parent.w / 2 * 0.99939 - parent.h / 2 * 0.03499} \{5 + parent.h / 2 + parent.w / 2 * 0.03499 - parent.h / 2 * 0.99939} "
+                            + "L \{5 + parent.w / 2 + parent.w / 2 * 0.99939 - parent.h / 2 * 0.03499} \{5 + parent.h / 2 - parent.w / 2 * 0.03499 - parent.h / 2 * 0.99939} "
+                            + "L \{5 + parent.w / 2 + parent.w / 2 * 0.99939 + parent.h / 2 * 0.03499} \{5 + parent.h / 2 - parent.w / 2 * 0.03499 + parent.h / 2 * 0.99939} "
+                            + "L \{5 + parent.w / 2 - parent.w / 2 * 0.99939 + parent.h / 2 * 0.03499} \{5 + parent.h / 2 + parent.w / 2 * 0.03499 + parent.h / 2 * 0.99939} Z";
+                    }
+                    Path {
+                        x: 0;
+                        y: 0;
+                        width: parent.width;
+                        height: parent.height;
+                        viewbox-width: parent.w;
+                        viewbox-height: parent.h;
+                        fill: Theme.line;
+                        commands: "M \{parent.w / 2 - parent.w / 2 * 0.99939 - parent.h / 2 * 0.03499} \{parent.h / 2 + parent.w / 2 * 0.03499 - parent.h / 2 * 0.99939} "
+                            + "L \{parent.w / 2 + parent.w / 2 * 0.99939 - parent.h / 2 * 0.03499} \{parent.h / 2 - parent.w / 2 * 0.03499 - parent.h / 2 * 0.99939} "
+                            + "L \{parent.w / 2 + parent.w / 2 * 0.99939 + parent.h / 2 * 0.03499} \{parent.h / 2 - parent.w / 2 * 0.03499 + parent.h / 2 * 0.99939} "
+                            + "L \{parent.w / 2 - parent.w / 2 * 0.99939 + parent.h / 2 * 0.03499} \{parent.h / 2 + parent.w / 2 * 0.03499 + parent.h / 2 * 0.99939} Z";
+                    }
+                    Image {
+                        x: 3.5px;
+                        y: 3.5px;
+                        width: parent.width - 7px;
+                        height: parent.height - 7px;
+                        source: Store.detail-cover;
+                        image-fit: ImageFit.cover;
+                        rotation-angle: -2deg;
+                    }
+                }
+                VerticalLayout {
+                    x: Store.detail-cover-url != "" ? 150px : 16px;
+                    y: root.top + 188px;
+                    width: parent.width - self.x - 14px;
+                    height: parent.height - self.y - 6px;
+                    alignment: start;
+                    Clamp {
+                        text: Store.detail-title;
+                        lines: 3;
+                        size: Theme.heading(20);
+                        family: Theme.title-font;
+                        weight: 900;
+                        line-k: 1.21;
+                    }
+                    if Store.detail-genres.length > 0: Rectangle { height: 8px; }
+                    if Store.detail-genres.length > 0: HorizontalLayout {
+                        alignment: start;
+                        spacing: 6px;
+                        for g in Store.detail-genres: Chip {
+                            text: g;
+                            size: 6;
+                        }
+                    }
+                    for row[ri] in Store.detail-facts: VerticalLayout {
+                        padding-top: 6px;
+                        HorizontalLayout {
+                            alignment: start;
+                            spacing: 6px;
+                            for f in row.items: Chip {
+                                text: f;
+                                size: 6;
+                                fill: Theme.panel-high;
+                                fg: Theme.gray;
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    y: parent.height - 3px;
+                    height: 3px;
+                    background: Theme.line;
+                }
+            }
+            // --- synopsis, My List, the Tagalog dub, carrying on
+            VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 18px;
+                if Store.detail-synopsis != "": Body {
+                    text: Store.detail-synopsis;
+                    size: 15;
+                    color: Theme.gray;
+                    wrap: word-wrap;
+                }
+                if Store.detail-synopsis != "": Rectangle { height: 24px; }
+                HorizontalLayout {
+                    alignment: start;
+                    padding-bottom: 20px;
+                    InkButton {
+                        label: Store.detail-following ? "ON MY LIST" : "ADD TO MY LIST";
+                        icon: Store.detail-following ? Icons.bookmark : Icons.bookmark-off;
+                        kind: Store.detail-following ? "paper" : "red";
+                        size: 8;
+                        clicked => { Actions.toggle-follow(); }
+                    }
+                }
+                if Store.detail-tagalog != "": HorizontalLayout {
+                    alignment: start;
+                    padding-bottom: 20px;
+                    InkButton {
+                        label: Store.detail-tagalog;
+                        icon: Icons.play;
+                        size: 8;
+                        clicked => { Actions.play-tagalog(); }
+                    }
+                }
+                if Store.detail-released && Store.detail-resume-title != "": VerticalLayout {
+                    padding-bottom: 20px;
+                    Press {
+                        clicked => { Actions.play-episode(-1); }
+                        PanelBox {
+                            fill: Theme.panel;
+                            line: Theme.red-dark;
+                            pad-left: 12px;
+                            pad-right: 12px;
+                            pad-top: 12px;
+                            pad-bottom: 10px;
+                            spacing: 10px;
+                            HorizontalLayout {
+                                spacing: 14px;
+                                VerticalLayout {
+                                    alignment: center;
+                                    PlayBox { }
+                                }
+                                VerticalLayout {
+                                    alignment: center;
+                                    spacing: 5px;
+                                    Label {
+                                        text: Store.detail-resume-title;
+                                        size: 9;
+                                    }
+                                    Body {
+                                        text: Store.detail-resume-text;
+                                        size: 13;
+                                        color: Theme.gray;
+                                    }
+                                }
+                            }
+                            if !Store.detail-resume-finished: InkBar {
+                                height: 8px;
+                                fraction: Store.detail-resume-fraction;
+                            }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    SectionHeader {
+                        horizontal-stretch: 1;
+                        title: "EPISODES";
+                    }
+                    if Store.detail-released && Store.detail-download-all: VerticalLayout {
+                        padding-left: 8px;
+                        padding-bottom: 14px;
+                        alignment: center;
+                        IconButton {
+                            icon: Icons.download;
+                            tint: Theme.gray;
+                            framed: true;
+                            tooltip: "Download every episode";
+                            clicked => { Actions.download-all(); }
+                        }
+                    }
+                    if Store.detail-released: VerticalLayout {
+                        padding-left: 8px;
+                        padding-bottom: 14px;
+                        alignment: center;
+                        IconButton {
+                            icon: Store.detail-list-view ? Icons.grid : Icons.list;
+                            tint: Theme.gray;
+                            framed: true;
+                            tooltip: Store.detail-list-view ? "Show as a grid" : "Show as a list";
+                            clicked => { Actions.toggle-episode-view(); }
+                        }
+                    }
+                }
+            }
+            if !Store.detail-released: Text {
+                height: 80px;
+                text: "NOT RELEASED YET";
+                font-family: Theme.upright-title-font;
+                font-weight: 900;
+                font-size: 11px;
+                color: Theme.red;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            ep-area := Rectangle {
+                visible: Store.detail-released;
+                height: Store.detail-released ? (Store.detail-list-view ? max(0px, Store.episode-count * 102px - 10px) + 16px : root.rows-total * root.stride - 8px + 32px) : 0px;
+                for ep[i] in Store.episodes: Rectangle {
+                    property <int> n: Store.episode-first + i;
+                    x: Store.detail-list-view ? 16px : 16px + mod(self.n, 4) * (root.tile-w + 8px);
+                    y: 4px + (Store.detail-list-view ? self.n * 102px : floor(self.n / 4) * root.stride);
+                    width: Store.detail-list-view ? parent.width - 32px : root.tile-w;
+                    height: Store.detail-list-view ? 92px : root.tile-w / 2;
+                    if Store.detail-list-view: EpisodeRow {
+                        width: parent.width;
+                        height: parent.height;
+                        ep: ep;
+                        play => { Actions.play-episode(ep.number); }
+                        download => { Actions.download-episode(ep.number); }
+                    }
+                    if !Store.detail-list-view: EpisodeTile {
+                        width: parent.width;
+                        height: parent.height;
+                        ep: ep;
+                        play => { Actions.play-episode(ep.number); }
+                    }
+                }
+            }
+            // --- trailer, characters, related seasons, recommendations
+            if Store.trailer: VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 20px;
+                SectionHeader { title: "TRAILER"; }
+                Press {
+                    height: (root.width - 32px) * 9 / 16;
+                    clicked => { Actions.open-trailer(); }
+                    PanelBox {
+                        fill: Theme.ink;
+                        Rectangle {
+                            Cover {
+                                source: Store.trailer-thumb;
+                                has-url: Store.trailer-thumb-url != "";
+                            }
+                            PlayBox {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                scale: 3;
+                                shadow: 3px;
+                            }
+                        }
+                    }
+                }
+            }
+            if Store.characters.length > 0: VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 20px;
+                SectionHeader { title: "CHARACTERS"; }
+                Flickable {
+                    height: 150px;
+                    viewport-width: max(self.width, Store.characters.length * 98px);
+                    viewport-height: 150px;
+                    for c[i] in Store.characters: VerticalLayout {
+                        x: i * 98px;
+                        width: 88px;
+                        height: 150px;
+                        alignment: start;
+                        PanelBox {
+                            height: 96px;
+                            fill: Theme.ink;
+                            shadow: 2px;
+                            Cover {
+                                source: c.image;
+                                has-url: c.image-url != "";
+                            }
+                        }
+                        Rectangle { height: 5px; }
+                        Body {
+                            text: c.name;
+                            size: 12;
+                            overflow: elide;
+                        }
+                        Label {
+                            text: c.role;
+                            size: 5;
+                            color: Theme.gray;
+                            overflow: elide;
+                        }
+                    }
+                }
+            }
+            if Store.related.length > 0: VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 20px;
+                SectionHeader { title: "RELATED"; }
+                Flickable {
+                    height: 230px;
+                    viewport-width: max(self.width, Store.related.length * 120px);
+                    viewport-height: 230px;
+                    for a[i] in Store.related: VerticalLayout {
+                        x: i * 120px;
+                        width: 106px;
+                        height: 230px;
+                        HorizontalLayout {
+                            alignment: start;
+                            padding-bottom: 4px;
+                            Chip {
+                                text: a.chip;
+                                size: 5;
+                            }
+                        }
+                        PosterCard {
+                            vertical-stretch: 1;
+                            anime: a;
+                            clicked => { Actions.open-anime(a.id); }
+                        }
+                    }
+                }
+            }
+            if Store.recommended.length > 0: VerticalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                padding-top: 20px;
+                SectionHeader { title: "YOU MIGHT ALSO LIKE"; }
+                Flickable {
+                    height: 230px;
+                    viewport-width: max(self.width, Store.recommended.length * 120px);
+                    viewport-height: 230px;
+                    for a[i] in Store.recommended: PosterCard {
+                        x: i * 120px;
+                        y: 8px;
+                        width: 106px;
+                        height: 222px;
+                        anime: a;
+                        clicked => { Actions.open-anime(a.id); }
+                    }
+                }
+            }
+            Rectangle { height: 28px + Theme.safe-bottom; }
+        }
+    }
+    // The pinned bar: the back arrow always; paper, the rule and the title
+    // once the header has scrolled away.
+    Rectangle {
+        y: 0;
+        height: root.top + 56px + 3px;
+        visible: !Store.detail-loading || true;
+        if root.collapsed && !Store.detail-loading: Rectangle {
+            background: Theme.paper;
+            Rectangle {
+                y: parent.height - 3px;
+                height: 3px;
+                background: Theme.line;
+            }
+            Heading {
+                x: 64px;
+                y: root.top;
+                width: parent.width - 80px;
+                height: 56px;
+                text: Store.detail-title-caps;
+                size: 16;
+                overflow: elide;
+                vertical-alignment: center;
+            }
+        }
+        IconButton {
+            x: 4px;
+            y: root.top + 4px;
+            icon: Icons.back;
+            scale: 2.28;
+            tooltip: "Back";
+            clicked => { Actions.back(); }
+        }
+    }
+}
