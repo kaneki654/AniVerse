@@ -53,6 +53,7 @@ export const api = {
     }
   },
   appRelease: () => getJson("/app/version.json", { timeout: 8000 }).catch(() => null),
+  rustRelease: () => getJson("/app/rust/version.json", { timeout: 8000 }).catch(() => null),
   extra: (id) => getJson(`/api/anime/extra/${encodeURIComponent(id)}`, { timeout: 20000 }).catch(() => ({})),
   episodes: (id) => getJson(`/api/anime/episodes/${encodeURIComponent(id)}`, { timeout: 20000 }).then(list).catch(() => []),
   schedule: (days = 7) => getJson(`/api/anime/schedule?days=${days}`, { timeout: 30000 }).then(list).catch(() => []),

@@ -144,6 +144,58 @@ class MobileReleaseTests(unittest.TestCase):
                 self.assertFalse(self.client.get("/app/version.json").json()["available"])
                 self.assertEqual(self.client.get("/app/aniverse.apk").status_code, 404)
 
+    def publish_rust(self, **details):
+        self.metadata.update(package="app.aniverse.rust", versionName="0.1.0", versionCode=1)
+        return publisher.publish_apk(self.source, self.releases, "aapt", "apksigner",
+                                     edition="rust", details=details)
+
+    def test_rust_edition_has_its_own_manifest_download_and_details(self):
+        self.metadata["nativeCode"] = ["arm64-v8a"]
+        release = self.publish_rust(highlights=["Opens in 0.4 s"], measured="Median of 5 cold starts",
+                                    note="Preview")
+        self.assertEqual(publisher.inspect_apk.call_args.args[3], "app.aniverse.rust")
+        self.assertTrue(release["file"].startswith("aniverse-rust-1-"))
+        self.assertTrue((self.releases / "rust.json").is_file())
+        # The original app's update check never sees the Rust build.
+        self.assertFalse((self.releases / "current.json").exists())
+        self.assertFalse(self.client.get("/app/version.json").json()["available"])
+        self.assertEqual(self.client.get("/app/aniverse.apk").status_code, 404)
+        info = self.client.get("/app/rust/version.json")
+        self.assertIn("no-store", info.headers["cache-control"])
+        self.assertEqual(info.json(), {
+            "available": True, "versionName": "0.1.0", "versionCode": 1, "url": "/app/aniverse-rust.apk",
+            "size": len(b"signed apk bytes"), "sha256": release["sha256"], "nativeCode": ["arm64-v8a"],
+            "highlights": ["Opens in 0.4 s"], "measured": "Median of 5 cold starts", "note": "Preview",
+        })
+        download = self.client.get(info.json()["url"])
+        self.assertEqual(download.content, b"signed apk bytes")
+        self.assertIn("AniVerse-Rust.apk", download.headers["content-disposition"])
+
+    def test_both_editions_are_served_side_by_side(self):
+        original = self.publish()
+        rust = self.publish_rust()
+        self.assertEqual(self.client.get("/app/version.json").json()["versionCode"], original["versionCode"])
+        self.assertEqual(self.client.get("/app/rust/version.json").json()["versionCode"], rust["versionCode"])
+        self.assertNotEqual(original["file"], rust["file"])
+
+    def test_rust_details_that_would_not_fit_are_refused(self):
+        for details in ({"highlights": ["x"] * 7}, {"highlights": ["x" * 141]}, {"highlights": [" "]},
+                        {"note": "x" * 241}, {"measured": "x" * 241}):
+            with self.subTest(details=details):
+                with self.assertRaises(ValueError):
+                    self.publish_rust(**details)
+        self.assertFalse(self.client.get("/app/rust/version.json").json()["available"])
+        self.assertEqual(self.client.get("/app/aniverse-rust.apk").status_code, 404)
+
+    def test_unsound_rust_manifest_extras_are_dropped(self):
+        release = self.publish_rust()
+        release.update(highlights=["ok", 5, "x" * 500], nativeCode="arm64-v8a", note=["not text"])
+        (self.releases / "rust.json").write_text(json.dumps(release))
+        info = self.client.get("/app/rust/version.json").json()
+        self.assertTrue(info["available"])
+        self.assertEqual((info["highlights"], info["nativeCode"], info["note"], info["measured"]),
+                         (["ok"], [], "", ""))
+
 
 class InspectApkTests(unittest.TestCase):
     def test_reads_verified_apk_metadata(self):

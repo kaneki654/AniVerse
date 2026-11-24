@@ -522,10 +522,11 @@ _RELEASES_DIR = pathlib.Path(__file__).resolve().parent.parent / "data" / "relea
 _UPDATE_HEADERS = {"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"}
 
 
-def _read_published_release():
-    """Return the atomically published manifest and its existing APK, or None."""
+def _read_published_release(manifest: str = "current.json"):
+    """Return the atomically published manifest and its existing APK, or None.
+    current.json is the original app; rust.json the Rust edition."""
     try:
-        release = json.loads((_RELEASES_DIR / "current.json").read_text())
+        release = json.loads((_RELEASES_DIR / manifest).read_text())
         filename = release["file"]
         if not isinstance(filename, str) or pathlib.Path(filename).name != filename:
             return None
@@ -602,6 +603,53 @@ async def app_apk(abi: str | None = None):
         apk,
         media_type="application/vnd.android.package-archive",
         filename="AniVerse-Pixel.apk",
+        headers=_UPDATE_HEADERS,
+    )
+
+
+def _short_texts(value, limit: int, longest: int) -> list[str]:
+    """The strings of a manifest list worth showing, dropping anything else."""
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str) and 0 < len(item) <= longest][:limit]
+
+
+@app.get("/app/rust/version.json")
+async def rust_app_version(response: Response):
+    """The Rust edition (aniverse_mobile_rust), offered on the website next to the
+    original. It is its own package, so this never drives the original's updates."""
+    response.headers.update(_UPDATE_HEADERS)
+    published = _read_published_release("rust.json")
+    result = {
+        "versionName": "0.0.0",
+        "versionCode": 0,
+        "url": "/app/aniverse-rust.apk",
+        "size": 0,
+        "available": False,
+    }
+    if published:
+        release, _ = published
+        result.update({key: release[key] for key in ("versionName", "versionCode", "size", "sha256")})
+        result["available"] = True
+        result["nativeCode"] = _short_texts(release.get("nativeCode"), 4, 16)
+        result["highlights"] = _short_texts(release.get("highlights"), 6, 140)
+        for key in ("measured", "note"):
+            text = release.get(key)
+            result[key] = text if isinstance(text, str) and len(text) <= 240 else ""
+    return result
+
+
+@app.get("/app/aniverse-rust.apk")
+async def rust_app_apk():
+    from fastapi.responses import FileResponse
+    published = _read_published_release("rust.json")
+    if not published:
+        return Response(content='{"detail":"no published APK available"}', status_code=404,
+                        media_type="application/json", headers=_UPDATE_HEADERS)
+    return FileResponse(
+        published[1],
+        media_type="application/vnd.android.package-archive",
+        filename="AniVerse-Rust.apk",
         headers=_UPDATE_HEADERS,
     )
 

@@ -638,11 +638,18 @@ main { flex: 1; padding: 20px 0 48px; }
 /* Blood splat bursts float above everything. */
 canvas.splat { position: fixed; z-index: 200; width: 132px; height: 132px; pointer-events: none; image-rendering: pixelated; }
 
-.app-promo { display: flex; align-items: center; gap: 14px; padding: 14px 16px; margin-top: 34px; }
+.app-promos { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 16px; margin-top: 34px; align-items: start; }
+.app-promo { padding: 14px 16px; }
+.app-promo .head { display: flex; align-items: center; gap: 14px; }
 .app-promo .txt { flex: 1; min-width: 0; }
 .app-promo .txt b { display: block; font: 9px/1.6 var(--display); text-transform: uppercase; }
 .app-promo .txt span { color: var(--ash); }
-@media (max-width: 560px) { .app-promo { flex-direction: column; align-items: stretch; text-align: center; } }
+.app-promo .facts { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.app-promo .facts li { display: flex; gap: 8px; align-items: baseline; }
+.app-promo .facts li::before { content: ""; flex: none; width: 8px; height: 8px; background: var(--blood); transform: skewX(-12deg); }
+.app-promo .note { margin: 10px 0 0; color: var(--ash); }
+.app-promo .measured { margin: 6px 0 0; color: var(--ash); font-size: .82em; }
+@media (max-width: 560px) { .app-promo .head { flex-direction: column; align-items: stretch; text-align: center; } .app-promo .emblem { align-self: center; } }
 
 @media (prefers-reduced-motion: reduce) {
   .skel { animation: none; }

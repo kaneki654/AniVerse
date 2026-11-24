@@ -7,6 +7,12 @@ With per-CPU builds (flutter build apk --split-per-abi -P force-version-code-ign
 published alongside the universal one, phones that say which CPU they have get
 an APK about a third of the size:
     python scripts/publish_apk.py app-release.apk --split app-arm64-v8a-release.apk --split ...
+
+The website offers a second app, the Rust edition (aniverse_mobile_rust). It is its
+own package with its own manifest (rust.json), so it never touches the original's
+updates. What was measured about it is shown next to its download:
+    python scripts/publish_apk.py --edition rust app-release.apk \
+        --highlight "Opens in 0.4 s" --measured "How it was measured" --note "What is missing"
 """
 
 import argparse
@@ -23,6 +29,12 @@ import tempfile
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RELEASES_DIR = ROOT / "data" / "releases"
 EXPECTED_PACKAGE = "com.example.aniverse_mobile"
+# The two apps the website offers. Each has its own package, manifest and file names.
+EDITIONS = {
+    "original": {"package": EXPECTED_PACKAGE, "manifest": "current.json", "prefix": "aniverse"},
+    "rust": {"package": "app.aniverse.rust", "manifest": "rust.json", "prefix": "aniverse-rust"},
+}
+MAX_HIGHLIGHTS = 6
 
 
 def _fsync_directory(path):
@@ -115,8 +127,29 @@ def _stage(source, releases_dir, aapt, apksigner, expected_package):
     return staged_path, meta, digest
 
 
-def publish_apk(source, releases_dir, aapt, apksigner, expected_package=EXPECTED_PACKAGE, splits=()):
-    """Publish immutable APKs first, then atomically replace current.json."""
+def clean_details(details):
+    """What the website shows with a download: up to six short highlights, how they
+    were measured, and a one-line note. Refuses anything that would not fit."""
+    details = details or {}
+    highlights = [str(line).strip() for line in details.get("highlights") or ()]
+    if len(highlights) > MAX_HIGHLIGHTS or any(not 0 < len(line) <= 140 for line in highlights):
+        raise ValueError(f"Give at most {MAX_HIGHLIGHTS} highlights of 1-140 characters each.")
+    cleaned = {"highlights": highlights} if highlights else {}
+    for key in ("measured", "note"):
+        text = str(details.get(key) or "").strip()
+        if len(text) > 240:
+            raise ValueError(f"The {key} text is longer than 240 characters.")
+        if text:
+            cleaned[key] = text
+    return cleaned
+
+
+def publish_apk(source, releases_dir, aapt, apksigner, expected_package=None, splits=(),
+                edition="original", details=None):
+    """Publish immutable APKs first, then atomically replace the edition's manifest."""
+    info = EDITIONS[edition]
+    expected_package = expected_package or info["package"]
+    extra = clean_details(details)
     source, releases_dir = Path(source), Path(releases_dir)
     if not source.is_file():
         raise ValueError(f"APK not found: {source}")
@@ -138,14 +171,17 @@ def publish_apk(source, releases_dir, aapt, apksigner, expected_package=EXPECTED
                 raise ValueError(f"{split} is not a single-CPU build (native code: {native or 'none'}).")
             abis[native[0]] = (path, meta, digest)
         staged_path, release, digest = _stage(source, releases_dir, aapt, apksigner, expected_package)
-        release.pop("nativeCode", None)
-        release.update({"file": f"aniverse-{release['versionCode']}-{digest[:16]}.apk",
+        native = release.pop("nativeCode", None)
+        release.update({"file": f"{info['prefix']}-{release['versionCode']}-{digest[:16]}.apk",
                         "size": staged_path.stat().st_size, "sha256": digest})
+        if native:
+            release["nativeCode"] = native
+        release.update(extra)
         for abi, (_, meta, _) in abis.items():
             if {k: meta[k] for k in ("package", "versionCode", "versionName", "signingSha256")} != \
                     {k: release[k] for k in ("package", "versionCode", "versionName", "signingSha256")}:
                 raise ValueError(f"The {abi} build is not the same release as the universal APK.")
-        current_path = releases_dir / "current.json"
+        current_path = releases_dir / info["manifest"]
         if current_path.exists():
             previous = json.loads(current_path.read_text())
             if (previous["package"] != release["package"]
@@ -158,7 +194,7 @@ def publish_apk(source, releases_dir, aapt, apksigner, expected_package=EXPECTED
         if abis:
             release["abis"] = {}
             for abi, (path, meta, split_digest) in abis.items():
-                name = f"aniverse-{release['versionCode']}-{abi}-{split_digest[:16]}.apk"
+                name = f"{info['prefix']}-{release['versionCode']}-{abi}-{split_digest[:16]}.apk"
                 release["abis"][abi] = {"file": name, "size": path.stat().st_size, "sha256": split_digest}
         destination = releases_dir / release["file"]
         os.replace(staged_path, destination)
@@ -187,6 +223,12 @@ def main():
     parser.add_argument("apk", type=Path)
     parser.add_argument("--split", type=Path, action="append", default=[],
                         help="a per-CPU build of the same release (repeatable)")
+    parser.add_argument("--edition", choices=sorted(EDITIONS), default="original",
+                        help="which of the website's two apps this is (default: original)")
+    parser.add_argument("--highlight", action="append", default=[],
+                        help="a measured fact shown with the download (repeatable, up to 6)")
+    parser.add_argument("--measured", default="", help="how the highlights were measured")
+    parser.add_argument("--note", default="", help="one line under the download, e.g. what is missing")
     parser.add_argument("--releases-dir", type=Path, default=DEFAULT_RELEASES_DIR)
     parser.add_argument("--aapt", type=Path)
     parser.add_argument("--apksigner", type=Path)
@@ -195,7 +237,9 @@ def main():
         release = publish_apk(args.apk, args.releases_dir,
                               args.aapt or find_android_tool("aapt"),
                               args.apksigner or find_android_tool("apksigner"),
-                              splits=args.split)
+                              splits=args.split, edition=args.edition,
+                              details={"highlights": args.highlight, "measured": args.measured,
+                                       "note": args.note})
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as exc:
         parser.exit(1, f"Publication failed: {exc}\n")
     print(json.dumps(release, indent=2))

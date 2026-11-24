@@ -230,16 +230,38 @@ function accountNav() {
   auth.onChange(render);
 }
 
+/** Two Android apps side by side: the original, and the Rust edition. */
 async function appPromo() {
   const slot = document.getElementById("app-promo");
   if (!slot) return;
-  const rel = await api.appRelease();
-  if (!rel || !rel.available) return;
-  const mb = rel.size ? ` · ${(rel.size / 1048576).toFixed(0)} MB` : "";
-  slot.append(h("div.app-promo.px-box", null,
-    h("img.emblem", { src: emblemUrl(), alt: "", width: 40, height: 40 }),
-    h("div.txt", null, h("b", null, "AniVerse for Android"), h("span", null, `Version ${rel.versionName}${mb}`)),
-    h("a.px-btn.px-box.small", { href: "/app/aniverse.apk", download: "AniVerse.apk" }, sprite("download", 1.4), "Get the app")));
+  const [rel, rust] = await Promise.all([api.appRelease(), api.rustRelease()]);
+  const emblem = () => h("img.emblem", { src: emblemUrl(), alt: "", width: 40, height: 40 });
+  const cards = [];
+  if (rel?.available) {
+    const mb = rel.size ? ` · ${(rel.size / 1048576).toFixed(0)} MB` : "";
+    cards.push(h("div.app-promo.px-box", null,
+      h("div.head", null,
+        emblem(),
+        h("div.txt", null, h("b", null, "AniVerse for Android"), h("span", null, `The original · Version ${rel.versionName}${mb}`)),
+        h("a.px-btn.px-box.small", { href: "/app/aniverse.apk", download: "AniVerse.apk" }, sprite("download", 1.4), "Get the app"))));
+  }
+  if (rust?.available) cards.push(rustCard(rust, emblem, "a.px-btn.px-box.small"));
+  if (cards.length) slot.append(h("div.app-promos", null, cards));
+}
+
+/** The Rust edition: its own app, with what was measured about it from its manifest. */
+function rustCard(rust, emblem, button) {
+  const mb = rust.size ? ` · ${(rust.size / 1048576).toFixed(0)} MB` : "";
+  const native = rust.nativeCode || [];
+  const phones = native.length === 1 && native[0] === "arm64-v8a" ? " · 64-bit phones" : "";
+  return h("div.app-promo.rust.px-box", null,
+    h("div.head", null,
+      emblem(),
+      h("div.txt", null, h("b", null, "AniVerse Rust edition"), h("span", null, `Version ${rust.versionName}${mb}${phones}`)),
+      h(button, { href: "/app/aniverse-rust.apk", download: "AniVerse-Rust.apk" }, sprite("download", 1.4), "Get Rust edition")),
+    rust.highlights?.length ? h("ul.facts", null, rust.highlights.map((line) => h("li", null, line))) : null,
+    rust.note ? h("p.note", null, rust.note) : null,
+    rust.measured ? h("p.measured", null, rust.measured) : null);
 }
 
 /** Same-site page links play the dissolve before leaving. */
